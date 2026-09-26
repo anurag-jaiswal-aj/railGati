@@ -380,3 +380,60 @@ def find_one_transfer_journeys(
 
     options.sort(key=sort_key)
     return options
+
+
+def compare_journeys(
+    db: Session,
+    timetable_snapshot_id: int,
+    origin_station_id: int,
+    destination_station_id: int,
+    max_transfers: int = 0,
+    minimum_transfer_minutes: int = 120,
+    maximum_layover_minutes: int = 1440,
+) -> list[JourneyOption]:
+    """Combine direct and optionally one-transfer historical journeys."""
+    if max_transfers not in (0, 1):
+        raise ValueError("max_transfers must be 0 or 1")
+
+    options: list[JourneyOption] = []
+
+    direct_opts = find_direct_journeys(
+        db, timetable_snapshot_id, origin_station_id, destination_station_id
+    )
+    options.extend(direct_opts)
+
+    if max_transfers == 1:
+        transfer_opts = find_one_transfer_journeys(
+            db,
+            timetable_snapshot_id,
+            origin_station_id,
+            destination_station_id,
+            minimum_transfer_minutes,
+            maximum_layover_minutes,
+        )
+        options.extend(transfer_opts)
+
+    def combined_sort_key(opt: JourneyOption) -> tuple[Any, ...]:
+        # 1. total_duration_minutes (ASC, nulls last)
+        dur_val = (
+            opt.total_duration_minutes if opt.total_duration_minutes is not None else float("inf")
+        )
+
+        # 2. first departure time
+        dep_val = float("inf")
+        if opt.legs[0].departure_time and opt.legs[0].source_day_offset is not None:
+            mins = _parse_time_to_minutes(opt.legs[0].departure_time, opt.legs[0].source_day_offset)
+            if mins is not None:
+                dep_val = float(mins)
+
+        # 3. type (DIRECT before ONE_TRANSFER)
+        type_val = 0 if opt.type == JourneyType.DIRECT else 1
+
+        # 4. train numbers and journey id for deterministic tie-breaker
+        t_a_num = opt.legs[0].train_number
+        t_b_num = opt.legs[1].train_number if len(opt.legs) > 1 else ""
+
+        return (dur_val, dep_val, type_val, t_a_num, t_b_num, opt.journey_id)
+
+    options.sort(key=combined_sort_key)
+    return options

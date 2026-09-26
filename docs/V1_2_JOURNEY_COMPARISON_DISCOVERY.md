@@ -89,13 +89,18 @@ Output fields for a Journey (Direct or Transfer):
 - If required temporal information is missing or ambiguous, do not fabricate duration. Preserve structural journey information where possible and mark calculated timing unavailable (`MISSING_DATA`).
 
 ## 10. Sorting/Comparison Dimensions
-No single journey is "best." The API will return all valid journeys and let the frontend sort.
-**Default Sort**:
-1. `type` (`DIRECT` before `ONE_TRANSFER`).
-2. `total_duration_minutes` (ASC, nulls last).
-3. `departure_time` (ASC).
+**STATUS: IMPLEMENTED**
+The combined comparison service combines direct and one-transfer journeys (when `max_transfers=1`) and sorts them deterministically. No arbitrary pruning or result truncation is applied; all valid structural candidates are returned.
 
-**ASSUMPTION**: This default ordering is merely a product/API convention. It is not a claim that direct journeys are universally preferable, nor is it a recommendation or "best journey" ranking. Users receive comparable options and explicit metrics.
+No single journey is "best." The backend returns all valid journeys deterministically sorted, letting the frontend resort if necessary. Missing durations are handled explicitly and do not crash sorting.
+
+**Deterministic Combined Sort**:
+1. `total_duration_minutes` (ASC, nulls last).
+2. `departure_time` (ASC, nulls last).
+3. `type` (`DIRECT` before `ONE_TRANSFER`).
+4. `train_a_number`, `train_b_number`, `journey_id` (ASC) as a deterministic tie-breaker.
+
+**ASSUMPTION**: This default ordering is merely a product/API convention to guarantee stable results across identical requests. It is not a claim that a specific journey is universally preferable, nor is it a recommendation or "best journey" ranking. Missing data explicitly sinks to the bottom of duration sorts but remains available. Every distinct journey occurrence retains its unique `journey_id`.
 
 ## 11. Proposed API Contract
 `GET /api/v1/journeys/compare`
