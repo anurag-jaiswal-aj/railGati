@@ -139,3 +139,27 @@ class JourneyCompareResponse(BaseModel):
     timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
     max_transfers: int = Field(..., description="Maximum allowed transfers")
     journeys: list[JourneyOption]
+
+
+class DestinationItem(BaseModel):
+    """A direct destination station reachable from the origin."""
+
+    station_code: str = Field(..., description="Canonical station code")
+    fastest_duration_minutes: int | None = Field(
+        None, description="Fastest known historical travel time in minutes"
+    )
+    direct_train_count: int = Field(
+        ..., description="Number of distinct direct trains to this destination"
+    )
+    timing_confidence: TimingConfidence = Field(
+        ..., description="Confidence of the calculated travel time"
+    )
+
+
+class DestinationResponse(BaseModel):
+    """Response containing reachable destinations from an origin."""
+
+    origin: str = Field(..., description="Canonical origin station code")
+    timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
+    max_duration_minutes: int | None = Field(None, description="Maximum travel duration applied")
+    destinations: list[DestinationItem]

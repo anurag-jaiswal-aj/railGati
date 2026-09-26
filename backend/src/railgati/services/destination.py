@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, aliased
 
 from railgati.api.v1.schemas import TimingConfidence
-from railgati.models.station import Station, StationObservation
+from railgati.models.station import Station
 from railgati.models.train import TrainStopObservation
 from railgati.services.journey import _parse_time_to_minutes
 

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from railgati import __version__
 from railgati.api.health import router as health_router
+from railgati.api.v1.destinations import router as destinations_router
 from railgati.api.v1.journeys import router as journeys_router
 from railgati.api.v1.stations import router as stations_router
 from railgati.api.v1.trains import router as trains_router
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
     app.include_router(stations_router, prefix="/api/v1")
     app.include_router(trains_router, prefix="/api/v1")
     app.include_router(journeys_router, prefix="/api/v1")
+    app.include_router(destinations_router, prefix="/api/v1")
 
     log.info(
         "railgati_started",
