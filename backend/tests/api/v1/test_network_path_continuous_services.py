@@ -76,6 +76,7 @@ def test_api_continuous_path_valid(
     s1, s2, s3 = test_data
     path = f"{s1.code},{s2.code},{s3.code}"
     response = client.get(f"/api/v1/network/path/continuous-services?path={path}")
+    print(response.json())
     assert response.status_code == 200
     data = response.json()
     assert data["path"] == [s1.code, s2.code, s3.code]

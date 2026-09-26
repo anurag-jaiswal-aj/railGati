@@ -550,9 +550,12 @@ def get_network_path_continuous_services(
             path=[station_map[c.lower()].code for c in station_codes],
             timetable_snapshot_id=snapshot_id,
             total_services_returned=len(services),
-            services=services,
+            services=[s.model_dump() for s in services],
         )
     except ValueError as e:
+        import pydantic
+        if isinstance(e, pydantic.ValidationError):
+            raise
         msg = str(e)
         if "Path must contain" in msg or "consecutive duplicate" in msg:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=msg)
@@ -560,4 +563,70 @@ def get_network_path_continuous_services(
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg)
         elif "does not exist in the active network topology" in msg:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+
+@router.get(
+    "/corridors",
+    response_model=schemas.CorridorResponse,
+    summary="Discover continuous historical corridors between two stations",
+    description="Finds structural paths (corridors) traversed by continuous historical train services.",
+)
+def get_network_corridors(
+    origin: str = Query(..., description="Canonical origin station code."),
+    destination: str = Query(..., description="Canonical destination station code."),
+    db: Session = Depends(get_db),
+) -> schemas.CorridorResponse:
+    from railgati.services.network import find_network_corridors
+
+    if origin.lower() == destination.lower():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Origin and destination must not be the same.",
+        )
+
+    # Resolve Stations
+    stations_q = (
+        db.execute(
+            select(Station).filter(
+                func.lower(Station.code).in_([origin.lower(), destination.lower()])
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    origin_station = next((s for s in stations_q if s.code.lower() == origin.lower()), None)
+    dest_station = next((s for s in stations_q if s.code.lower() == destination.lower()), None)
+
+    if not origin_station:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Origin station '{origin.upper()}' not found.",
+        )
+    if not dest_station:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Destination station '{destination.upper()}' not found.",
+        )
+
+    snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        corridors = find_network_corridors(
+            db,
+            timetable_snapshot_id=snapshot_id,
+            origin_station_id=origin_station.id,
+            destination_station_id=dest_station.id,
+        )
+
+        return schemas.CorridorResponse(
+            origin=origin_station.code,
+            destination=dest_station.code,
+            timetable_snapshot_id=snapshot_id,
+            corridors=corridors,
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "Active graph build unavailable" in msg:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)

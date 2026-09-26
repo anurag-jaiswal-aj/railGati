@@ -287,3 +287,19 @@ class NetworkPathContinuousServicesResponse(BaseModel):
     timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
     total_services_returned: int = Field(..., description="Number of continuous services returned")
     services: list[NetworkPathContinuousServiceItem] = Field(..., description="Continuous services")
+
+class CorridorItem(BaseModel):
+    """A distinct structural corridor between an origin and destination."""
+
+    path: list[str] = Field(..., description="Canonical station codes representing the path")
+    occurrence_count: int = Field(..., description="Number of historical structural occurrences")
+    fastest_duration_minutes: int | None = Field(None, description="Fastest valid occurrence duration")
+
+
+class CorridorResponse(BaseModel):
+    """Response containing corridors between an origin and destination."""
+
+    origin: str = Field(..., description="Canonical origin station code")
+    destination: str = Field(..., description="Canonical destination station code")
+    timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
+    corridors: list[CorridorItem]

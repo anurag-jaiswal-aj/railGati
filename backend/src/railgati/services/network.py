@@ -8,6 +8,12 @@ from railgati.models.graph import RailwayGraphBuild
 from railgati.models.provenance import DatasetSnapshot
 
 
+class CorridorItem(BaseModel):
+    path: list[str]
+    occurrence_count: int
+    fastest_duration_minutes: int | None
+
+
 class StationReachability(BaseModel):
     """Result model for a topologically reachable station."""
 
@@ -335,12 +341,15 @@ def find_network_path_service_occurrences(
     segment_tuples = [tuple_(s[0], s[1]) for s in segments]
 
     # Verify that all segments exist in the network graph
+    from sqlalchemy import or_, and_
+    conditions = [
+        and_(RailwayNetworkEdge.from_station_id == s[0], RailwayNetworkEdge.to_station_id == s[1])
+        for s in segments
+    ]
     matched_edges = db.execute(
         select(RailwayNetworkEdge.from_station_id, RailwayNetworkEdge.to_station_id).filter(
             RailwayNetworkEdge.timetable_snapshot_id == timetable_snapshot_id,
-            tuple_(RailwayNetworkEdge.from_station_id, RailwayNetworkEdge.to_station_id).in_(
-                segment_tuples
-            ),
+            or_(*conditions)
         )
     ).all()
 
@@ -475,12 +484,15 @@ def find_network_path_continuous_services(
     segment_tuples = [tuple_(s[0], s[1]) for s in segments]
 
     # Verify that all segments exist in the network graph
+    from sqlalchemy import or_, and_
+    conditions = [
+        and_(RailwayNetworkEdge.from_station_id == s[0], RailwayNetworkEdge.to_station_id == s[1])
+        for s in segments
+    ]
     matched_edges = db.execute(
         select(RailwayNetworkEdge.from_station_id, RailwayNetworkEdge.to_station_id).filter(
             RailwayNetworkEdge.timetable_snapshot_id == timetable_snapshot_id,
-            tuple_(RailwayNetworkEdge.from_station_id, RailwayNetworkEdge.to_station_id).in_(
-                segment_tuples
-            ),
+            or_(*conditions)
         )
     ).all()
 
@@ -571,4 +583,189 @@ def find_network_path_continuous_services(
             )
         )
 
+    return items
+
+
+def find_network_corridors(
+    db: Session,
+    timetable_snapshot_id: int,
+    origin_station_id: int,
+    destination_station_id: int,
+) -> list[CorridorItem]:
+    """Discover distinct historical railway corridors between two stations."""
+    
+    if origin_station_id == destination_station_id:
+        raise ValueError("Origin and destination must not be the same")
+
+    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.graph import RailwayGraphBuild
+
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(
+            DatasetSnapshot.id == timetable_snapshot_id, DatasetSnapshot.status == "ACTIVE"
+        )
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    build = db.scalar(
+        select(RailwayGraphBuild).filter(
+            RailwayGraphBuild.timetable_snapshot_id == timetable_snapshot_id
+        )
+    )
+    if not build or build.status != "ACTIVE":
+        raise ValueError("Active graph build unavailable for this snapshot")
+
+    is_sqlite = db.bind.dialect.name == "sqlite"
+
+    if is_sqlite:
+        query = text("""
+            WITH bounds AS (
+                SELECT o.train_id, 
+                       o.stop_sequence as start_seq, 
+                       d.stop_sequence as end_seq,
+                       o.departure_time, o.source_day as start_day,
+                       d.arrival_time, d.source_day as end_day
+                FROM train_stop_observations o
+                JOIN train_stop_observations d 
+                  ON o.train_id = d.train_id 
+                 AND o.snapshot_id = d.snapshot_id
+                WHERE o.station_id = :origin 
+                  AND d.station_id = :dest 
+                  AND o.stop_sequence < d.stop_sequence
+                  AND o.snapshot_id = :snapshot
+            ),
+            occurrence_paths AS (
+                SELECT b.train_id,
+                       b.start_seq,
+                       b.end_seq,
+                       group_concat(s.code) as path_array,
+                       -- occurrence duration calculated in python for sqlite
+                       b.arrival_time, b.end_day, b.departure_time, b.start_day
+                FROM bounds b
+                JOIN train_stop_observations tso 
+                  ON tso.train_id = b.train_id 
+                 AND tso.snapshot_id = :snapshot
+                JOIN stations s ON tso.station_id = s.id
+                WHERE tso.stop_sequence >= b.start_seq 
+                  AND tso.stop_sequence <= b.end_seq
+                GROUP BY b.train_id, b.start_seq, b.end_seq, b.departure_time, b.start_day, b.arrival_time, b.end_day
+                ORDER BY tso.stop_sequence ASC
+            )
+            SELECT path_array, 
+                   COUNT(*) as occurrence_count, 
+                   arrival_time, end_day, departure_time, start_day
+            FROM occurrence_paths
+            GROUP BY path_array, arrival_time, end_day, departure_time, start_day
+        """)
+        results = db.execute(query, {"snapshot": timetable_snapshot_id, "origin": origin_station_id, "dest": destination_station_id}).all()
+        
+        # SQLite processing in Python
+        from collections import defaultdict
+        corridors = defaultdict(lambda: {'count': 0, 'durations': []})
+        for row in results:
+            path = row[0].split(',') if row[0] else []
+            count = row[1]
+            arr, end_day, dep, start_day = row[2], row[3], row[4], row[5]
+            dur = None
+            if arr and end_day and dep and start_day:
+                from railgati.services.journey import _parse_time_to_minutes
+                orig_mins = _parse_time_to_minutes(dep, start_day)
+                dest_mins = _parse_time_to_minutes(arr, end_day)
+                if orig_mins is not None and dest_mins is not None:
+                    calc = dest_mins - orig_mins
+                    if calc >= 0:
+                        dur = calc
+            corridors[tuple(path)]['count'] += count
+            if dur is not None:
+                corridors[tuple(path)]['durations'].append(dur)
+        
+        items = []
+        for p, data in corridors.items():
+            fastest = min(data['durations']) if data['durations'] else None
+            items.append(CorridorItem(path=list(p), occurrence_count=data['count'], fastest_duration_minutes=fastest))
+            
+        items.sort(key=lambda x: (
+            -x.occurrence_count,
+            x.fastest_duration_minutes if x.fastest_duration_minutes is not None else float('inf'),
+            len(x.path),
+            ",".join(x.path)
+        ))
+        return items
+
+    # Postgres Query
+    query = text("""
+        WITH bounds AS (
+            SELECT o.train_id, 
+                   o.stop_sequence as start_seq, 
+                   d.stop_sequence as end_seq,
+                   o.departure_time, o.source_day as start_day,
+                   d.arrival_time, d.source_day as end_day
+            FROM train_stop_observations o
+            JOIN train_stop_observations d 
+              ON o.train_id = d.train_id 
+             AND o.snapshot_id = d.snapshot_id
+            WHERE o.station_id = :origin 
+              AND d.station_id = :dest 
+              AND o.stop_sequence < d.stop_sequence
+              AND o.snapshot_id = :snapshot
+        ),
+        occurrence_paths AS (
+            SELECT b.train_id,
+                   b.start_seq,
+                   b.end_seq,
+                   array_agg(s.code ORDER BY tso.stop_sequence) as path_array,
+                   CASE 
+                       WHEN b.arrival_time IS NOT NULL AND b.end_day IS NOT NULL 
+                            AND b.departure_time IS NOT NULL AND b.start_day IS NOT NULL
+                       THEN 
+                           ( (b.end_day - 1) * 1440 + CAST(split_part(b.arrival_time, ':', 1) AS integer) * 60 + CAST(split_part(b.arrival_time, ':', 2) AS integer) ) -
+                           ( (b.start_day - 1) * 1440 + CAST(split_part(b.departure_time, ':', 1) AS integer) * 60 + CAST(split_part(b.departure_time, ':', 2) AS integer) )
+                       ELSE NULL
+                   END as duration
+            FROM bounds b
+            JOIN train_stop_observations tso 
+              ON tso.train_id = b.train_id 
+             AND tso.snapshot_id = :snapshot
+            JOIN stations s ON tso.station_id = s.id
+            WHERE tso.stop_sequence >= b.start_seq 
+              AND tso.stop_sequence <= b.end_seq
+            GROUP BY b.train_id, b.start_seq, b.end_seq, b.departure_time, b.start_day, b.arrival_time, b.end_day
+        ),
+        corridor_aggregation AS (
+            SELECT path_array, 
+                   COUNT(*) as occurrence_count, 
+                   MIN(duration) as fastest_duration_minutes
+            FROM occurrence_paths
+            GROUP BY path_array
+        )
+        SELECT path_array, occurrence_count, fastest_duration_minutes
+        FROM corridor_aggregation
+        ORDER BY occurrence_count DESC, 
+                 fastest_duration_minutes ASC NULLS LAST, 
+                 array_length(path_array, 1) ASC, 
+                 array_to_string(path_array, ',') ASC
+    """)
+
+    results = db.execute(
+        query,
+        {
+            "snapshot": timetable_snapshot_id,
+            "origin": origin_station_id,
+            "dest": destination_station_id,
+        },
+    ).all()
+
+    items = []
+    for row in results:
+        dur = row[2]
+        if dur is not None and dur < 0:
+            dur = None
+        items.append(
+            CorridorItem(
+                path=row[0],
+                occurrence_count=row[1],
+                fastest_duration_minutes=dur,
+            )
+        )
     return items
