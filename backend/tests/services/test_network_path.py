@@ -255,7 +255,7 @@ def test_timetable_snapshot_isolation(db_session: Session, path_data: dict[str, 
 
 
 def test_missing_or_inactive_graph(db_session: Session, path_data: dict[str, int]) -> None:
-    snap = db_session.query(DatasetSnapshot).filter_by(id=path_data["snap1"]).first()
+    db_session.query(DatasetSnapshot).filter_by(id=path_data["snap1"]).first()
 
     build = (
         db_session.query(RailwayGraphBuild)

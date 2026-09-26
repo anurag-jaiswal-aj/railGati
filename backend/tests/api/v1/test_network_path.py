@@ -224,8 +224,10 @@ def test_station_metadata_snapshot_isolation_path(
     db_session.add(test_station)
     db_session.commit()
 
+    snap = db_session.query(DatasetSnapshot).first()
+    assert snap is not None
     old_snap = DatasetSnapshot(
-        source_id=db_session.query(DatasetSnapshot).first().source_id,
+        source_id=snap.source_id,
         status="SUPERSEDED",
     )
     db_session.add(old_snap)

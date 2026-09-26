@@ -265,3 +265,153 @@ def find_network_service_occurrences(
         )
         for row in results
     ]
+
+
+class NetworkPathAttributionSegmentData(BaseModel):
+    """Internal model for a segment of a topological path."""
+
+    from_station_id: int
+    to_station_id: int
+    occurrences: list[NetworkServiceOccurrence]
+
+
+def find_network_path_service_occurrences(
+    db: Session,
+    timetable_snapshot_id: int,
+    path_station_ids: list[int],
+    limit: int = 500,
+) -> list[NetworkPathAttributionSegmentData]:
+    """Find historical service-edge occurrences for an entire topological path."""
+    if len(path_station_ids) < 2:
+        raise ValueError("Path must contain at least 2 stations")
+    if len(path_station_ids) > 10:
+        raise ValueError("Path cannot contain more than 10 stations")
+
+    for i in range(len(path_station_ids) - 1):
+        if path_station_ids[i] == path_station_ids[i + 1]:
+            raise ValueError("Path cannot contain consecutive identical stations")
+
+    # Require an ACTIVE timetable snapshot and graph build
+    from railgati.models.graph import RailwayGraphBuild
+    from railgati.models.provenance import DatasetSnapshot
+
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(
+            DatasetSnapshot.id == timetable_snapshot_id, DatasetSnapshot.status == "ACTIVE"
+        )
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    build = db.scalar(
+        select(RailwayGraphBuild).filter(
+            RailwayGraphBuild.timetable_snapshot_id == timetable_snapshot_id
+        )
+    )
+    if not build or build.status != "ACTIVE":
+        raise ValueError("Active graph build unavailable for this snapshot")
+
+    from sqlalchemy import func, tuple_
+
+    from railgati.models.graph import RailwayNetworkEdge, RailwayServiceEdge
+    from railgati.models.train import Train, TrainObservation
+
+    segments = [
+        (path_station_ids[i], path_station_ids[i + 1]) for i in range(len(path_station_ids) - 1)
+    ]
+    segment_tuples = [tuple_(s[0], s[1]) for s in segments]
+
+    # Verify that all segments exist in the network graph
+    matched_edges = db.execute(
+        select(RailwayNetworkEdge.from_station_id, RailwayNetworkEdge.to_station_id).filter(
+            RailwayNetworkEdge.timetable_snapshot_id == timetable_snapshot_id,
+            tuple_(RailwayNetworkEdge.from_station_id, RailwayNetworkEdge.to_station_id).in_(
+                segment_tuples
+            ),
+        )
+    ).all()
+
+    matched_set = {(r[0], r[1]) for r in matched_edges}
+    for seg in segments:
+        if seg not in matched_set:
+            raise ValueError(f"Path segment {seg} does not exist in the active network topology")
+
+    # Execute the window function query
+    partition_window = func.row_number().over(
+        partition_by=[RailwayServiceEdge.from_station_id, RailwayServiceEdge.to_station_id],
+        order_by=[Train.number.asc(), RailwayServiceEdge.from_stop_sequence.asc()],
+    )
+
+    inner_query = (
+        select(
+            RailwayServiceEdge.from_station_id,
+            RailwayServiceEdge.to_station_id,
+            Train.number.label("train_number"),
+            TrainObservation.name.label("train_name"),
+            TrainObservation.type.label("train_type"),
+            TrainObservation.return_train_number.label("return_train_number"),
+            RailwayServiceEdge.from_stop_sequence,
+            RailwayServiceEdge.to_stop_sequence,
+            RailwayServiceEdge.departure_time,
+            RailwayServiceEdge.arrival_time,
+            RailwayServiceEdge.duration_minutes,
+            RailwayServiceEdge.source_day_offset,
+            partition_window.label("rn"),
+        )
+        .select_from(RailwayServiceEdge)
+        .join(Train, RailwayServiceEdge.train_id == Train.id)
+        .join(
+            TrainObservation,
+            (RailwayServiceEdge.train_id == TrainObservation.train_id)
+            & (TrainObservation.snapshot_id == timetable_snapshot_id),
+        )
+        .filter(
+            RailwayServiceEdge.timetable_snapshot_id == timetable_snapshot_id,
+            tuple_(RailwayServiceEdge.from_station_id, RailwayServiceEdge.to_station_id).in_(
+                segment_tuples
+            ),
+        )
+    ).subquery()
+
+    query = (
+        select(inner_query)
+        .filter(inner_query.c.rn <= limit)
+        .order_by(
+            inner_query.c.from_station_id,
+            inner_query.c.to_station_id,
+            inner_query.c.train_number.asc(),
+            inner_query.c.from_stop_sequence.asc(),
+        )
+    )
+
+    results = db.execute(query).all()
+
+    # Group by segment
+    segment_map: dict[tuple[int, int], list[NetworkServiceOccurrence]] = {
+        seg: [] for seg in segments
+    }
+
+    for row in results:
+        seg = (row.from_station_id, row.to_station_id)
+        if seg in segment_map:
+            segment_map[seg].append(
+                NetworkServiceOccurrence(
+                    train_number=row.train_number,
+                    train_name=row.train_name,
+                    train_type=row.train_type,
+                    return_train_number=row.return_train_number,
+                    from_stop_sequence=row.from_stop_sequence,
+                    to_stop_sequence=row.to_stop_sequence,
+                    departure_time=row.departure_time,
+                    arrival_time=row.arrival_time,
+                    duration_minutes=row.duration_minutes,
+                    source_day_offset=row.source_day_offset,
+                )
+            )
+
+    return [
+        NetworkPathAttributionSegmentData(
+            from_station_id=seg[0], to_station_id=seg[1], occurrences=segment_map[seg]
+        )
+        for seg in segments
+    ]

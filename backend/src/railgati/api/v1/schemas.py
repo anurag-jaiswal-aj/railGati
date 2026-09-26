@@ -244,3 +244,22 @@ class NetworkServiceAttributionResponse(BaseModel):
     timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
     occurrences_returned: int = Field(..., description="Number of occurrences returned")
     occurrences: list[NetworkServiceOccurrenceItem]
+
+
+class NetworkPathAttributionSegment(BaseModel):
+    """Service occurrences for a specific segment of a topological path."""
+
+    from_station: str = Field(..., description="Canonical from-station code")
+    to_station: str = Field(..., description="Canonical to-station code")
+    occurrences_returned: int = Field(
+        ..., description="Number of occurrences returned for this segment"
+    )
+    occurrences: list[NetworkServiceOccurrenceItem]
+
+
+class NetworkPathAttributionResponse(BaseModel):
+    """Response containing service attribution for an entire topological path."""
+
+    path: list[str] = Field(..., description="Canonical station codes representing the path")
+    timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
+    segments: list[NetworkPathAttributionSegment]

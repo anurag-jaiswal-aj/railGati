@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from railgati.api.v1.schemas import (
+    NetworkPathAttributionResponse,
     NetworkPathItem,
     NetworkPathResponse,
     NetworkPathStation,
@@ -354,4 +355,131 @@ def get_network_service_attribution(
         timetable_snapshot_id=timetable_snapshot_id,
         occurrences_returned=len(items),
         occurrences=items,
+    )
+
+
+@router.get(
+    "/path/attribution",
+    response_model=NetworkPathAttributionResponse,
+    summary="Get network path service attribution",
+    description=(
+        "Explains which historical service-edge occurrences contributed to an entire "
+        "topological path. This does not imply passenger routing viability."
+    ),
+)
+def get_network_path_service_attribution(
+    path: Annotated[
+        str,
+        Query(
+            description="Comma-separated canonical station codes.",
+            min_length=3,  # At least A,B
+        ),
+    ],
+    db: Session = Depends(get_db),  # noqa: B008
+) -> NetworkPathAttributionResponse:
+    """Discover network service attribution for a path."""
+
+    station_codes = [c.strip() for c in path.split(",") if c.strip()]
+    if len(station_codes) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Path must contain at least 2 stations.",
+        )
+    if len(station_codes) > 10:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Path cannot contain more than 10 stations.",
+        )
+
+    for i in range(len(station_codes) - 1):
+        if station_codes[i].lower() == station_codes[i + 1].lower():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Path cannot contain consecutive identical stations.",
+            )
+
+    # 1. Resolve Stations
+    stations_q = (
+        db.execute(
+            select(Station).filter(func.lower(Station.code).in_([c.lower() for c in station_codes]))
+        )
+        .scalars()
+        .all()
+    )
+
+    station_map = {s.code.lower(): s for s in stations_q}
+
+    path_station_ids = []
+    for code in station_codes:
+        s = station_map.get(code.lower())
+        if not s:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Station '{code.upper()}' not found.",
+            )
+        path_station_ids.append(s.id)
+
+    # 2. Get Active Timetable Snapshot
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    # 3. Call the Discovery Service
+    from railgati.services.network import find_network_path_service_occurrences
+
+    try:
+        service_results = find_network_path_service_occurrences(
+            db=db,
+            timetable_snapshot_id=timetable_snapshot_id,
+            path_station_ids=path_station_ids,
+        )
+    except ValueError as e:
+        err_msg = str(e)
+        if "does not exist in the active network topology" in err_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=err_msg,
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=err_msg,
+        ) from e
+
+    # 4. Map to Response Schema
+    from railgati.api.v1.schemas import NetworkPathAttributionSegment, NetworkServiceOccurrenceItem
+
+    segments = []
+    # Create an inverse map for returning original matched station codes
+    id_to_code = {s.id: s.code for s in stations_q}
+
+    for seg_data in service_results:
+        items = [
+            NetworkServiceOccurrenceItem(
+                train_number=res.train_number,
+                train_name=res.train_name,
+                train_type=res.train_type,
+                return_train_number=res.return_train_number,
+                from_stop_sequence=res.from_stop_sequence,
+                to_stop_sequence=res.to_stop_sequence,
+                departure_time=res.departure_time,
+                arrival_time=res.arrival_time,
+                duration_minutes=res.duration_minutes,
+                source_day_offset=res.source_day_offset,
+            )
+            for res in seg_data.occurrences
+        ]
+        segments.append(
+            NetworkPathAttributionSegment(
+                from_station=id_to_code[seg_data.from_station_id],
+                to_station=id_to_code[seg_data.to_station_id],
+                occurrences_returned=len(items),
+                occurrences=items,
+            )
+        )
+
+    # We return the exact uppercase requested canonical codes from db
+    canonical_path = [id_to_code[sid] for sid in path_station_ids]
+
+    return NetworkPathAttributionResponse(
+        path=canonical_path,
+        timetable_snapshot_id=timetable_snapshot_id,
+        segments=segments,
     )
