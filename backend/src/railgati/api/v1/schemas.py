@@ -169,3 +169,23 @@ class DestinationResponse(BaseModel):
     page: int = Field(..., description="Current page number")
     size: int = Field(..., description="Number of results per page")
     destinations: list[DestinationItem]
+
+
+class NetworkReachabilityItem(BaseModel):
+    """A canonical station topologically reachable from the origin."""
+
+    station_code: str = Field(..., description="Canonical station code")
+    station_name: str | None = Field(
+        None, description="Canonical station name from active station snapshot"
+    )
+    min_hops: int = Field(..., description="Minimum network hops to reach this station")
+
+
+class NetworkReachabilityResponse(BaseModel):
+    """Response containing bounded topological reachability from an origin."""
+
+    origin: str = Field(..., description="Canonical origin station code")
+    timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
+    max_hops: int = Field(..., description="Maximum applied network hops")
+    total: int = Field(..., description="Total number of reachable stations returned")
+    stations: list[NetworkReachabilityItem]
