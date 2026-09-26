@@ -268,3 +268,28 @@ def test_journey_identity(db_session: Session, compare_data: dict[str, int]) -> 
     )
     ids = [o.journey_id for o in opts]
     assert len(ids) == len(set(ids))
+
+
+def test_neither_direct_nor_one_transfer_returns_empty(
+    db_session: Session, compare_data: dict[str, int]
+) -> None:
+    # Station C to Station A has no direct trains and no transfer possibilities
+    opts1 = compare_journeys(
+        db_session,
+        compare_data["snap"],
+        compare_data["st_c"],
+        compare_data["st_a"],
+        max_transfers=1,
+    )
+    assert len(opts1) == 0
+    assert opts1 == []
+
+    # Verify deterministic empty result
+    opts2 = compare_journeys(
+        db_session,
+        compare_data["snap"],
+        compare_data["st_c"],
+        compare_data["st_a"],
+        max_transfers=1,
+    )
+    assert opts1 == opts2
