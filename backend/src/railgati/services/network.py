@@ -22,6 +22,19 @@ class NetworkPath(BaseModel):
     station_ids: list[int]
 
 
+class NetworkPathContinuousServiceItem(BaseModel):
+    train_number: str
+    train_name: str
+    train_type: str | None
+    start_sequence: int
+    end_sequence: int
+    departure_time: str | None
+    arrival_time: str | None
+    start_day_offset: int
+    end_day_offset: int
+    total_duration_minutes: int | None
+
+
 def find_reachable_stations(
     db: Session,
     origin_station_id: int,
@@ -455,7 +468,6 @@ def find_network_path_continuous_services(
     from railgati.models.graph import RailwayNetworkEdge, RailwayServiceEdge
     from railgati.models.train import Train, TrainObservation
     from railgati.services.journey import _parse_time_to_minutes
-    from railgati.api.v1.schemas import NetworkPathContinuousServiceItem
 
     segments = [
         (path_station_ids[i], path_station_ids[i + 1]) for i in range(len(path_station_ids) - 1)
@@ -512,14 +524,14 @@ def find_network_path_continuous_services(
     for i in range(1, len(aliases)):
         prev_alias = aliases[i - 1]
         curr_alias = aliases[i]
-        
+
         query = query.join(
             curr_alias,
             (curr_alias.train_id == prev_alias.train_id)
             & (curr_alias.timetable_snapshot_id == prev_alias.timetable_snapshot_id)
-            & (curr_alias.from_stop_sequence == prev_alias.to_stop_sequence)
+            & (curr_alias.from_stop_sequence == prev_alias.to_stop_sequence),
         )
-        
+
         query = query.filter(
             curr_alias.from_station_id == segments[i][0],
             curr_alias.to_station_id == segments[i][1],
@@ -543,7 +555,7 @@ def find_network_path_continuous_services(
             calc_dur = dest_mins - orig_mins
             if calc_dur >= 0:
                 duration = calc_dur
-                
+
         items.append(
             NetworkPathContinuousServiceItem(
                 train_number=row.train_number,

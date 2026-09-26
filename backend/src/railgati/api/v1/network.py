@@ -486,6 +486,7 @@ def get_network_path_service_attribution(
         segments=segments,
     )
 
+
 @router.get(
     "/path/continuous-services",
     response_model=schemas.NetworkPathContinuousServicesResponse,
@@ -497,7 +498,7 @@ def get_network_path_continuous_services(
     db: Session = Depends(get_db),
 ) -> schemas.NetworkPathContinuousServicesResponse:
     from railgati.services.network import find_network_path_continuous_services
-    
+
     station_codes = [c.strip() for c in path.split(",") if c.strip()]
     if len(station_codes) < 2:
         raise HTTPException(
@@ -539,19 +540,17 @@ def get_network_path_continuous_services(
         path_station_ids.append(s.id)
 
     snapshot_id = get_active_timetable_snapshot_id(db)
-    
+
     try:
         services = find_network_path_continuous_services(
-            db, 
-            timetable_snapshot_id=snapshot_id, 
-            path_station_ids=path_station_ids
+            db, timetable_snapshot_id=snapshot_id, path_station_ids=path_station_ids
         )
-        
+
         return schemas.NetworkPathContinuousServicesResponse(
             path=[station_map[c.lower()].code for c in station_codes],
             timetable_snapshot_id=snapshot_id,
             total_services_returned=len(services),
-            services=services
+            services=services,
         )
     except ValueError as e:
         msg = str(e)

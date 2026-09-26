@@ -199,3 +199,152 @@ def test_path_not_in_topology(db_session: Session) -> None:
 
     with pytest.raises(ValueError, match=r"Path segment .* does not exist"):
         find_network_path_continuous_services(db_session, 1, [s1.id, s2.id])
+
+
+def test_continuous_path_different_trains(db_session: Session) -> None:
+    source = create_deps(db_session)
+    from railgati.models.station import Station
+
+    s1, s2, s3 = Station(code="A"), Station(code="B"), Station(code="C")
+    db_session.add_all([s1, s2, s3])
+    db_session.flush()
+    db_session.add(DatasetSnapshot(id=1, source_id=source.id, status="ACTIVE"))
+    db_session.add(RailwayGraphBuild(timetable_snapshot_id=1, status="ACTIVE"))
+    db_session.add_all(
+        [
+            RailwayNetworkEdge(
+                timetable_snapshot_id=1, from_station_id=s1.id, to_station_id=s2.id, train_count=1
+            ),
+            RailwayNetworkEdge(
+                timetable_snapshot_id=1, from_station_id=s2.id, to_station_id=s3.id, train_count=1
+            ),
+        ]
+    )
+
+    t1, t2 = Train(number="1"), Train(number="2")
+    db_session.add_all([t1, t2])
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            RailwayServiceEdge(
+                timetable_snapshot_id=1,
+                train_id=t1.id,
+                from_stop_sequence=1,
+                to_stop_sequence=2,
+                from_station_id=s1.id,
+                to_station_id=s2.id,
+            ),
+            RailwayServiceEdge(
+                timetable_snapshot_id=1,
+                train_id=t2.id,
+                from_stop_sequence=2,
+                to_stop_sequence=3,
+                from_station_id=s2.id,
+                to_station_id=s3.id,
+            ),
+        ]
+    )
+    db_session.flush()
+
+    res = find_network_path_continuous_services(db_session, 1, [s1.id, s2.id, s3.id])
+    assert len(res) == 0
+
+
+def test_continuous_path_reverse_direction(db_session: Session) -> None:
+    source = create_deps(db_session)
+    from railgati.models.station import Station
+
+    s1, s2, s3 = Station(code="A"), Station(code="B"), Station(code="C")
+    db_session.add_all([s1, s2, s3])
+    db_session.flush()
+    db_session.add(DatasetSnapshot(id=1, source_id=source.id, status="ACTIVE"))
+    db_session.add(RailwayGraphBuild(timetable_snapshot_id=1, status="ACTIVE"))
+
+    # Valid forward edges
+    db_session.add_all(
+        [
+            RailwayNetworkEdge(
+                timetable_snapshot_id=1, from_station_id=s1.id, to_station_id=s2.id, train_count=1
+            ),
+            RailwayNetworkEdge(
+                timetable_snapshot_id=1, from_station_id=s2.id, to_station_id=s3.id, train_count=1
+            ),
+        ]
+    )
+    db_session.flush()
+
+    with pytest.raises(ValueError, match="Path segment .* does not exist"):
+        find_network_path_continuous_services(db_session, 1, [s3.id, s2.id, s1.id])
+
+
+def test_continuous_path_missing_graph(db_session: Session) -> None:
+    source = create_deps(db_session)
+    from railgati.models.station import Station
+
+    s1, s2 = Station(code="A"), Station(code="B")
+    db_session.add_all([s1, s2])
+    db_session.flush()
+    db_session.add(DatasetSnapshot(id=1, source_id=source.id, status="ACTIVE"))
+    db_session.flush()
+
+    # Missing RailwayGraphBuild
+    with pytest.raises(ValueError, match="Active graph build unavailable"):
+        find_network_path_continuous_services(db_session, 1, [s1.id, s2.id])
+
+
+def test_continuous_path_cross_day(db_session: Session) -> None:
+    source = create_deps(db_session)
+    from railgati.models.station import Station
+
+    s1, s2, s3 = Station(code="A"), Station(code="B"), Station(code="C")
+    db_session.add_all([s1, s2, s3])
+    db_session.flush()
+    db_session.add(DatasetSnapshot(id=1, source_id=source.id, status="ACTIVE"))
+    db_session.add(RailwayGraphBuild(timetable_snapshot_id=1, status="ACTIVE"))
+    db_session.add_all(
+        [
+            RailwayNetworkEdge(
+                timetable_snapshot_id=1, from_station_id=s1.id, to_station_id=s2.id, train_count=1
+            ),
+            RailwayNetworkEdge(
+                timetable_snapshot_id=1, from_station_id=s2.id, to_station_id=s3.id, train_count=1
+            ),
+        ]
+    )
+    t1 = Train(number="1")
+    db_session.add(t1)
+    db_session.flush()
+    db_session.add(TrainObservation(snapshot_id=1, train_id=t1.id, name="Cross Day Train"))
+
+    db_session.add_all(
+        [
+            RailwayServiceEdge(
+                timetable_snapshot_id=1,
+                train_id=t1.id,
+                from_stop_sequence=1,
+                to_stop_sequence=2,
+                from_station_id=s1.id,
+                to_station_id=s2.id,
+                departure_time="23:00",
+                arrival_time="23:55",
+                source_day_offset=0,
+            ),
+            RailwayServiceEdge(
+                timetable_snapshot_id=1,
+                train_id=t1.id,
+                from_stop_sequence=2,
+                to_stop_sequence=3,
+                from_station_id=s2.id,
+                to_station_id=s3.id,
+                departure_time="00:10",
+                arrival_time="01:00",
+                source_day_offset=1,
+            ),
+        ]
+    )
+    db_session.flush()
+
+    res = find_network_path_continuous_services(db_session, 1, [s1.id, s2.id, s3.id])
+    assert len(res) == 1
+    assert res[0].total_duration_minutes == 120  # 23:00 day 0 to 01:00 day 1 -> 2 hours

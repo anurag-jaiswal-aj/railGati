@@ -78,7 +78,9 @@ def path_attribution_data(db_session: Session) -> dict[str, Any]:
     return {"s1": s1, "s2": s2, "s3": s3, "snap": snap}
 
 
-def test_get_path_attribution_success(client: TestClient, path_attribution_data: dict[str, Any]) -> None:
+def test_get_path_attribution_success(
+    client: TestClient, path_attribution_data: dict[str, Any]
+) -> None:
     response = client.get("/api/v1/network/path/attribution", params={"path": "A,B,C"})
     assert response.status_code == 200
     data = response.json()

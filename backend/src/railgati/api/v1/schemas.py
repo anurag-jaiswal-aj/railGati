@@ -264,6 +264,7 @@ class NetworkPathAttributionResponse(BaseModel):
     timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
     segments: list[NetworkPathAttributionSegment]
 
+
 class NetworkPathContinuousServiceItem(BaseModel):
     """A continuous historical train service covering an entire topological path."""
 
