@@ -220,3 +220,27 @@ class NetworkPathResponse(BaseModel):
     total_paths_returned: int = Field(..., description="Number of paths actually returned")
     paths: list[NetworkPathItem]
 
+
+class NetworkServiceOccurrenceItem(BaseModel):
+    """A single physical service-edge occurrence joining two stations."""
+
+    train_number: str = Field(..., description="Canonical train number")
+    train_name: str = Field(..., description="Canonical train name from active snapshot")
+    train_type: str | None = Field(None, description="Train type classification")
+    return_train_number: str | None = Field(None, description="Return train number if known")
+    from_stop_sequence: int = Field(..., description="Sequence number at the from-station")
+    to_stop_sequence: int = Field(..., description="Sequence number at the to-station")
+    departure_time: str | None = Field(None, description="Departure time from origin")
+    arrival_time: str | None = Field(None, description="Arrival time at destination")
+    duration_minutes: int | None = Field(None, description="Duration in minutes")
+    source_day_offset: int | None = Field(None, description="Source day offset at origin")
+
+
+class NetworkServiceAttributionResponse(BaseModel):
+    """Response containing bounded topological paths between an origin and destination."""
+
+    origin: str = Field(..., description="Canonical origin station code")
+    destination: str = Field(..., description="Canonical destination station code")
+    timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
+    occurrences_returned: int = Field(..., description="Number of occurrences returned")
+    occurrences: list[NetworkServiceOccurrenceItem]

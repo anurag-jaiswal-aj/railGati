@@ -12,6 +12,7 @@ from railgati.api.v1.schemas import (
     NetworkPathStation,
     NetworkReachabilityItem,
     NetworkReachabilityResponse,
+    NetworkServiceAttributionResponse,
 )
 from railgati.api.v1.snapshots import (
     get_active_station_snapshot_id,
@@ -168,12 +169,15 @@ def get_network_path(
     """Explore bounded paths between origin and destination."""
 
     # 1. Resolve Stations
-    stations_q = db.execute(
-        select(Station)
-        .filter(
-            func.lower(Station.code).in_([origin.lower(), destination.lower()])
+    stations_q = (
+        db.execute(
+            select(Station).filter(
+                func.lower(Station.code).in_([origin.lower(), destination.lower()])
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     origin_station = next((s for s in stations_q if s.code.lower() == origin.lower()), None)
     dest_station = next((s for s in stations_q if s.code.lower() == destination.lower()), None)
@@ -250,3 +254,104 @@ def get_network_path(
         paths=items,
     )
 
+
+@router.get(
+    "/attribution",
+    response_model=NetworkServiceAttributionResponse,
+    summary="Get network service attribution",
+    description=(
+        "Explains which historical service-edge occurrences contributed to a materialized "
+        "RailwayNetworkEdge. This does not imply passenger routing viability."
+    ),
+)
+def get_network_service_attribution(
+    origin: Annotated[
+        str,
+        Query(
+            description="Canonical origin station code.",
+            min_length=1,
+            max_length=50,
+        ),
+    ],
+    destination: Annotated[
+        str,
+        Query(
+            description="Canonical destination station code.",
+            min_length=1,
+            max_length=50,
+        ),
+    ],
+    db: Session = Depends(get_db),  # noqa: B008
+) -> NetworkServiceAttributionResponse:
+    """Discover network service attribution."""
+
+    # 1. Resolve Stations
+    stations_q = (
+        db.execute(
+            select(Station).filter(
+                func.lower(Station.code).in_([origin.lower(), destination.lower()])
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    origin_station = next((s for s in stations_q if s.code.lower() == origin.lower()), None)
+    dest_station = next((s for s in stations_q if s.code.lower() == destination.lower()), None)
+
+    if not origin_station:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Origin station '{origin.upper()}' not found.",
+        )
+    if not dest_station:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Destination station '{destination.upper()}' not found.",
+        )
+
+    # 2. Get Active Timetable Snapshot
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    # 3. Call the Discovery Service
+    from railgati.services.network import find_network_service_occurrences
+
+    try:
+        service_results = find_network_service_occurrences(
+            db=db,
+            timetable_snapshot_id=timetable_snapshot_id,
+            origin_station_id=origin_station.id,
+            destination_station_id=dest_station.id,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        ) from e
+
+    # 4. Map to Response Schema
+    from railgati.api.v1.schemas import NetworkServiceOccurrenceItem
+
+    items = [
+        NetworkServiceOccurrenceItem(
+            train_number=res.train_number,
+            train_name=res.train_name,
+            train_type=res.train_type,
+            return_train_number=res.return_train_number,
+            from_stop_sequence=res.from_stop_sequence,
+            to_stop_sequence=res.to_stop_sequence,
+            departure_time=res.departure_time,
+            arrival_time=res.arrival_time,
+            duration_minutes=res.duration_minutes,
+            source_day_offset=res.source_day_offset,
+        )
+        for res in service_results
+    ]
+
+    return NetworkServiceAttributionResponse(
+        origin=origin_station.code,
+        destination=dest_station.code,
+        timetable_snapshot_id=timetable_snapshot_id,
+        occurrences_returned=len(items),
+        occurrences=items,
+    )

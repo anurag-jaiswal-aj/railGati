@@ -232,8 +232,8 @@ def test_station_metadata_snapshot_isolation(
     client: TestClient, db_session: Session, network_api_data: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Test that station metadata is strictly isolated to the active station snapshot."""
-    from railgati.models.station import Station, StationObservation
     from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.station import Station, StationObservation
     from railgati.services.network import StationReachability
 
     # Create a test station
@@ -292,10 +292,10 @@ def test_station_metadata_snapshot_isolation(
     response = client.get(f"/api/v1/network/reachable?origin={network_api_data['org_code']}")
     assert response.status_code == 200
     data = response.json()
-    
+
     assert data["total"] == 1
     assert len(data["stations"]) == 1
-    
+
     dest = data["stations"][0]
     assert dest["station_code"] == "TEST_META"
     # Must be exactly the active snapshot's name

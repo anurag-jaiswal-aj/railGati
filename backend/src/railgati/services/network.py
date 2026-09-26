@@ -173,3 +173,95 @@ def find_network_paths(
     ).all()
 
     return [NetworkPath(hop_count=row[0], station_ids=row[1]) for row in results]
+
+
+class NetworkServiceOccurrence(BaseModel):
+    """Internal model for a service-edge occurrence."""
+
+    train_number: str
+    train_name: str
+    train_type: str | None
+    return_train_number: str | None
+    from_stop_sequence: int
+    to_stop_sequence: int
+    departure_time: str | None
+    arrival_time: str | None
+    duration_minutes: int | None
+    source_day_offset: int | None
+
+
+def find_network_service_occurrences(
+    db: Session,
+    timetable_snapshot_id: int,
+    origin_station_id: int,
+    destination_station_id: int,
+    limit: int = 500,
+) -> list[NetworkServiceOccurrence]:
+    """Find historical service-edge occurrences for a given network edge."""
+
+    # Require an ACTIVE timetable snapshot and graph build
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(
+            DatasetSnapshot.id == timetable_snapshot_id, DatasetSnapshot.status == "ACTIVE"
+        )
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    build = db.scalar(
+        select(RailwayGraphBuild).filter(
+            RailwayGraphBuild.timetable_snapshot_id == timetable_snapshot_id
+        )
+    )
+    if not build or build.status != "ACTIVE":
+        raise ValueError("Active graph build unavailable for this snapshot")
+
+    from railgati.models.graph import RailwayServiceEdge
+    from railgati.models.train import Train, TrainObservation
+
+    query = (
+        select(
+            Train.number.label("train_number"),
+            TrainObservation.name.label("train_name"),
+            TrainObservation.type.label("train_type"),
+            TrainObservation.return_train_number.label("return_train_number"),
+            RailwayServiceEdge.from_stop_sequence,
+            RailwayServiceEdge.to_stop_sequence,
+            RailwayServiceEdge.departure_time,
+            RailwayServiceEdge.arrival_time,
+            RailwayServiceEdge.duration_minutes,
+            RailwayServiceEdge.source_day_offset,
+        )
+        .select_from(RailwayServiceEdge)
+        .join(Train, RailwayServiceEdge.train_id == Train.id)
+        .join(
+            TrainObservation,
+            (RailwayServiceEdge.train_id == TrainObservation.train_id)
+            & (TrainObservation.snapshot_id == timetable_snapshot_id),
+        )
+        .filter(
+            RailwayServiceEdge.timetable_snapshot_id == timetable_snapshot_id,
+            RailwayServiceEdge.from_station_id == origin_station_id,
+            RailwayServiceEdge.to_station_id == destination_station_id,
+        )
+        .order_by(Train.number.asc(), RailwayServiceEdge.from_stop_sequence.asc())
+        .limit(limit)
+    )
+
+    results = db.execute(query).all()
+
+    return [
+        NetworkServiceOccurrence(
+            train_number=row.train_number,
+            train_name=row.train_name,
+            train_type=row.train_type,
+            return_train_number=row.return_train_number,
+            from_stop_sequence=row.from_stop_sequence,
+            to_stop_sequence=row.to_stop_sequence,
+            departure_time=row.departure_time,
+            arrival_time=row.arrival_time,
+            duration_minutes=row.duration_minutes,
+            source_day_offset=row.source_day_offset,
+        )
+        for row in results
+    ]
