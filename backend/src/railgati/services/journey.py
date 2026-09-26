@@ -103,7 +103,11 @@ def find_direct_journeys(
 
         # We also need to ensure dest >= orig in source day as a baseline sanity check
         is_temporally_sane = True
-        if d_stop.source_day is not None and o_stop.source_day is not None and d_stop.source_day < o_stop.source_day:
+        if (
+            d_stop.source_day is not None
+            and o_stop.source_day is not None
+            and d_stop.source_day < o_stop.source_day
+        ):
             is_temporally_sane = False
 
         if orig_mins is not None and dest_mins is not None and is_temporally_sane:

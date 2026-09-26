@@ -63,22 +63,44 @@ def train_db(db_session: Session) -> Session:
 
     # Train Observations
     tobs1 = TrainObservation(
-        snapshot_id=tt_snap.id, train_id=t1.id, name="Mumbai Rajdhani", type="Rajdhani", return_train_number="12951"
+        snapshot_id=tt_snap.id,
+        train_id=t1.id,
+        name="Mumbai Rajdhani",
+        type="Rajdhani",
+        return_train_number="12951",
     )
     tobs2 = TrainObservation(
-        snapshot_id=tt_snap.id, train_id=t2.id, name="Mumbai Rajdhani Premium", type="Premium", return_train_number=None
+        snapshot_id=tt_snap.id,
+        train_id=t2.id,
+        name="Mumbai Rajdhani Premium",
+        type="Premium",
+        return_train_number=None,
     )
     tobs3 = TrainObservation(
-        snapshot_id=tt_snap.id, train_id=t3.id, name="Delhi Rajdhani", type="Rajdhani", return_train_number="12952"
+        snapshot_id=tt_snap.id,
+        train_id=t3.id,
+        name="Delhi Rajdhani",
+        type="Rajdhani",
+        return_train_number="12952",
     )
     db_session.add_all([tobs1, tobs2, tobs3])
 
     # Stops for 12952
     stop1 = TrainStopObservation(
-        snapshot_id=tt_snap.id, train_id=t1.id, station_id=s1.id, stop_sequence=1, departure_time="16:55:00", source_day=1
+        snapshot_id=tt_snap.id,
+        train_id=t1.id,
+        station_id=s1.id,
+        stop_sequence=1,
+        departure_time="16:55:00",
+        source_day=1,
     )
     stop2 = TrainStopObservation(
-        snapshot_id=tt_snap.id, train_id=t1.id, station_id=s2.id, stop_sequence=2, arrival_time="08:35:00", source_day=2
+        snapshot_id=tt_snap.id,
+        train_id=t1.id,
+        station_id=s2.id,
+        stop_sequence=2,
+        arrival_time="08:35:00",
+        source_day=2,
     )
     db_session.add_all([stop1, stop2])
     db_session.commit()
@@ -98,7 +120,11 @@ def train_db(db_session: Session) -> Session:
     db_session.commit()
 
     tobs4 = TrainObservation(
-        snapshot_id=old_snap.id, train_id=t4.id, name="Old Train", type="Old", return_train_number=None
+        snapshot_id=old_snap.id,
+        train_id=t4.id,
+        name="Old Train",
+        type="Old",
+        return_train_number=None,
     )
     db_session.add(tobs4)
     db_session.commit()

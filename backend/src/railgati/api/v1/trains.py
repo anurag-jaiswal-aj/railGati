@@ -14,13 +14,14 @@ from railgati.api.v1.schemas import (
     TrainSearchItem,
     TrainStopResponse,
 )
-from railgati.api.v1.snapshots import get_active_station_snapshot_id
+from railgati.api.v1.snapshots import (
+    get_active_station_snapshot_id,
+    get_active_timetable_snapshot_id,
+)
 from railgati.db import get_db
 from railgati.models.provenance import DatasetSnapshot, DataSource
 from railgati.models.station import Station, StationObservation
 from railgati.models.train import Train, TrainObservation, TrainStopObservation
-
-from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
 
 router = APIRouter(prefix="/trains", tags=["Trains"])
 
@@ -32,7 +33,9 @@ def search_trains(
     page: Annotated[int, Query(ge=1)] = 1,
     size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> PaginatedResponse[TrainSearchItem]:
-    """Search canonical railway trains by train number and/or name using the historical timetable."""
+    """Search canonical railway trains by train number and/or name
+    using the historical timetable.
+    """
     snapshot_id = get_active_timetable_snapshot_id(db)
 
     query = (
@@ -147,9 +150,6 @@ def get_train_detail(
     )
 
 
-
-
-
 @router.get("/{train_number}/route", response_model=list[TrainStopResponse])
 def get_train_route(
     train_number: str,
@@ -180,8 +180,8 @@ def get_train_route(
         .join(Station, Station.id == TrainStopObservation.station_id)
         .outerjoin(
             StationObservation,
-            (StationObservation.station_id == Station.id) &
-            (StationObservation.snapshot_id == station_snapshot_id)
+            (StationObservation.station_id == Station.id)
+            & (StationObservation.snapshot_id == station_snapshot_id),
         )
         .join(Train, Train.id == TrainStopObservation.train_id)
         .filter(
@@ -204,7 +204,3 @@ def get_train_route(
         )
         for obs, station, station_obs in results
     ]
-
-
-
-

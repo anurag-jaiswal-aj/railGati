@@ -214,4 +214,7 @@ def test_timetable_ingestion_failure_safety(db_session: Session) -> None:
     # 5. Verify failed snapshot behavior
     failed_snapshots = db_session.query(DatasetSnapshot).filter_by(status="FAILED").all()
     assert len(failed_snapshots) == 1
-    assert failed_snapshots[0].error_message and "Fake database or parsing error" in failed_snapshots[0].error_message
+    assert (
+        failed_snapshots[0].error_message
+        and "Fake database or parsing error" in failed_snapshots[0].error_message
+    )

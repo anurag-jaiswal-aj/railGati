@@ -11,7 +11,7 @@ from railgati.services.journey import find_direct_journeys
 
 
 @pytest.fixture
-def test_data(db_session: Session) -> dict:
+def test_data(db_session: Session) -> dict[str, int]:
     """Fixture providing deterministic test data."""
     # 1. Provenance
     source = DataSource(
@@ -360,7 +360,7 @@ def test_data(db_session: Session) -> dict:
     }
 
 
-def test_direct_journey_found_and_correct_metrics(db_session: Session, test_data: dict) -> None:
+def test_direct_journey_found_and_correct_metrics(db_session: Session, test_data: dict[str, int]) -> None:
     """Test standard direct journey A -> B yields correct output."""
     journeys = find_direct_journeys(
         db_session, test_data["snap1"], test_data["st_a"], test_data["st_b"]
@@ -378,7 +378,7 @@ def test_direct_journey_found_and_correct_metrics(db_session: Session, test_data
     assert t1_journey.legs[0].destination_station == "B"
 
 
-def test_direct_journey_not_found(db_session: Session, test_data: dict) -> None:
+def test_direct_journey_not_found(db_session: Session, test_data: dict[str, int]) -> None:
     """Test unlinked stations yield empty."""
     journeys = find_direct_journeys(
         db_session, test_data["snap1"], test_data["st_d"], test_data["st_a"]
@@ -386,7 +386,7 @@ def test_direct_journey_not_found(db_session: Session, test_data: dict) -> None:
     assert len(journeys) == 0
 
 
-def test_destination_before_origin_rejected(db_session: Session, test_data: dict) -> None:
+def test_destination_before_origin_rejected(db_session: Session, test_data: dict[str, int]) -> None:
     """Train 10001 goes A -> B -> C. C -> A should not match 10001."""
     journeys = find_direct_journeys(
         db_session, test_data["snap1"], test_data["st_c"], test_data["st_a"]
@@ -397,7 +397,7 @@ def test_destination_before_origin_rejected(db_session: Session, test_data: dict
     assert any(j.legs[0].train_number == "10002" for j in journeys)
 
 
-def test_missing_departure_null_duration(db_session: Session, test_data: dict) -> None:
+def test_missing_departure_null_duration(db_session: Session, test_data: dict[str, int]) -> None:
     journeys = find_direct_journeys(
         db_session, test_data["snap1"], test_data["st_a"], test_data["st_b"]
     )
@@ -406,7 +406,7 @@ def test_missing_departure_null_duration(db_session: Session, test_data: dict) -
     assert t4.timing_confidence == TimingConfidence.MISSING_DATA
 
 
-def test_missing_arrival_null_duration(db_session: Session, test_data: dict) -> None:
+def test_missing_arrival_null_duration(db_session: Session, test_data: dict[str, int]) -> None:
     journeys = find_direct_journeys(
         db_session, test_data["snap1"], test_data["st_a"], test_data["st_b"]
     )
@@ -415,7 +415,7 @@ def test_missing_arrival_null_duration(db_session: Session, test_data: dict) -> 
     assert t5.timing_confidence == TimingConfidence.MISSING_DATA
 
 
-def test_missing_source_day_null_duration(db_session: Session, test_data: dict) -> None:
+def test_missing_source_day_null_duration(db_session: Session, test_data: dict[str, int]) -> None:
     journeys = find_direct_journeys(
         db_session, test_data["snap1"], test_data["st_a"], test_data["st_b"]
     )
@@ -424,7 +424,7 @@ def test_missing_source_day_null_duration(db_session: Session, test_data: dict) 
     assert t6.timing_confidence == TimingConfidence.MISSING_DATA
 
 
-def test_cross_day_duration(db_session: Session, test_data: dict) -> None:
+def test_cross_day_duration(db_session: Session, test_data: dict[str, int]) -> None:
     journeys = find_direct_journeys(
         db_session, test_data["snap1"], test_data["st_a"], test_data["st_b"]
     )
@@ -434,7 +434,7 @@ def test_cross_day_duration(db_session: Session, test_data: dict) -> None:
     assert t7.timing_confidence == TimingConfidence.HIGH
 
 
-def test_invalid_temporal_ordering_null_duration(db_session: Session, test_data: dict) -> None:
+def test_invalid_temporal_ordering_null_duration(db_session: Session, test_data: dict[str, int]) -> None:
     journeys = find_direct_journeys(
         db_session, test_data["snap1"], test_data["st_a"], test_data["st_b"]
     )
@@ -443,7 +443,7 @@ def test_invalid_temporal_ordering_null_duration(db_session: Session, test_data:
     assert t8.timing_confidence == TimingConfidence.MISSING_DATA
 
 
-def test_multiple_station_visits_handled_correctly(db_session: Session, test_data: dict) -> None:
+def test_multiple_station_visits_handled_correctly(db_session: Session, test_data: dict[str, int]) -> None:
     # 10003 visits B twice (stops 2 and 4). A is stop 1.
     # It should pick A -> first B (stop 2).
     journeys = find_direct_journeys(
@@ -454,7 +454,7 @@ def test_multiple_station_visits_handled_correctly(db_session: Session, test_dat
     assert t3.total_duration_minutes == 60  # 08:00 to 09:00
 
 
-def test_snapshot_isolation(db_session: Session, test_data: dict) -> None:
+def test_snapshot_isolation(db_session: Session, test_data: dict[str, int]) -> None:
     journeys1 = find_direct_journeys(
         db_session, test_data["snap1"], test_data["st_a"], test_data["st_b"]
     )
@@ -469,7 +469,7 @@ def test_snapshot_isolation(db_session: Session, test_data: dict) -> None:
     assert not any(j.legs[0].train_number == "10001" for j in journeys2)
 
 
-def test_deterministic_ordering(db_session: Session, test_data: dict) -> None:
+def test_deterministic_ordering(db_session: Session, test_data: dict[str, int]) -> None:
     journeys = find_direct_journeys(
         db_session, test_data["snap1"], test_data["st_a"], test_data["st_b"]
     )

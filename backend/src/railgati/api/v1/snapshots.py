@@ -17,7 +17,7 @@ def get_active_station_snapshot_id(db: Session) -> int:
         select(DatasetSnapshot.id)
         .filter(
             DatasetSnapshot.status == "ACTIVE",
-            DatasetSnapshot.id.in_(select(StationObservation.snapshot_id))
+            DatasetSnapshot.id.in_(select(StationObservation.snapshot_id)),
         )
         .order_by(DatasetSnapshot.retrieved_at.desc())
         .limit(1)

@@ -13,13 +13,12 @@ from railgati.api.v1.schemas import (
     StationSearchItem,
     TrainSearchItem,
 )
-from railgati.api.v1.trains import get_active_timetable_snapshot_id
+from railgati.api.v1.snapshots import get_active_station_snapshot_id
+from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
 from railgati.db import get_db
 from railgati.models.provenance import DatasetSnapshot, DataSource
 from railgati.models.station import Station, StationObservation
 from railgati.models.train import Train, TrainObservation, TrainStopObservation
-
-from railgati.api.v1.snapshots import get_active_station_snapshot_id
 
 router = APIRouter(prefix="/stations", tags=["Stations"])
 
@@ -128,8 +127,6 @@ def get_station_detail(
             retrieved_at=snapshot.retrieved_at,
         ),
     )
-
-
 
 
 @router.get("/{station_code}/trains", response_model=PaginatedResponse[TrainSearchItem])

@@ -106,10 +106,15 @@ def test_get_station_trains_success(client: TestClient, populated_db: Session) -
     # 4. Train Stops
     # Find NDLS station_id
     ndls_station = populated_db.query(Station).filter_by(code="NDLS").one()
-    stop1 = TrainStopObservation(snapshot_id=tt_snap.id, train_id=t1.id, station_id=ndls_station.id, stop_sequence=1)
+    stop1 = TrainStopObservation(
+        snapshot_id=tt_snap.id, train_id=t1.id, station_id=ndls_station.id, stop_sequence=1
+    )
 
-    # Add duplicate stop for the same train theoretically visiting the station again to test deduplication
-    stop1_dup = TrainStopObservation(snapshot_id=tt_snap.id, train_id=t1.id, station_id=ndls_station.id, stop_sequence=2)
+    # Add duplicate stop for the same train theoretically visiting
+    # the station again to test deduplication
+    stop1_dup = TrainStopObservation(
+        snapshot_id=tt_snap.id, train_id=t1.id, station_id=ndls_station.id, stop_sequence=2
+    )
     populated_db.add_all([stop1, stop1_dup])
     populated_db.commit()
 
