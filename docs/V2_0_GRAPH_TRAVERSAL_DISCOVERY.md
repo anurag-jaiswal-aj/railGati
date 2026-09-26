@@ -39,7 +39,7 @@ Phase 2 focuses exclusively on **Network Topology**.
 
 ## 8. Cycle Handling
 The graph contains bidirectional routes and potential cycles (e.g., A $\rightarrow$ B $\rightarrow$ A).
-- **Strategy**: The CTE will track visited stations using a PostgreSQL `ARRAY` (e.g., `r.path || e.to_station_id`). The recursive join will strictly enforce `e.to_station_id != ALL(r.path)`. This natively prevents infinite loops and terminates cyclic paths immediately.
+- **Strategy**: The CTE tracks visited stations using string concatenation (e.g., `',' || from_station_id || ',' || to_station_id || ','`). The recursive join strictly enforces `r.visited NOT LIKE '%,' || e.to_station_id || ',%'`. This natively prevents infinite loops and terminates cyclic paths immediately while maintaining universal compatibility (PostgreSQL/SQLite).
 
 ## 9. Maximum Depth
 To protect database resources, traversal must have a hard upper bound.
@@ -61,7 +61,7 @@ The primitive will aggregate the CTE output to return a set of distinct reachabl
 For reachability, individual paths (e.g., A $\rightarrow$ B $\rightarrow$ C vs A $\rightarrow$ D $\rightarrow$ C) are deduplicated in the final aggregation (`SELECT station_id, MIN(depth)`). Explicit path sequence reconstruction is deferred to shortest-path discovery.
 
 ## 14. Self-Loop Handling
-The dataset contains a valid self-loop. The CTE array constraint (`to_station_id != ALL(path)`) natively handles this. If a path is at Station A, traversing A $\rightarrow$ A is immediately rejected because A is already in the visited array. Self-loops safely evaporate during traversal.
+The dataset contains a valid self-loop. The CTE string constraint natively handles this. If a path is at Station A, traversing A $\rightarrow$ A is immediately rejected because A is already in the visited string. Additionally, the base case explicitly filters `to_station_id != origin_id`. Self-loops safely evaporate during traversal.
 
 ## 15. Timing Semantics
 Timing is **strictly ignored**. `NetworkEdge.min_duration_minutes` is unused.
@@ -103,7 +103,12 @@ The performance is profoundly efficient due to the optimal `ix_network_edges_fro
 PostgreSQL is definitively the correct technology. It natively handles cycle-free recursive queries in sub-20 milliseconds. There is absolutely no justification for introducing a secondary Graph Database (Neo4j/RedisGraph) at this scale.
 
 ## 22. Future Multi-Transfer Compatibility
-This CTE architectural pattern establishes the exact paradigm needed for future `ServiceEdge` routing. Multi-transfer journey discovery will reuse the CTE structure but shift to `ServiceEdge` and expand the recursive JOIN to include `arrival_time < departure_time - buffer` logic.
+This CTE architectural pattern establishes a conceptual paradigm for future graph exploration, but **topology traversal is only a foundation**. Multi-transfer passenger routing CANNOT be implemented merely by swapping `NetworkEdge` for `ServiceEdge`. Passenger routing requires significantly more state, including:
+- Train identity and stop occurrence
+- Arrival and departure timing
+- Minimum transfer buffers
+- Source-day progression
+- Potentially additional journey constraints
 
 ## 23. Deferred Scope
 - Shortest-path sequential route reconstruction.
@@ -114,8 +119,8 @@ This CTE architectural pattern establishes the exact paradigm needed for future 
 - Should `max_hops=1` be extracted into a dedicated `/api/v1/network/neighbors` convenience endpoint, or is `/reachable` sufficient?
 
 ## 25. Implementation Sequence
-1. Implement `find_reachable_stations` service logic with CTE.
-2. Add service-level unit tests for varying `max_hops`, cycle prevention, and snapshot status validation.
+1. ~~Implement `find_reachable_stations` service logic with CTE.~~ *(IMPLEMENTED)*
+2. ~~Add service-level unit tests for varying `max_hops`, cycle prevention, and snapshot status validation.~~ *(IMPLEMENTED)*
 3. Expose `GET /api/v1/network/reachable` endpoint.
 4. Add API integration tests.
 
