@@ -42,7 +42,7 @@ Phase 2C will initially use the **bounded simple topology paths** strategy:
 ## 7. Resource Safety
 The following execution boundaries must be distinguished:
 - **`max_hops`**: Bounds the recursion depth.
-- **`max_paths`**: Bounds the number of paths returned to the caller. This is an OUTPUT LIMIT and does NOT automatically guarantee that PostgreSQL stops CTE generation after `max_paths` paths. It does not by itself prevent CTE materialization explosion.
+- **`max_paths`**: Bounds the number of paths returned to the caller. This is an OUTPUT LIMIT and does NOT automatically guarantee that PostgreSQL stops CTE generation after `max_paths` paths. Because the specification requires deterministic global ordering before truncation, PostgreSQL must generate and sort all qualifying recursive paths up to `max_hops` before applying the `LIMIT`. It does not by itself prevent CTE materialization explosion.
 - **Cycle prevention**: Bounds repeated-node traversal by preventing infinite loops.
 - **Future execution-level safeguards**: Statement timeout, query planning/benchmarking, and potentially a bounded traversal design that terminates generation earlier must be evaluated before claiming strong database-side protection.
 
