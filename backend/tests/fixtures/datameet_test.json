@@ -1,0 +1,75 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "geometry": {
+        "type": "Point",
+        "coordinates": [75.4516454, 27.2520587]
+      },
+      "type": "Feature",
+      "properties": {
+        "state": "Rajasthan",
+        "code": "BDHL",
+        "name": "Badhal",
+        "zone": "NWR",
+        "address": "Kishangarh Renwal, Rajasthan"
+      }
+    },
+    {
+      "geometry": {
+        "type": "Point",
+        "coordinates": [77.5708669, 9.3546604]
+      },
+      "type": "Feature",
+      "properties": {
+        "state": null,
+        "code": "CPM",
+        "name": "CHOLAPURAM",
+        "zone": null,
+        "address": null
+      }
+    },
+    {
+      "geometry": {
+        "type": "Point",
+        "coordinates": [200.0, 90.0]
+      },
+      "type": "Feature",
+      "properties": {
+        "state": null,
+        "code": "INVCOORD",
+        "name": "Invalid Coordinates Station",
+        "zone": null,
+        "address": null
+      }
+    },
+    {
+      "geometry": {
+        "type": "Point",
+        "coordinates": [77.5708669, 9.3546604]
+      },
+      "type": "Feature",
+      "properties": {
+        "state": null,
+        "code": "MISSINGNAME",
+        "name": "",
+        "zone": null,
+        "address": null
+      }
+    },
+    {
+      "geometry": {
+        "type": "Point",
+        "coordinates": [75.4516454, 27.2520587]
+      },
+      "type": "Feature",
+      "properties": {
+        "state": "Rajasthan",
+        "code": "BDHL",
+        "name": "Duplicate Badhal",
+        "zone": "NWR",
+        "address": "Duplicate"
+      }
+    }
+  ]
+}

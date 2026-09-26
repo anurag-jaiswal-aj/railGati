@@ -20,9 +20,8 @@ class Settings(BaseSettings):
     host: str = Field(default="127.0.0.1", description="Backend bind host")
     port: int = Field(default=8000, description="Backend bind port")
 
-    # Database
     database_url: str = Field(
-        default="postgresql+psycopg2://railgati:railgati_dev@localhost:5432/railgati",
+        default="postgresql+psycopg2://railgati:railgati_dev@localhost:5433/railgati",
         description="PostgreSQL connection URL",
     )
 

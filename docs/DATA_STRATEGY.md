@@ -91,7 +91,18 @@ This is tracked through `DataSource` and `DatasetSnapshot` entities (to be imple
 
 | Aspect | Status |
 |:-------|:-------|
-| Data ownership architecture | Designed, not implemented |
+| Data ownership architecture | Designed |
 | Provider abstraction | Designed, not implemented |
-| Data ingestion pipeline | Not started (v0.2) |
-| Database tables | Connection foundation only (v0.1) |
+| Data ingestion pipeline | **Implemented (v0.2)** - Generator-based parsing, deterministic validation |
+| Database tables | **Implemented (v0.2)** - Provenance models and Station |
+
+## v0.2 Ingestion Architecture
+
+The data ingestion pipeline guarantees reproducibility, idempotency, and failure safety:
+
+1. **Source Tracking**: Every run associates a `DatasetSnapshot` with a `DataSource` and stores a SHA256 checksum of the raw file.
+2. **Deterministic Parsing**: The dataset is parsed as a generator (`ParsedStation`) to maintain low memory overhead.
+3. **Validation**: Records are validated *before* insertion. Invalid records (missing codes/names, impossible coordinates) are explicitly tracked in the report, never silently swallowed.
+4. **Idempotency**: Existing `code` keys in the database are cached into a `set` to allow fast skip-checks, preventing duplicates without DB constraints failing the batch.
+5. **Failure Safety**: If a fatal error occurs, the transaction is rolled back, the existing `ACTIVE` snapshot remains active, and the new snapshot is marked `FAILED` with the error reason.
+6. **Dry-Run Mode**: Full validation and reporting without `COMMIT`, supporting safe CI integration.

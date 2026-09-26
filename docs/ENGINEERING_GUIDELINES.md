@@ -77,3 +77,13 @@ If there is any cost risk, document it explicitly before introducing it.
 - Direct function calls before message queues.
 - PostgreSQL before adding Redis, PostGIS, or other extensions.
 - Local development before cloud deployment.
+
+## Data Ingestion Rules
+
+- **Deterministic processing**: The same raw dataset must always produce the exact same database state.
+- **Idempotency**: Running ingestion twice must safely no-op the second time without duplicating data.
+- **Validate before activation**: Validate all coordinates, codes, and strings. Report errors explicitly.
+- **No silent data loss**: Keep track of every parsed row, accepted row, and rejected row in a clear report.
+- **Provenance required**: Every domain row must link to a `DatasetSnapshot` showing exactly when and where it came from.
+- **Reproducibility**: Keep manifests and ingestion CLI tools checked in to Git. Large raw files stay out of Git.
+- **Explicit licensing**: Never ingest data whose license does not explicitly allow it. No scraping official portals.
