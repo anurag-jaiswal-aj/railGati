@@ -38,7 +38,8 @@ The railway graph must decouple physical connectivity from service-level connect
 
 ## 10. Timing Semantics
 - The `ServiceEdge` should contain `duration_minutes`, `source_day_offset`, `departure_time`, and `arrival_time`.
-- Aggregated `NetworkEdge` records can store `min_duration_minutes` (fastest historical segment) to optimize heuristics (e.g., A* search).
+- Aggregated `NetworkEdge` records store `min_duration_minutes`, which means "The minimum observed timetable segment duration among the underlying ServiceEdges for this station-to-station edge within the selected timetable snapshot." It does NOT mean guaranteed travel time, universal railway segment duration, passenger journey duration, transfer-aware travel time, or live/current travel time. It is merely metadata to optimize heuristics.
+- Aggregated `NetworkEdge` records also store `train_count`, which means the number of distinct train services represented by the underlying ServiceEdges for that station pair.
 
 ## 11. Candidate Data Model
 PostgreSQL can seamlessly store graph adjacency lists:
@@ -94,7 +95,7 @@ Materialization is a batch process that occurs immediately after a new timetable
 Integrity checks applied during/after build:
 - `from_stop_sequence` must strictly be `< to_stop_sequence`.
 - Edge count must conceptually align with `(total_stops - total_trains)`.
-- No self-loops (`from_station_id != to_station_id`).
+- Self-loops are possible: `ServiceEdge` generation preserves source-derived consecutive station pairs. A self-loop exists when the source timetable contains consecutive observations for the same canonical station. Future traversal algorithms must explicitly handle self-loops.
 - All foreign keys bind to the exact same `snapshot_id`.
 
 ## 17. Index Strategy

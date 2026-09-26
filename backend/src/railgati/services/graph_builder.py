@@ -25,7 +25,9 @@ def build_graph_for_timetable_snapshot(
             RailwayGraphBuild.timetable_snapshot_id == timetable_snapshot_id
         )
     )
+    is_new = False
     if not build_record:
+        is_new = True
         build_record = RailwayGraphBuild(
             timetable_snapshot_id=timetable_snapshot_id,
             status="PENDING",
@@ -33,13 +35,15 @@ def build_graph_for_timetable_snapshot(
         db.add(build_record)
         db.commit()
         db.refresh(build_record)
-    else:
+
+    old_status = build_record.status
+
+    try:
+        # Mark as PENDING in the transaction so it rolls back if we fail
         build_record.status = "PENDING"
         build_record.error_message = None
         build_record.completed_at = None
-        db.commit()
 
-    try:
         # 2. Delete existing edges for idempotency
         db.execute(
             delete(RailwayNetworkEdge).where(
@@ -146,8 +150,14 @@ def build_graph_for_timetable_snapshot(
 
     except Exception as e:
         db.rollback()
-        build_record.status = "FAILED"
+        if is_new or old_status != "ACTIVE":
+            build_record.status = "FAILED"
+        else:
+            build_record.status = "ACTIVE"
+
         build_record.error_message = str(e)
         db.commit()
         db.refresh(build_record)
-        return build_record
+
+        # Raise the exception so it is surfaced to the caller
+        raise e

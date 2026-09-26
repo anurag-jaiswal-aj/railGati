@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from railgati.models.graph import RailwayNetworkEdge, RailwayServiceEdge
+from railgati.models.graph import RailwayGraphBuild, RailwayNetworkEdge, RailwayServiceEdge
 from railgati.models.provenance import DatasetSnapshot, DataSource
 from railgati.models.station import Station
 from railgati.models.train import Train, TrainStopObservation
@@ -338,9 +338,19 @@ def test_failure_rollback(
     # Actually, we can just monkeypatch _parse_time_to_minutes to raise an exception.
     monkeypatch.setattr("railgati.services.graph_builder._parse_time_to_minutes", mock_execute)
 
-    build_record = build_graph_for_timetable_snapshot(db_session, snap1_id)
+    with pytest.raises(ValueError, match="Simulated DB Crash"):
+        build_graph_for_timetable_snapshot(db_session, snap1_id)
+
+    # We need to manually fetch the build_record to check its status since we caught the exception
+    build_record = db_session.scalar(
+        select(RailwayGraphBuild).filter_by(timetable_snapshot_id=snap1_id)
+    )
+    assert build_record is not None
     assert build_record.status == "FAILED"
-    assert build_record.error_message is not None and "Simulated DB Crash" in build_record.error_message
+    assert (
+        build_record.error_message is not None
+        and "Simulated DB Crash" in build_record.error_message
+    )
 
     # Ensure no edges were committed
     count_service = db_session.scalar(
@@ -355,3 +365,187 @@ def test_failure_rollback(
         )
     )
     assert count_network == 0
+
+
+def test_active_rebuild_failure(
+    db_session: Session, graph_data: dict[str, int], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test that a failed rebuild of an ACTIVE graph rolls back and retains ACTIVE status."""
+    snap1_id = graph_data["snap1_id"]
+
+    # First build (successful)
+    build_record = build_graph_for_timetable_snapshot(db_session, snap1_id)
+    assert build_record.status == "ACTIVE"
+
+    # Simulate a crash
+    def mock_execute(*args: object, **kwargs: object) -> None:
+        raise ValueError("Simulated DB Crash 2")
+
+    monkeypatch.setattr("railgati.services.graph_builder._parse_time_to_minutes", mock_execute)
+
+    # Rebuild
+    with pytest.raises(ValueError, match="Simulated DB Crash 2"):
+        build_graph_for_timetable_snapshot(db_session, snap1_id)
+
+    # We need to fetch the build_record to check its status
+    build_record_reloaded = db_session.scalar(
+        select(RailwayGraphBuild).filter_by(timetable_snapshot_id=snap1_id)
+    )
+    assert build_record_reloaded is not None
+    assert build_record_reloaded.status == "ACTIVE"
+    assert (
+        build_record_reloaded.error_message is not None
+        and "Simulated DB Crash 2" in build_record_reloaded.error_message
+    )
+
+    # Ensure edges were preserved
+    count_service = db_session.scalar(
+        select(func.count(RailwayServiceEdge.train_id)).filter(
+            RailwayServiceEdge.timetable_snapshot_id == snap1_id
+        )
+    )
+    assert count_service == 8
+    count_network = db_session.scalar(
+        select(func.count(RailwayNetworkEdge.from_station_id)).filter(
+            RailwayNetworkEdge.timetable_snapshot_id == snap1_id
+        )
+    )
+    assert count_network == 5
+
+
+def test_non_consecutive_stops(db_session: Session, graph_data: dict[str, int]) -> None:
+    """Test that non-consecutive stops do not generate an edge."""
+    snap1_id = graph_data["snap1_id"]
+    st_a = graph_data["st_a_id"]
+    st_b = graph_data["st_b_id"]
+    st_c = graph_data["st_c_id"]
+
+    # Add a train with missing stop 3 (1, 2, 4)
+    train5 = Train(number="555")
+    db_session.add(train5)
+    db_session.commit()
+
+    obs = [
+        TrainStopObservation(
+            snapshot_id=snap1_id,
+            train_id=train5.id,
+            stop_sequence=1,
+            station_id=st_a,
+            source_day=1,
+            departure_time="10:00",
+        ),
+        TrainStopObservation(
+            snapshot_id=snap1_id,
+            train_id=train5.id,
+            stop_sequence=2,
+            station_id=st_b,
+            arrival_time="11:00",
+            departure_time="11:10",
+            source_day=1,
+        ),
+        TrainStopObservation(
+            snapshot_id=snap1_id,
+            train_id=train5.id,
+            stop_sequence=4,
+            station_id=st_c,
+            arrival_time="12:00",
+            source_day=1,
+        ),
+    ]
+    db_session.add_all(obs)
+    db_session.commit()
+
+    build_graph_for_timetable_snapshot(db_session, snap1_id)
+
+    edges = db_session.scalars(
+        select(RailwayServiceEdge)
+        .filter(RailwayServiceEdge.train_id == train5.id)
+        .order_by(RailwayServiceEdge.from_stop_sequence)
+    ).all()
+
+    # Only 1->2 should exist, not 2->4
+    assert len(edges) == 1
+    assert edges[0].from_stop_sequence == 1
+    assert edges[0].to_stop_sequence == 2
+
+
+def test_invalid_timing(db_session: Session, graph_data: dict[str, int]) -> None:
+    """Test inconsistent timing is preserved as structural edge with NULL duration."""
+    snap1_id = graph_data["snap1_id"]
+    st_a = graph_data["st_a_id"]
+    st_b = graph_data["st_b_id"]
+
+    train6 = Train(number="666")
+    db_session.add(train6)
+    db_session.commit()
+
+    # Negative duration (departs 10:00, arrives 09:00 on same day)
+    obs = [
+        TrainStopObservation(
+            snapshot_id=snap1_id,
+            train_id=train6.id,
+            stop_sequence=1,
+            station_id=st_a,
+            departure_time="10:00",
+            source_day=1,
+        ),
+        TrainStopObservation(
+            snapshot_id=snap1_id,
+            train_id=train6.id,
+            stop_sequence=2,
+            station_id=st_b,
+            arrival_time="09:00",
+            source_day=1,
+        ),
+    ]
+    db_session.add_all(obs)
+    db_session.commit()
+
+    build_graph_for_timetable_snapshot(db_session, snap1_id)
+
+    edges = db_session.scalars(
+        select(RailwayServiceEdge).filter(RailwayServiceEdge.train_id == train6.id)
+    ).all()
+
+    assert len(edges) == 1
+    assert edges[0].duration_minutes is None
+
+
+def test_snapshot_isolation(db_session: Session, graph_data: dict[str, int]) -> None:
+    """Test that building a graph for snapshot A only consumes snapshot A data."""
+    snap1_id = graph_data["snap1_id"]
+    snap2_id = graph_data["snap2_id"]
+
+    # Build snap1
+    build_graph_for_timetable_snapshot(db_session, snap1_id)
+
+    # Check snap1 edges
+    snap1_service = db_session.scalar(
+        select(func.count(RailwayServiceEdge.train_id)).filter_by(timetable_snapshot_id=snap1_id)
+    )
+    assert (
+        db_session.scalar(
+            select(func.count(RailwayNetworkEdge.from_station_id)).filter_by(
+                timetable_snapshot_id=snap1_id
+            )
+        )
+        == 5
+    )
+
+    # Check snap2 edges (should be 0)
+    snap2_service = db_session.scalar(
+        select(func.count(RailwayServiceEdge.train_id)).filter_by(timetable_snapshot_id=snap2_id)
+    )
+    snap2_network = db_session.scalar(
+        select(func.count(RailwayNetworkEdge.from_station_id)).filter_by(
+            timetable_snapshot_id=snap2_id
+        )
+    )
+
+    assert snap2_service == 0
+    assert snap2_network == 0
+
+    # Furthermore, verify snap1 doesn't include snap2 data
+    # (snap2 has 1 train with 2 stops, but it was excluded from snap1)
+    # So snap1_service should be exactly 8 (as established in test_build_graph_success)
+    assert snap1_service == 8
