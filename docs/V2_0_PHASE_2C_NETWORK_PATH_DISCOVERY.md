@@ -19,47 +19,64 @@ A topology path (e.g., Station A → Station B → Station C) must NOT automatic
 ## 4. Graph Model
 The existing `RailwayNetworkEdge` provides an aggregated connection between stations (`from_station_id`, `to_station_id`).
 - Path exploration will use `RailwayNetworkEdge` to find paths.
-- We will rely on PostgreSQL recursive CTEs, avoiding external graph databases (e.g., Neo4j) or Python network libraries (e.g., NetworkX), keeping memory footprints and complexity low within the ₹0 budget constraint.
+- We will rely on PostgreSQL recursive CTEs.
 
-## 5. Path Semantics
+## 5. Path Identity and Semantics
+A **topology path identity** is defined as the ordered sequence of canonical station IDs/codes from origin through destination (e.g., `NDLS → AGC → BPL → MAS`). Individual train identities are intentionally NOT part of Phase 2C path identity because `RailwayNetworkEdge` is an aggregated station-to-station graph.
+
 A valid topology path is defined as:
 - A sequence of contiguous directed `RailwayNetworkEdge`s starting at the origin and ending at the destination.
-- **Simple paths only:** No station can be repeated in the path (cycles and self-loops are rejected).
+- **Simple paths only:** No station can be repeated in the path. Cycle prevention using the existing PostgreSQL array-based visited-station approach will natively enforce this.
+- **Self-loop exclusion:** Self-loops (`A → A`) cannot appear in a simple path because they repeat the current station. While they may exist in `RailwayNetworkEdge`, Phase 2C traversal must not include them and they must not create a zero-progress recursive path.
+- **Reverse-direction semantics:** A path from A to B only exists if directed `RailwayNetworkEdge` traversal can reach B from A. The existence of B → A does not imply A → B.
+- **Origin == Destination:** If the origin equals the destination, the API will return a single 0-hop topology path containing only the origin station (`hop_count = 0`, `stations = [origin]`). This is a graph/topology result only and does not represent a passenger journey.
 - **Snapshot isolation:** All edges must belong to the same active timetable snapshot.
-- Reverse-direction paths are only valid if directed edges exist in both directions.
-- Origin = Destination requests evaluate to trivial 0-hop paths (or empty sets, depending on exact implementation decisions).
 
-## 6. Path Explosion and Resource Bounds
-Finding all paths between two nodes in a highly connected graph results in combinatorial explosion. 
-- Returning every possible path is unsafe.
-- We must enforce bounds: a `max_hops` limit and a `max_paths` limit to safeguard the database and API payload size. 
-- The `max_paths` limit is a product safety bound, preventing runaway CTE materialization and extreme API payload sizes, rather than a statement about the physical property of the railway network.
+## 6. Path Strategy Selection
+Phase 2C will initially use the **bounded simple topology paths** strategy:
+- PostgreSQL recursive CTE
+- Cycle prevention using the array-based visited-station approach
+- Maximum hop bound (`max_hops`)
+- Maximum returned path count (`max_paths`)
 
-## 7. Candidate Path Strategies
-- **A. All bounded simple paths:** Computes all valid paths up to `max_hops`. Highly susceptible to path explosion; may hit the `max_paths` limit unpredictably.
-- **B. One shortest-hop topology path:** Trivial to compute and returns minimal data, but fails to answer "how else can I get there?".
-- **C. K shortest-hop topology paths:** Computes the K paths with the fewest topological hops. Offers a balance between utility and bounds, though strict CTE formulation for K-shortest paths introduces complexity compared to depth-bounded graph exploration.
-- **D. Shortest paths up to length L:** Find the shortest path length L, then return all paths of length L.
+## 7. Resource Safety
+The following execution boundaries must be distinguished:
+- **`max_hops`**: Bounds the recursion depth.
+- **`max_paths`**: Bounds the number of paths returned to the caller. This is an OUTPUT LIMIT and does NOT automatically guarantee that PostgreSQL stops CTE generation after `max_paths` paths. It does not by itself prevent CTE materialization explosion.
+- **Cycle prevention**: Bounds repeated-node traversal by preventing infinite loops.
+- **Future execution-level safeguards**: Statement timeout, query planning/benchmarking, and potentially a bounded traversal design that terminates generation earlier must be evaluated before claiming strong database-side protection.
 
-The final implementation will evaluate these trade-offs to select a concrete candidate scope, carefully balancing execution predictability with the utility of the returned paths.
+Implementation must benchmark worst-case topology queries before productionizing expensive traversals.
 
-## 8. Proposed Phase Scope
-Implement bounded topological path exploration that returns topology paths up to a specified `max_hops` bound, aggressively capped at `max_paths` to preserve strict database safety limits. 
+## 8. Deterministic Path Ordering
+To ensure the selected subset of `max_paths` is predictable, paths must follow a strict deterministic ordering:
+1. `hop_count` ASC
+2. Ordered station-code sequence lexicographically ASC (e.g., path `A → B → C` is evaluated sequentially against path `A → B → D`).
+
+The implementation must not rely on PostgreSQL's natural recursive CTE output order.
 
 ## 9. API Contract Proposal
 **Endpoint:** `GET /api/v1/network/path`
 
 **Parameters:**
-- `origin`: string (required) - Canonical origin station code
-- `destination`: string (required) - Canonical destination station code
-- `max_hops`: integer (optional, default 3, max 10)
-- `max_paths`: integer (optional, default 10, max 50)
+- `origin`: required, canonical station code, case-insensitive (according to existing station resolution behavior).
+- `destination`: required, canonical station code, case-insensitive.
+- `max_hops`: optional, default 3, minimum 1, maximum 10.
+- `max_paths`: optional, default 10, minimum 1, maximum 50.
 
-**Validation:** 
-- Missing/invalid params yield `422 Unprocessable Entity`.
-- Unknown stations yield `404 Not Found`.
+**Behavior:**
+- Unknown origin → `404 Not Found`
+- Unknown destination → `404 Not Found`
+- Invalid parameters → `422 Unprocessable Entity`
+- Origin == Destination → `200 OK` with one 0-hop path
+- Valid disconnected pair → `200 OK` with zero paths
+- Missing/PENDING/FAILED graph → `503 Service Unavailable`
+- ACTIVE graph → execute topology traversal
+
+Pagination is not introduced for this phase.
 
 ## 10. Response Model Proposal
+The API conceptually returns:
 ```json
 {
   "origin": "NDLS",
@@ -73,73 +90,93 @@ Implement bounded topological path exploration that returns topology paths up to
       "hop_count": 4,
       "stations": [
         {"station_code": "NDLS", "station_name": "New Delhi"},
-        {"station_code": "AGC", "station_name": "Agra Cantt"},
-        {"station_code": "BPL", "station_name": "Bhopal"},
-        {"station_code": "NGP", "station_name": "Nagpur"},
-        {"station_code": "MAS", "station_name": "Chennai Central"}
+        {"station_code": "AGC", "station_name": "Agra Cantt"}
       ]
     }
   ]
 }
 ```
-Does not expose fake journey duration, transfer feasibility, live status, or train identities.
+**Truncation Semantics:**
+- Return at most `max_paths` paths.
+- Paths are ordered deterministically.
+- `total_paths_returned` means the number of paths actually returned in the payload. The API makes no claim that `total_paths_returned` equals the mathematical total number of possible paths when truncation occurs.
+- The API does not calculate or return a `total_possible_paths` count because doing so could itself trigger runaway CTE execution.
 
 ## 11. Snapshot and Graph Availability Semantics
-- Follows existing conventions from `snapshots.py` and Phase 2B.
 - Requires an `ACTIVE` `RailwayGraphBuild`.
 - Missing/PENDING/FAILED builds return `503 Service Unavailable`.
-- Station metadata exclusively relies on the active station snapshot.
+- Station metadata relies on the active station snapshot.
+- Unknown stations remain a 404 concern; unavailable graphs remain a 503 concern.
 
-## 12. Performance and Benchmark Plan
-A benchmark methodology must be established to empirically measure:
-- Low-hop path query (origin and destination are closely connected)
-- Medium-hop path query (3-4 hops)
-- No-path query (disconnected subgraph or destination too far)
-- High-path-count query (traversing between major hubs)
-- Worst-case bounded query
-Metrics to capture: database execution time, returned path count, and response payload size.
+## 12. Benchmark Plan
+The implementation must explicitly benchmark:
+- Origin == Destination
+- Direct one-hop path
+- Small multi-hop path
+- No path
+- Reverse-direction query
+- High-connectivity origin/destination
+- `max_hops=10`
+- `max_paths=50`
+- Query where more than 50 paths exist
+- Cycle-heavy topology
+
+Measurements must capture:
+- Database execution time
+- Application execution time
+- Number of returned paths
+- Response payload size
+- EXPLAIN ANALYZE output where appropriate
+
+Phase 2A execution times must not be reused as evidence for Phase 2C performance.
 
 ## 13. Database/Index Considerations
-Existing indexes on `RailwayNetworkEdge` (`timetable_snapshot_id, from_station_id`) are likely sufficient for CTE execution. No new indexes are proposed until empirical benchmark query plans demonstrate a measurable need.
+Existing indexes will be used initially. Query plans and measured execution times must be evaluated before introducing any additional index. No new index is justified by discovery alone.
 
-## 14. Security and Resource Safety
-To prevent abuse (e.g., exhaustive traversal requests between highly connected stations), the API will enforce strict validation bounds (`max_hops <= 10`, `max_paths <= 50`). These product safety limits ensure adherence to the ₹0 budget by preventing excessive database CPU and memory consumption.
-
-## 15. Test Strategy
-Tests will be defined for:
-- Direct topology path
-- Multi-hop topology path
+## 14. Test Strategy
+The future test strategy explicitly includes:
+- 0-hop origin == destination
+- Direct one-hop path
+- Multi-hop path
 - No path
 - Reverse direction
-- Cycle prevention (using array-based visited tracking)
-- Repeated station topology
-- Self-loop
-- Same origin/destination
-- max_hops boundary
-- max_paths boundary
-- Snapshot isolation (timetable and station metadata)
-- Graph unavailable (503 translations)
+- Simple-path cycle prevention
+- Self-loop exclusion
+- Repeated station exclusion
+- `max_hops` minimum/maximum
+- `max_paths` minimum/maximum
+- More than `max_paths` available
 - Deterministic ordering
 - Path identity
-- Path explosion limits
+- Snapshot isolation
+- Active graph requirement
+- Missing graph
+- PENDING graph
+- FAILED graph
+- Station metadata snapshot isolation
 
-## 16. Passenger Routing Boundary
-Topology path exploration relies exclusively on `RailwayNetworkEdge`. Passenger routing requires `RailwayServiceEdge` to validate train continuity, precise timings, and minimum transfer buffers. Phase 2C will not evaluate these criteria and absolutely cannot be used as a passenger travel itinerary.
+## 15. Passenger Routing Boundary
+Phase 2C answers a historical topology question:
+*"Does the railway network graph contain a bounded directed station path from A to B, and what are bounded topology paths?"*
 
-## 17. Dependencies
-- Depends on the existing `RailwayNetworkEdge` PostgreSQL schema.
-- Depends on existing snapshot resolution APIs (`get_active_timetable_snapshot_id`, `get_active_station_snapshot_id`).
+It does NOT answer:
+*"Can a passenger travel from A to B using these trains?"*
 
-## 18. Explicit Non-Goals
-- Passenger itinerary optimization
-- Shortest-path journey times
-- Fares, seat availability, train cancellations
-- Live operational data usage
-- Introduction of an external graph database (e.g., Neo4j)
+Passenger routing remains a later feature requiring `ServiceEdge`, train identity, specific stop occurrences, arrival/departure timing, source-day progression, transfer station occurrences, minimum transfer buffers, and connection feasibility semantics.
 
-## 19. Implementation Readiness Checklist
-- [ ] Discovery approved
-- [ ] CTE traversal algorithm finalized
+## 16. Implementation Readiness Checklist
+- [x] Path strategy selected
+- [x] Simple-path semantics defined
+- [x] `max_hops` bound defined
+- [x] `max_paths` output bound defined
+- [x] Deterministic ordering defined
+- [x] Path identity defined
+- [x] Origin == destination defined
+- [x] Self-loop semantics defined
+- [x] Snapshot semantics defined
+- [x] Graph availability semantics defined
 - [ ] Service implementation
 - [ ] API endpoint implementation
-- [ ] Unit and Integration tests passing
+- [ ] Unit and integration tests
+- [ ] Benchmark validation
+- [ ] Final implementation review
