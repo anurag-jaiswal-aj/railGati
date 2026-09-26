@@ -54,3 +54,34 @@ class TrainSearchEmptyState(BaseModel):
 
     message: str
     available: bool = False
+
+
+class TrainBase(BaseModel):
+    """Base train fields."""
+
+    train_number: str = Field(..., description="Canonical train number")
+    name: str = Field(..., description="Train name from latest snapshot")
+    type: str | None = Field(None, description="Train type classification")
+    return_train_number: str | None = Field(None, description="Return train number if known")
+
+
+class TrainSearchItem(TrainBase):
+    """Train summary for search results."""
+    pass
+
+
+class TrainDetail(TrainBase):
+    """Detailed train response including provenance."""
+
+    provenance: ProvenanceInfo = Field(..., description="Data provenance information")
+
+
+class TrainStopResponse(BaseModel):
+    """A single stop on a train's route."""
+
+    stop_sequence: int = Field(..., description="Ordered stop sequence starting at 1")
+    station_code: str = Field(..., description="Canonical station code")
+    station_name: str = Field(..., description="Canonical station name")
+    arrival_time: str | None = Field(None, description="Arrival time (HH:MM:SS) if applicable")
+    departure_time: str | None = Field(None, description="Departure time (HH:MM:SS) if applicable")
+    source_day: int | None = Field(None, description="Relative day of journey")

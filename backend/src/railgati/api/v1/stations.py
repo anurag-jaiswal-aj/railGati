@@ -11,29 +11,17 @@ from railgati.api.v1.schemas import (
     ProvenanceInfo,
     StationDetail,
     StationSearchItem,
+    TrainSearchItem,
 )
+from railgati.api.v1.trains import get_active_timetable_snapshot_id
 from railgati.db import get_db
 from railgati.models.provenance import DatasetSnapshot, DataSource
 from railgati.models.station import Station, StationObservation
+from railgati.models.train import Train, TrainObservation, TrainStopObservation
+
+from railgati.api.v1.snapshots import get_active_station_snapshot_id
 
 router = APIRouter(prefix="/stations", tags=["Stations"])
-
-
-def get_active_snapshot_id(db: Session) -> int:
-    """Helper to get the current active snapshot ID.
-    Raises 404 if no active snapshot exists.
-    """
-    snapshot_id = db.scalar(
-        select(DatasetSnapshot.id)
-        .filter(DatasetSnapshot.status == "ACTIVE")
-        .order_by(DatasetSnapshot.retrieved_at.desc())
-    )
-    if not snapshot_id:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Railway data is currently unavailable. No active snapshot found.",
-        )
-    return snapshot_id
 
 
 @router.get("/search", response_model=PaginatedResponse[StationSearchItem])
@@ -44,7 +32,7 @@ def search_stations(
     db: Session = Depends(get_db),  # noqa: B008
 ) -> PaginatedResponse[StationSearchItem]:
     """Search for railway stations by code or name."""
-    snapshot_id = get_active_snapshot_id(db)
+    snapshot_id = get_active_station_snapshot_id(db)
 
     query = (
         select(StationObservation, Station.code)
@@ -103,7 +91,7 @@ def get_station_detail(
     db: Session = Depends(get_db),  # noqa: B008
 ) -> StationDetail:
     """Get canonical details for a specific station."""
-    snapshot_id = get_active_snapshot_id(db)
+    snapshot_id = get_active_station_snapshot_id(db)
 
     query = (
         select(StationObservation, Station, DatasetSnapshot, DataSource)
@@ -139,4 +127,64 @@ def get_station_detail(
             source_name=source.name,
             retrieved_at=snapshot.retrieved_at,
         ),
+    )
+
+
+
+
+@router.get("/{station_code}/trains", response_model=PaginatedResponse[TrainSearchItem])
+def get_station_trains(
+    station_code: str,
+    page: Annotated[int, Query(ge=1)] = 1,
+    size: Annotated[int, Query(ge=1, le=100)] = 20,
+    db: Session = Depends(get_db),  # noqa: B008
+) -> PaginatedResponse[TrainSearchItem]:
+    """Return historical trains serving a station in the latest ACTIVE timetable snapshot."""
+    # Ensure station code exists
+    station = db.execute(
+        select(Station).filter(func.lower(Station.code) == station_code.lower())
+    ).first()
+    if not station:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Station '{station_code.upper()}' not found.",
+        )
+
+    snapshot_id = get_active_timetable_snapshot_id(db)
+
+    # Use distinct to avoid duplicates if a train theoretically visits a station multiple times
+    query = (
+        select(TrainObservation, Train.number)
+        .join(Train, Train.id == TrainObservation.train_id)
+        .join(TrainStopObservation, TrainStopObservation.train_id == Train.id)
+        .filter(
+            TrainStopObservation.snapshot_id == snapshot_id,
+            TrainObservation.snapshot_id == snapshot_id,
+            TrainStopObservation.station_id == station[0].id,
+        )
+        .distinct()
+        .order_by(Train.number.asc())
+    )
+
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    offset = (page - 1) * size
+    query = query.offset(offset).limit(size)
+
+    results = db.execute(query).all()
+
+    items = [
+        TrainSearchItem(
+            train_number=train_num,
+            name=obs.name,
+            type=obs.type,
+            return_train_number=obs.return_train_number,
+        )
+        for obs, train_num in results
+    ]
+
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=page,
+        size=size,
     )
