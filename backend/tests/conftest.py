@@ -36,6 +36,7 @@ def db_session() -> Generator[Session, None, None]:
 @pytest.fixture(scope="function")
 def client(db_session: Session) -> Generator[TestClient, None, None]:
     """Provides a TestClient with overridden DB dependency."""
+
     def override_get_db() -> Generator[Session, None, None]:
         yield db_session
 
@@ -109,7 +110,7 @@ def populated_db(db_session: Session) -> Session:
         zone="WR",
     )
     db_session.add(obs3)
-    
+
     # Add a FAILED snapshot with a different station to ensure we don't return it
     failed_snapshot = DatasetSnapshot(
         source_id=source.id,
@@ -119,7 +120,7 @@ def populated_db(db_session: Session) -> Session:
     )
     db_session.add(failed_snapshot)
     db_session.commit()
-    
+
     s4 = Station(code="FAIL")
     db_session.add(s4)
     db_session.commit()

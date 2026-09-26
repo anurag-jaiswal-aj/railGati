@@ -3,17 +3,13 @@
 from collections.abc import Generator
 from pathlib import Path
 
-import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from railgati.ingestion.datameet import DatameetParser
 from railgati.ingestion.pipeline import Pipeline
 from railgati.ingestion.schema import ParsedStation
-from railgati.models import Base
 from railgati.models.provenance import DatasetSnapshot
 from railgati.models.station import Station, StationObservation
-
 
 # db_session fixture is now in conftest.py
 

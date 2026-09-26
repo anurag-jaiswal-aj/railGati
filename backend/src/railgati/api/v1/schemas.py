@@ -1,14 +1,14 @@
 """Pydantic schemas for the v1 API."""
 
 from datetime import datetime
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 from pydantic import BaseModel, Field
 
 T = TypeVar("T")
 
 
-class PaginatedResponse(BaseModel, Generic[T]):
+class PaginatedResponse[T](BaseModel):
     """Generic paginated response."""
 
     items: list[T]

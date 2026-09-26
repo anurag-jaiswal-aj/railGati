@@ -37,7 +37,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health_router)
-    
+
     # API v1
     app.include_router(stations_router, prefix="/api/v1")
     app.include_router(trains_router, prefix="/api/v1")
