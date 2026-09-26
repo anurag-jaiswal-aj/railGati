@@ -14,7 +14,9 @@ from railgati.api.v1.schemas import (
     NetworkReachabilityItem,
     NetworkReachabilityResponse,
     NetworkServiceAttributionResponse,
+    NetworkPathContinuousServicesResponse,
 )
+from railgati.api.v1 import schemas
 from railgati.api.v1.snapshots import (
     get_active_station_snapshot_id,
     get_active_timetable_snapshot_id,
@@ -483,3 +485,80 @@ def get_network_path_service_attribution(
         timetable_snapshot_id=timetable_snapshot_id,
         segments=segments,
     )
+
+@router.get(
+    "/path/continuous-services",
+    response_model=schemas.NetworkPathContinuousServicesResponse,
+    summary="Get continuous historical services for a multi-edge path",
+    description="Finds historical train services that seamlessly cover an entire ordered topological path.",
+)
+def get_network_path_continuous_services(
+    path: str = Query(..., description="Comma-separated station codes, e.g. NDLS,AGC,BPL"),
+    db: Session = Depends(get_db),
+) -> schemas.NetworkPathContinuousServicesResponse:
+    from railgati.services.network import find_network_path_continuous_services
+    
+    station_codes = [c.strip() for c in path.split(",") if c.strip()]
+    if len(station_codes) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Path must contain at least 2 stations.",
+        )
+    if len(station_codes) > 10:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Path cannot contain more than 10 stations.",
+        )
+
+    for i in range(len(station_codes) - 1):
+        if station_codes[i].lower() == station_codes[i + 1].lower():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Path cannot contain consecutive identical stations.",
+            )
+
+    # 1. Resolve Stations
+    stations_q = (
+        db.execute(
+            select(Station).filter(func.lower(Station.code).in_([c.lower() for c in station_codes]))
+        )
+        .scalars()
+        .all()
+    )
+
+    station_map = {s.code.lower(): s for s in stations_q}
+
+    path_station_ids = []
+    for code in station_codes:
+        s = station_map.get(code.lower())
+        if not s:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Station '{code.upper()}' not found.",
+            )
+        path_station_ids.append(s.id)
+
+    snapshot_id = get_active_timetable_snapshot_id(db)
+    
+    try:
+        services = find_network_path_continuous_services(
+            db, 
+            timetable_snapshot_id=snapshot_id, 
+            path_station_ids=path_station_ids
+        )
+        
+        return schemas.NetworkPathContinuousServicesResponse(
+            path=[station_map[c.lower()].code for c in station_codes],
+            timetable_snapshot_id=snapshot_id,
+            total_services_returned=len(services),
+            services=services
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "Path must contain" in msg or "consecutive duplicate" in msg:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=msg)
+        elif "Active graph build unavailable" in msg:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg)
+        elif "does not exist in the active network topology" in msg:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)

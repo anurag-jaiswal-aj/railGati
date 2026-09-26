@@ -263,3 +263,26 @@ class NetworkPathAttributionResponse(BaseModel):
     path: list[str] = Field(..., description="Canonical station codes representing the path")
     timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
     segments: list[NetworkPathAttributionSegment]
+
+class NetworkPathContinuousServiceItem(BaseModel):
+    """A continuous historical train service covering an entire topological path."""
+
+    train_number: str
+    train_name: str | None = None
+    train_type: str | None = None
+    start_sequence: int
+    end_sequence: int
+    departure_time: str | None = None
+    arrival_time: str | None = None
+    start_day_offset: int | None = None
+    end_day_offset: int | None = None
+    total_duration_minutes: int | None = None
+
+
+class NetworkPathContinuousServicesResponse(BaseModel):
+    """Response containing continuous through-services for a topological path."""
+
+    path: list[str] = Field(..., description="Canonical station codes representing the path")
+    timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
+    total_services_returned: int = Field(..., description="Number of continuous services returned")
+    services: list[NetworkPathContinuousServiceItem] = Field(..., description="Continuous services")

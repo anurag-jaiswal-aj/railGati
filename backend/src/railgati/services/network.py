@@ -415,3 +415,148 @@ def find_network_path_service_occurrences(
         )
         for seg in segments
     ]
+
+
+def find_network_path_continuous_services(
+    db: Session,
+    timetable_snapshot_id: int,
+    path_station_ids: list[int],
+    limit: int = 500,
+) -> list[NetworkPathContinuousServiceItem]:
+    """Find continuous train services that traverse an entire path."""
+    if len(path_station_ids) < 2 or len(path_station_ids) > 10:
+        raise ValueError("Path must contain between 2 and 10 stations")
+
+    for i in range(len(path_station_ids) - 1):
+        if path_station_ids[i] == path_station_ids[i + 1]:
+            raise ValueError("Path cannot contain consecutive duplicate stations")
+
+    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.graph import RailwayGraphBuild
+
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(
+            DatasetSnapshot.id == timetable_snapshot_id, DatasetSnapshot.status == "ACTIVE"
+        )
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    build = db.scalar(
+        select(RailwayGraphBuild).filter(
+            RailwayGraphBuild.timetable_snapshot_id == timetable_snapshot_id
+        )
+    )
+    if not build or build.status != "ACTIVE":
+        raise ValueError("Active graph build unavailable for this snapshot")
+
+    from sqlalchemy import func, tuple_, text
+    from sqlalchemy.orm import aliased
+    from railgati.models.graph import RailwayNetworkEdge, RailwayServiceEdge
+    from railgati.models.train import Train, TrainObservation
+    from railgati.services.journey import _parse_time_to_minutes
+    from railgati.api.v1.schemas import NetworkPathContinuousServiceItem
+
+    segments = [
+        (path_station_ids[i], path_station_ids[i + 1]) for i in range(len(path_station_ids) - 1)
+    ]
+    segment_tuples = [tuple_(s[0], s[1]) for s in segments]
+
+    # Verify that all segments exist in the network graph
+    matched_edges = db.execute(
+        select(RailwayNetworkEdge.from_station_id, RailwayNetworkEdge.to_station_id).filter(
+            RailwayNetworkEdge.timetable_snapshot_id == timetable_snapshot_id,
+            tuple_(RailwayNetworkEdge.from_station_id, RailwayNetworkEdge.to_station_id).in_(
+                segment_tuples
+            ),
+        )
+    ).all()
+
+    matched_set = {(r[0], r[1]) for r in matched_edges}
+    for seg in segments:
+        if seg not in matched_set:
+            raise ValueError(f"Path segment {seg} does not exist in the active network topology")
+
+    aliases = [aliased(RailwayServiceEdge) for _ in segments]
+
+    first_alias = aliases[0]
+    last_alias = aliases[-1]
+
+    query = (
+        select(
+            Train.number.label("train_number"),
+            TrainObservation.name.label("train_name"),
+            TrainObservation.type.label("train_type"),
+            first_alias.from_stop_sequence.label("start_sequence"),
+            last_alias.to_stop_sequence.label("end_sequence"),
+            first_alias.departure_time.label("departure_time"),
+            last_alias.arrival_time.label("arrival_time"),
+            first_alias.source_day_offset.label("start_day_offset"),
+            last_alias.source_day_offset.label("end_day_offset"),
+        )
+        .select_from(first_alias)
+        .join(Train, first_alias.train_id == Train.id)
+        .join(
+            TrainObservation,
+            (TrainObservation.train_id == Train.id)
+            & (TrainObservation.snapshot_id == timetable_snapshot_id),
+        )
+    )
+
+    query = query.filter(
+        first_alias.timetable_snapshot_id == timetable_snapshot_id,
+        first_alias.from_station_id == segments[0][0],
+        first_alias.to_station_id == segments[0][1],
+    )
+
+    for i in range(1, len(aliases)):
+        prev_alias = aliases[i - 1]
+        curr_alias = aliases[i]
+        
+        query = query.join(
+            curr_alias,
+            (curr_alias.train_id == prev_alias.train_id)
+            & (curr_alias.timetable_snapshot_id == prev_alias.timetable_snapshot_id)
+            & (curr_alias.from_stop_sequence == prev_alias.to_stop_sequence)
+        )
+        
+        query = query.filter(
+            curr_alias.from_station_id == segments[i][0],
+            curr_alias.to_station_id == segments[i][1],
+        )
+
+    # Apply limits and ordering at the outer query
+    query = query.order_by(
+        first_alias.departure_time.asc().nulls_last(),
+        Train.number.asc(),
+        first_alias.from_stop_sequence.asc(),
+    ).limit(limit)
+
+    results = db.execute(query).all()
+
+    items = []
+    for row in results:
+        duration = None
+        orig_mins = _parse_time_to_minutes(row.departure_time, row.start_day_offset)
+        dest_mins = _parse_time_to_minutes(row.arrival_time, row.end_day_offset)
+        if orig_mins is not None and dest_mins is not None:
+            calc_dur = dest_mins - orig_mins
+            if calc_dur >= 0:
+                duration = calc_dur
+                
+        items.append(
+            NetworkPathContinuousServiceItem(
+                train_number=row.train_number,
+                train_name=row.train_name,
+                train_type=row.train_type,
+                start_sequence=row.start_sequence,
+                end_sequence=row.end_sequence,
+                departure_time=row.departure_time,
+                arrival_time=row.arrival_time,
+                start_day_offset=row.start_day_offset,
+                end_day_offset=row.end_day_offset,
+                total_duration_minutes=duration,
+            )
+        )
+
+    return items

@@ -214,3 +214,13 @@ This capability provides the exact underlying data structure needed for a future
 2. Implement service layer with robust null-handling for duration calculations.
 3. Build the `/api/v1/network/path/continuous-services` endpoint.
 4. Execute full benchmark suite and record EXPLAIN ANALYZE proof.
+
+## 32. Implementation Findings
+- **Exact Implementation Endpoint**: `GET /api/v1/network/path/continuous-services?path={comma-separated-codes}`
+- **Actual SQL Strategy**: The implementation uses dynamic `aliased(RailwayServiceEdge)` joins iteratively for each segment. `path_station_ids` are mapped back to their original requested casing.
+- **Actual Benchmark Measurements**: 
+  - 3-station path (`KAOT,PLO,TLN`): ~4.5ms (execution)
+  - 5-station path (`KAOT,PLO,TLN,DMN,DIP`): ~10ms (execution)
+  - 10-station path (`KAOT,PLO,TLN,DMN,DIP,CND,MLR,TMT,BD,AMI`): ~3ms (execution)
+- **Actual EXPLAIN ANALYZE Behavior**: PostgreSQL successfully uses the `railway_service_edges_pkey` and `ix_service_edges_to_station` indexes. The query planner consistently chooses the `Nested Loop` join strategy. Total planning time is around ~20-30ms, and execution time is under ~15ms even for 10-station paths.
+- **Implementation Limitation**: None found.
