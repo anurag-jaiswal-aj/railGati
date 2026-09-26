@@ -103,14 +103,18 @@ No single journey is "best." The backend returns all valid journeys deterministi
 **ASSUMPTION**: This default ordering is merely a product/API convention to guarantee stable results across identical requests. It is not a claim that a specific journey is universally preferable, nor is it a recommendation or "best journey" ranking. Missing data explicitly sinks to the bottom of duration sorts but remains available. Every distinct journey occurrence retains its unique `journey_id`.
 
 ## 11. Proposed API Contract
+**STATUS: IMPLEMENTED**
 `GET /api/v1/journeys/compare`
 **Parameters**:
-- `source`: string (station code)
-- `destination`: string (station code)
+- `source`: string (canonical station code, required)
+- `destination`: string (canonical station code, required)
 - `max_transfers`: int (default 0, constrained to 0 or 1 in v1.2)
-- `min_transfer_minutes`: int (default 120)
+- `min_transfer_minutes`: int (default 120, >= 0)
+- `max_layover_minutes`: int (default 1440, >= 0, >= min_transfer_minutes)
 
-*Note: `date` is intentionally unsupported because the current dataset does not provide sufficient verified calendar validity. The endpoint exposes historical structural journey options and does NOT answer "which train runs today?".*
+**Response Shape**: Returns a JSON object with `source`, `destination`, `timetable_snapshot_id`, `max_transfers`, and an array of `journeys` (each representing a `JourneyOption` schema). Validations map to explicit HTTP 400, 404, or 422 errors.
+
+*Note: `date` is intentionally unsupported because the current dataset does not provide sufficient verified calendar validity. The endpoint exposes historical structural journey options and does NOT answer "which train runs today?". No live running status, date-specific guarantees, or fare/seat information is provided.*
 
 ## 12. Edge Cases
 - **Origin == Destination**: Return 400 Bad Request.

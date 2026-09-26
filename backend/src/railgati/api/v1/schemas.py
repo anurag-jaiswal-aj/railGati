@@ -129,3 +129,13 @@ class JourneyOption(BaseModel):
     transfer_station: str | None = None
     layover_minutes: int | None = None
     provenance: ProvenanceInfo
+
+
+class JourneyCompareResponse(BaseModel):
+    """Response containing journey comparison options."""
+
+    source: str = Field(..., description="Canonical origin station code")
+    destination: str = Field(..., description="Canonical destination station code")
+    timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
+    max_transfers: int = Field(..., description="Maximum allowed transfers")
+    journeys: list[JourneyOption]
