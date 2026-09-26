@@ -631,3 +631,53 @@ def get_network_corridors(
         if "Active graph build unavailable" in msg:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+
+
+from enum import Enum
+
+
+class SortByEnum(str, Enum):
+    out_degree = "out_degree"
+    in_degree = "in_degree"
+    service_volume = "service_volume"
+
+
+@router.get(
+    "/hubs",
+    response_model=schemas.HubCentralityResponse,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Timetable snapshot not found"},
+        status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "Active graph build unavailable"},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {"description": "Invalid limit"},
+    },
+)
+def get_network_hubs(
+    limit: int = 50,
+    sort_by: SortByEnum = SortByEnum.service_volume,
+    db: Session = Depends(get_db),
+) -> schemas.HubCentralityResponse:
+    """Discover structural network hubs by centrality metrics."""
+    if limit < 1 or limit > 500:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Limit must be between 1 and 500",
+        )
+
+    snapshot_id = get_active_timetable_snapshot_id(db)
+
+    from railgati.services.network import calculate_hub_centrality
+
+    try:
+        hubs = calculate_hub_centrality(
+            db, timetable_snapshot_id=snapshot_id, limit=limit, sort_by=sort_by.value
+        )
+
+        return schemas.HubCentralityResponse(
+            timetable_snapshot_id=snapshot_id,
+            hubs=[h.model_dump() for h in hubs],
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "unavailable" in msg.lower() or "not found" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)

@@ -306,3 +306,32 @@ class CorridorResponse(BaseModel):
     destination: str = Field(..., description="Canonical destination station code")
     timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
     corridors: list[CorridorItem]
+
+
+class HubCentralityItem(BaseModel):
+    station_code: str = Field(..., description="Canonical station code")
+    station_name: str = Field(..., description="Canonical station name")
+    out_degree: int = Field(
+        ..., description="Number of unique stations physically reachable directly from this hub"
+    )
+    in_degree: int = Field(
+        ..., description="Number of unique stations that can directly reach this hub"
+    )
+    total_topological_degree: int = Field(..., description="Sum of in-degree and out-degree")
+    outbound_service_occurrence_volume: int = Field(
+        ..., description="Sum of adjacent historical train occurrences departing this hub"
+    )
+    inbound_service_occurrence_volume: int = Field(
+        ..., description="Sum of adjacent historical train occurrences arriving at this hub"
+    )
+    combined_occurrence_volume: int = Field(
+        ...,
+        description="Sum of inbound and outbound occurrences. Note: continuous trains passing through will be double-counted.",
+    )
+
+
+class HubCentralityResponse(BaseModel):
+    timetable_snapshot_id: int = Field(
+        ..., description="The ID of the dataset snapshot providing the active timetable data"
+    )
+    hubs: list[HubCentralityItem] = Field(..., description="List of stations ranked by centrality")

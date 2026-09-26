@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from railgati.api.v1.schemas import HubCentralityItem
 from railgati.models.graph import RailwayGraphBuild
 from railgati.models.provenance import DatasetSnapshot
 
@@ -787,3 +788,133 @@ def find_network_corridors(
             )
         )
     return items
+
+
+def calculate_hub_centrality(
+    db: Session, timetable_snapshot_id: int, limit: int = 50, sort_by: str = "service_volume"
+) -> list[HubCentralityItem]:
+    """Compute network hub centrality analytics for a given snapshot."""
+
+    from railgati.api.v1.snapshots import get_active_station_snapshot_id
+    from railgati.models.graph import RailwayGraphBuild
+    from railgati.models.provenance import DatasetSnapshot
+
+    # 1. Active Timetable Snapshot check
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(
+            DatasetSnapshot.id == timetable_snapshot_id, DatasetSnapshot.status == "ACTIVE"
+        )
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    # 2. Active Graph Build check
+    build = db.scalar(
+        select(RailwayGraphBuild).filter(
+            RailwayGraphBuild.timetable_snapshot_id == timetable_snapshot_id
+        )
+    )
+    if not build or build.status != "ACTIVE":
+        raise ValueError("Active graph build unavailable for this snapshot")
+
+    # 3. Active Station Snapshot
+    station_snapshot_id = get_active_station_snapshot_id(db)
+    if not station_snapshot_id:
+        raise ValueError("Active station snapshot not found")
+
+    # The query calculates the out-degree and outbound volume, and in-degree and inbound volume,
+    # then full outer joins them, then inner joins to stations for canonical metadata.
+    # Note: the full outer join on station_id is needed if a station has only incoming or only outgoing edges.
+
+    query = text("""
+        WITH out_stats AS (
+            SELECT from_station_id as station_id, 
+                   COUNT(*) as out_degree, 
+                   SUM(train_count) as outbound_vol
+            FROM railway_network_edges
+            WHERE timetable_snapshot_id = :snapshot_id
+            GROUP BY from_station_id
+        ),
+        in_stats AS (
+            SELECT to_station_id as station_id, 
+                   COUNT(*) as in_degree, 
+                   SUM(train_count) as inbound_vol
+            FROM railway_network_edges
+            WHERE timetable_snapshot_id = :snapshot_id
+            GROUP BY to_station_id
+        ),
+        merged_stats AS (
+            SELECT 
+                COALESCE(o.station_id, i.station_id) as station_id,
+                COALESCE(o.out_degree, 0) as out_degree,
+                COALESCE(i.in_degree, 0) as in_degree,
+                COALESCE(o.outbound_vol, 0) as outbound_vol,
+                COALESCE(i.inbound_vol, 0) as inbound_vol
+            FROM out_stats o
+            FULL OUTER JOIN in_stats i ON o.station_id = i.station_id
+        )
+        SELECT 
+            s.code,
+            so.name,
+            m.out_degree,
+            m.in_degree,
+            (m.out_degree + m.in_degree) as total_degree,
+            CAST(m.outbound_vol AS INTEGER) as outbound_vol,
+            CAST(m.inbound_vol AS INTEGER) as inbound_vol,
+            CAST((m.outbound_vol + m.inbound_vol) AS INTEGER) as total_vol
+        FROM merged_stats m
+        JOIN stations s ON m.station_id = s.id
+        JOIN station_observations so ON so.station_id = s.id
+        WHERE so.snapshot_id = :station_snapshot_id
+    """)
+
+    results = db.execute(
+        query, {"snapshot_id": timetable_snapshot_id, "station_snapshot_id": station_snapshot_id}
+    ).all()
+
+    items = []
+    for row in results:
+        items.append(
+            HubCentralityItem(
+                station_code=row.code,
+                station_name=row.name,
+                out_degree=row.out_degree,
+                in_degree=row.in_degree,
+                total_topological_degree=row.total_degree,
+                outbound_service_occurrence_volume=row.outbound_vol,
+                inbound_service_occurrence_volume=row.inbound_vol,
+                combined_occurrence_volume=row.total_vol,
+            )
+        )
+
+    # In-memory sorting as requested to apply deterministic sort rules
+    if sort_by == "out_degree":
+        items.sort(
+            key=lambda x: (
+                -x.out_degree,
+                -x.total_topological_degree,
+                -x.combined_occurrence_volume,
+                x.station_code,
+            )
+        )
+    elif sort_by == "in_degree":
+        items.sort(
+            key=lambda x: (
+                -x.in_degree,
+                -x.total_topological_degree,
+                -x.combined_occurrence_volume,
+                x.station_code,
+            )
+        )
+    elif sort_by == "service_volume":
+        items.sort(
+            key=lambda x: (
+                -x.combined_occurrence_volume,
+                -x.total_topological_degree,
+                x.station_code,
+            )
+        )
+    else:
+        raise ValueError(f"Invalid sort_by value: {sort_by}")
+
+    return items[:limit]
