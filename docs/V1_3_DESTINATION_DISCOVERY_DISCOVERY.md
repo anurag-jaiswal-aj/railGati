@@ -93,22 +93,21 @@ Currently, users can check trains passing through a station, or compare historic
 **DECISION**: Performance is sufficient under existing project limits. No new custom index was created; no Alembic migrations were required.
 
 ## 19. API Contract Proposal
-**PROPOSAL**: 
+**STATUS: IMPLEMENTED**
 `GET /api/v1/destinations`
 **Query Parameters**:
 - `origin`: string (canonical station code, required)
-- `max_transfers`: int (default 0, constrained to 0)
 - `max_duration_minutes`: int (optional, default None)
 - `page`: int (default 1)
 - `size`: int (default 50)
 
 ## 20. Response Contract Proposal
-**PROPOSAL**:
+**STATUS: IMPLEMENTED**
 ```json
 {
   "origin": "NDLS",
   "timetable_snapshot_id": 2,
-  "max_transfers": 0,
+  "max_duration_minutes": null,
   "total": 150,
   "page": 1,
   "size": 50,
@@ -117,7 +116,7 @@ Currently, users can check trains passing through a station, or compare historic
       "station_code": "MAS",
       "station_name": "CHENNAI CENTRAL",
       "fastest_duration_minutes": 1830,
-      "direct_trains_count": 12,
+      "direct_train_count": 12,
       "timing_confidence": "HIGH"
     }
   ]
@@ -146,12 +145,12 @@ Currently, users can check trains passing through a station, or compare historic
 - Should 1-transfer destination discovery be attempted relationally, or does it definitively mandate v2.0 graph capabilities?
 
 ## 26. V1.3 Acceptance Criteria
-- [ ] Discovery API handles valid origin queries.
-- [ ] Returns valid direct destinations.
-- [ ] Correctly aggregates shortest travel time per destination.
-- [ ] Properly paginates.
-- [ ] Deterministic sorting behavior.
-- [ ] Historical semantics explicitly stated in API docs.
+- [x] Discovery API handles valid origin queries.
+- [x] Returns valid direct destinations.
+- [x] Correctly aggregates shortest travel time per destination.
+- [x] Properly paginates.
+- [x] Deterministic sorting behavior.
+- [x] Historical semantics explicitly stated in API docs.
 
 ## 27. Implementation Readiness
 This specification can be safely implemented using the current data models without modifying schema or external infrastructure.

@@ -145,6 +145,9 @@ class DestinationItem(BaseModel):
     """A direct destination station reachable from the origin."""
 
     station_code: str = Field(..., description="Canonical station code")
+    station_name: str | None = Field(
+        None, description="Canonical station name from active station snapshot"
+    )
     fastest_duration_minutes: int | None = Field(
         None, description="Fastest known historical travel time in minutes"
     )
@@ -162,4 +165,7 @@ class DestinationResponse(BaseModel):
     origin: str = Field(..., description="Canonical origin station code")
     timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
     max_duration_minutes: int | None = Field(None, description="Maximum travel duration applied")
+    total: int = Field(..., description="Total number of reachable destinations")
+    page: int = Field(..., description="Current page number")
+    size: int = Field(..., description="Number of results per page")
     destinations: list[DestinationItem]

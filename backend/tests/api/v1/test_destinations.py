@@ -1,10 +1,11 @@
 """Tests for the Destinations API endpoint."""
 
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from typing import Any
 from railgati.models.provenance import DatasetSnapshot, DataSource
 from railgati.models.station import Station
 
@@ -49,7 +50,28 @@ def destinations_data(db_session: Session) -> dict[str, Any]:
     # Create stations
     org = Station(code="API_ORG")
     dst1 = Station(code="API_DST1")
-    db_session.add_all([org, dst1])
+    dst2 = Station(code="API_DST2")
+    db_session.add_all([org, dst1, dst2])
+    db_session.commit()
+
+    # Active station snapshot
+    from railgati.models.station import StationObservation
+
+    snap_station = DatasetSnapshot(
+        source_id=src.id,
+        status="ACTIVE",
+    )
+    db_session.add(snap_station)
+    db_session.commit()
+
+    obs_org = StationObservation(
+        snapshot_id=snap_station.id, station_id=org.id, name="Origin Station"
+    )
+    obs_dst1 = StationObservation(
+        snapshot_id=snap_station.id, station_id=dst1.id, name="Destination One"
+    )
+    # intentionally leave dst2 without observation to test missing metadata
+    db_session.add_all([obs_org, obs_dst1])
     db_session.commit()
 
     # Note: We do not insert actual TrainStopObservation here to avoid duplicating
@@ -92,10 +114,14 @@ def test_get_destinations_success(
     assert data["origin"] == destinations_data["org_code"]
     assert data["timetable_snapshot_id"] == destinations_data["snap_id"]
     assert data["max_duration_minutes"] is None
+    assert data["total"] == 1
+    assert data["page"] == 1
+    assert data["size"] == 50
     assert len(data["destinations"]) == 1
 
     dest = data["destinations"][0]
     assert dest["station_code"] == "API_DST1"
+    assert dest["station_name"] == "Destination One"
     assert dest["fastest_duration_minutes"] == 120
     assert dest["direct_train_count"] == 2
     assert dest["timing_confidence"] == "HIGH"
@@ -174,3 +200,80 @@ def test_get_destinations_no_active_snapshot(client: TestClient, db_session: Ses
     response = client.get("/api/v1/destinations?origin=LONE")
     assert response.status_code == 503
     assert "unavailable" in response.json()["detail"].lower()
+
+
+def test_get_destinations_pagination(
+    client: TestClient, destinations_data: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test explicit pagination and station names."""
+
+    from railgati.api.v1.schemas import TimingConfidence
+    from railgati.services.destination import DirectDestinationResult
+
+    def mock_find(*args: Any, **kwargs: Any) -> list[DirectDestinationResult]:
+        return [
+            DirectDestinationResult(
+                station_id=2,
+                station_code="API_DST1",
+                fastest_duration_minutes=60,
+                direct_trains_count=1,
+                timing_confidence=TimingConfidence.HIGH,
+            ),
+            DirectDestinationResult(
+                station_id=3,
+                station_code="API_DST2",
+                fastest_duration_minutes=120,
+                direct_trains_count=1,
+                timing_confidence=TimingConfidence.HIGH,
+            ),
+        ]
+
+    monkeypatch.setattr("railgati.api.v1.destinations.find_direct_destinations", mock_find)
+
+    # Page 1, Size 1
+    response = client.get(
+        f"/api/v1/destinations?origin={destinations_data['org_code']}&page=1&size=1"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    assert data["page"] == 1
+    assert data["size"] == 1
+    assert len(data["destinations"]) == 1
+    assert data["destinations"][0]["station_code"] == "API_DST1"
+    assert data["destinations"][0]["station_name"] == "Destination One"
+
+    # Page 2, Size 1
+    response2 = client.get(
+        f"/api/v1/destinations?origin={destinations_data['org_code']}&page=2&size=1"
+    )
+    assert response2.status_code == 200
+    data2 = response2.json()
+    assert len(data2["destinations"]) == 1
+    assert data2["destinations"][0]["station_code"] == "API_DST2"
+    assert data2["destinations"][0]["station_name"] is None  # Missing metadata case
+
+    # Page beyond results
+    response3 = client.get(
+        f"/api/v1/destinations?origin={destinations_data['org_code']}&page=3&size=1"
+    )
+    assert response3.status_code == 200
+    data3 = response3.json()
+    assert len(data3["destinations"]) == 0
+
+
+def test_get_destinations_pagination_validation(
+    client: TestClient, destinations_data: dict[str, Any]
+) -> None:
+    """Test validation errors for invalid pagination."""
+    # size = 0
+    resp1 = client.get(f"/api/v1/destinations?origin={destinations_data['org_code']}&size=0")
+    assert resp1.status_code == 422
+
+    # size > 100
+    resp2 = client.get(f"/api/v1/destinations?origin={destinations_data['org_code']}&size=101")
+    assert resp2.status_code == 422
+
+    # page = 0
+    resp3 = client.get(f"/api/v1/destinations?origin={destinations_data['org_code']}&page=0")
+    assert resp3.status_code == 422
