@@ -288,12 +288,15 @@ class NetworkPathContinuousServicesResponse(BaseModel):
     total_services_returned: int = Field(..., description="Number of continuous services returned")
     services: list[NetworkPathContinuousServiceItem] = Field(..., description="Continuous services")
 
+
 class CorridorItem(BaseModel):
     """A distinct structural corridor between an origin and destination."""
 
     path: list[str] = Field(..., description="Canonical station codes representing the path")
     occurrence_count: int = Field(..., description="Number of historical structural occurrences")
-    fastest_duration_minutes: int | None = Field(None, description="Fastest valid occurrence duration")
+    fastest_duration_minutes: int | None = Field(
+        None, description="Fastest valid occurrence duration"
+    )
 
 
 class CorridorResponse(BaseModel):

@@ -341,15 +341,15 @@ def find_network_path_service_occurrences(
     segment_tuples = [tuple_(s[0], s[1]) for s in segments]
 
     # Verify that all segments exist in the network graph
-    from sqlalchemy import or_, and_
+    from sqlalchemy import and_, or_
+
     conditions = [
         and_(RailwayNetworkEdge.from_station_id == s[0], RailwayNetworkEdge.to_station_id == s[1])
         for s in segments
     ]
     matched_edges = db.execute(
         select(RailwayNetworkEdge.from_station_id, RailwayNetworkEdge.to_station_id).filter(
-            RailwayNetworkEdge.timetable_snapshot_id == timetable_snapshot_id,
-            or_(*conditions)
+            RailwayNetworkEdge.timetable_snapshot_id == timetable_snapshot_id, or_(*conditions)
         )
     ).all()
 
@@ -453,8 +453,8 @@ def find_network_path_continuous_services(
         if path_station_ids[i] == path_station_ids[i + 1]:
             raise ValueError("Path cannot contain consecutive duplicate stations")
 
-    from railgati.models.provenance import DatasetSnapshot
     from railgati.models.graph import RailwayGraphBuild
+    from railgati.models.provenance import DatasetSnapshot
 
     snapshot = db.scalar(
         select(DatasetSnapshot).filter(
@@ -472,8 +472,9 @@ def find_network_path_continuous_services(
     if not build or build.status != "ACTIVE":
         raise ValueError("Active graph build unavailable for this snapshot")
 
-    from sqlalchemy import func, tuple_, text
+    from sqlalchemy import tuple_
     from sqlalchemy.orm import aliased
+
     from railgati.models.graph import RailwayNetworkEdge, RailwayServiceEdge
     from railgati.models.train import Train, TrainObservation
     from railgati.services.journey import _parse_time_to_minutes
@@ -484,15 +485,15 @@ def find_network_path_continuous_services(
     segment_tuples = [tuple_(s[0], s[1]) for s in segments]
 
     # Verify that all segments exist in the network graph
-    from sqlalchemy import or_, and_
+    from sqlalchemy import and_, or_
+
     conditions = [
         and_(RailwayNetworkEdge.from_station_id == s[0], RailwayNetworkEdge.to_station_id == s[1])
         for s in segments
     ]
     matched_edges = db.execute(
         select(RailwayNetworkEdge.from_station_id, RailwayNetworkEdge.to_station_id).filter(
-            RailwayNetworkEdge.timetable_snapshot_id == timetable_snapshot_id,
-            or_(*conditions)
+            RailwayNetworkEdge.timetable_snapshot_id == timetable_snapshot_id, or_(*conditions)
         )
     ).all()
 
@@ -593,12 +594,12 @@ def find_network_corridors(
     destination_station_id: int,
 ) -> list[CorridorItem]:
     """Discover distinct historical railway corridors between two stations."""
-    
+
     if origin_station_id == destination_station_id:
         raise ValueError("Origin and destination must not be the same")
 
-    from railgati.models.provenance import DatasetSnapshot
     from railgati.models.graph import RailwayGraphBuild
+    from railgati.models.provenance import DatasetSnapshot
 
     snapshot = db.scalar(
         select(DatasetSnapshot).filter(
@@ -658,39 +659,56 @@ def find_network_corridors(
             FROM occurrence_paths
             GROUP BY path_array, arrival_time, end_day, departure_time, start_day
         """)
-        results = db.execute(query, {"snapshot": timetable_snapshot_id, "origin": origin_station_id, "dest": destination_station_id}).all()
-        
+        results = db.execute(
+            query,
+            {
+                "snapshot": timetable_snapshot_id,
+                "origin": origin_station_id,
+                "dest": destination_station_id,
+            },
+        ).all()
+
         # SQLite processing in Python
         from collections import defaultdict
-        corridors = defaultdict(lambda: {'count': 0, 'durations': []})
+
+        corridors = defaultdict(lambda: {"count": 0, "durations": []})
         for row in results:
-            path = row[0].split(',') if row[0] else []
+            path = row[0].split(",") if row[0] else []
             count = row[1]
             arr, end_day, dep, start_day = row[2], row[3], row[4], row[5]
             dur = None
             if arr and end_day and dep and start_day:
                 from railgati.services.journey import _parse_time_to_minutes
+
                 orig_mins = _parse_time_to_minutes(dep, start_day)
                 dest_mins = _parse_time_to_minutes(arr, end_day)
                 if orig_mins is not None and dest_mins is not None:
                     calc = dest_mins - orig_mins
                     if calc >= 0:
                         dur = calc
-            corridors[tuple(path)]['count'] += count
+            corridors[tuple(path)]["count"] += count
             if dur is not None:
-                corridors[tuple(path)]['durations'].append(dur)
-        
+                corridors[tuple(path)]["durations"].append(dur)
+
         items = []
         for p, data in corridors.items():
-            fastest = min(data['durations']) if data['durations'] else None
-            items.append(CorridorItem(path=list(p), occurrence_count=data['count'], fastest_duration_minutes=fastest))
-            
-        items.sort(key=lambda x: (
-            -x.occurrence_count,
-            x.fastest_duration_minutes if x.fastest_duration_minutes is not None else float('inf'),
-            len(x.path),
-            ",".join(x.path)
-        ))
+            fastest = min(data["durations"]) if data["durations"] else None
+            items.append(
+                CorridorItem(
+                    path=list(p), occurrence_count=data["count"], fastest_duration_minutes=fastest
+                )
+            )
+
+        items.sort(
+            key=lambda x: (
+                -x.occurrence_count,
+                x.fastest_duration_minutes
+                if x.fastest_duration_minutes is not None
+                else float("inf"),
+                len(x.path),
+                ",".join(x.path),
+            )
+        )
         return items
 
     # Postgres Query

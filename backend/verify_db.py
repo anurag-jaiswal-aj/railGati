@@ -1,5 +1,6 @@
-from railgati.db import get_session_factory
 from sqlalchemy import text
+
+from railgati.db import get_session_factory
 
 db = get_session_factory()()
 

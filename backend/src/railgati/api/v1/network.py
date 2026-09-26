@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from railgati.api.v1 import schemas
 from railgati.api.v1.schemas import (
     NetworkPathAttributionResponse,
     NetworkPathItem,
@@ -14,9 +15,7 @@ from railgati.api.v1.schemas import (
     NetworkReachabilityItem,
     NetworkReachabilityResponse,
     NetworkServiceAttributionResponse,
-    NetworkPathContinuousServicesResponse,
 )
-from railgati.api.v1 import schemas
 from railgati.api.v1.snapshots import (
     get_active_station_snapshot_id,
     get_active_timetable_snapshot_id,
@@ -554,6 +553,7 @@ def get_network_path_continuous_services(
         )
     except ValueError as e:
         import pydantic
+
         if isinstance(e, pydantic.ValidationError):
             raise
         msg = str(e)
@@ -564,6 +564,7 @@ def get_network_path_continuous_services(
         elif "does not exist in the active network topology" in msg:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+
 
 @router.get(
     "/corridors",
