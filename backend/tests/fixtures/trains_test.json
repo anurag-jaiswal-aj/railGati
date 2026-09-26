@@ -1,0 +1,45 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "geometry": { "type": "LineString", "coordinates": [] },
+      "type": "Feature",
+      "properties": {
+        "number": "12101",
+        "name": "MUMBAI LTT - HOWRAH Janeswari Super Deluxe Exp",
+        "type": "SF",
+        "return_train": "12102"
+      }
+    },
+    {
+      "geometry": { "type": "LineString", "coordinates": [] },
+      "type": "Feature",
+      "properties": {
+        "number": "12101",
+        "name": "Duplicate Train",
+        "type": "SF",
+        "return_train": "None"
+      }
+    },
+    {
+      "geometry": { "type": "LineString", "coordinates": [] },
+      "type": "Feature",
+      "properties": {
+        "number": "04601",
+        "name": "Jammu Tawi Udhampur Special",
+        "type": "None",
+        "return_train": "04602"
+      }
+    },
+    {
+      "geometry": { "type": "LineString", "coordinates": [] },
+      "type": "Feature",
+      "properties": {
+        "number": "",
+        "name": "Missing Number Train",
+        "type": "Pass",
+        "return_train": "None"
+      }
+    }
+  ]
+}

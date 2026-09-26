@@ -17,6 +17,30 @@ class ParsedStation:
 
 
 @dataclass
+class ParsedTrain:
+    """A train record extracted from a raw source and normalized."""
+
+    source_index: int
+    number: str
+    name: str
+    type: str | None = None
+    return_train_number: str | None = None
+
+
+@dataclass
+class ParsedSchedule:
+    """A stop schedule for a train extracted from a raw source and normalized."""
+
+    source_id: int
+    train_number: str
+    station_code: str
+    arrival_time: str | None = None
+    departure_time: str | None = None
+    day: int | None = None
+
+
+
+@dataclass
 class IngestionResult:
     """The result of an ingestion run."""
 
@@ -29,8 +53,9 @@ class IngestionResult:
     duplicates: int = 0
     invalid_coordinates: int = 0
     missing_required_fields: int = 0
+    unknown_station_codes: int = 0
     warnings: list[str] = field(default_factory=list)
-    rejections: list[dict[str, str | float | None]] = field(default_factory=list)
+    rejections: list[dict[str, str | float | int | None]] = field(default_factory=list)
     status: str = "PENDING"
 
     def __post_init__(self) -> None:
@@ -56,6 +81,7 @@ class IngestionResult:
         print(f"Duplicates:              {self.duplicates}")
         print(f"Invalid coordinates:     {self.invalid_coordinates}")
         print(f"Missing required fields: {self.missing_required_fields}")
+        print(f"Unknown station codes:   {self.unknown_station_codes}")
         if self.warnings:
             print("-" * 50)
             print("Warnings:")
@@ -64,3 +90,4 @@ class IngestionResult:
             if len(self.warnings) > 10:
                 print(f"  ... and {len(self.warnings) - 10} more.")
         print("=" * 50)
+
