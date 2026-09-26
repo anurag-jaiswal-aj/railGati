@@ -53,12 +53,18 @@ A direct journey exists if:
 **ASSUMPTION Handling Duplicates**: If a train visits a station multiple times (e.g., circular routes), take the earliest `T_orig` and the first `T_dest` that occurs *after* `T_orig`.
 
 ## 6. One-Transfer Algorithm
+**STATUS: IMPLEMENTED**
+The query foundation for historical one-transfer journeys is now implemented.
 A one-transfer journey exists if:
 1. Train A connects `Origin` -> `Transfer`.
 2. Train B connects `Transfer` -> `Destination`.
 3. Train A != Train B.
-4. **Temporal Ordering**: `Train B departure at Transfer` > `Train A arrival at Transfer`.
-5. **ASSUMPTION Transfer Buffer**: The API may expose `min_transfer_minutes` (e.g., defaulting to 120 minutes) as a configurable algorithmic assumption to prevent impossible 1-minute connections. This is NOT an Indian Railways operational guarantee, is not derived from the Datameet dataset, and is subject to later validation.
+4. **Different-Station Transfers**: Unsupported. Train A and Train B must transfer at the exact same canonical station.
+5. **Temporal Ordering**: `Train B departure at Transfer` > `Train A arrival at Transfer`.
+6. **Missing Temporal Information**: If any required temporal field (`arrival_time`, `departure_time`, or `source_day`) at the transfer station is missing, the connection cannot be temporally validated and is explicitly excluded.
+7. **ASSUMPTION Transfer Buffer**: The minimum transfer time is an algorithmic configurable assumption (default 120 minutes), not an Indian Railways operational guarantee. Real-world connections are not guaranteed operationally.
+8. **ASSUMPTION Maximum Layover**: The maximum layover is an algorithmic pruning/business rule (default 1440 minutes) to avoid presenting extremely long waits as useful comparisons. It is not an operational railway rule.
+9. **Multi-Transfer Routing**: Remains strictly OUT OF SCOPE.
 
 ## 7. Multi-Transfer Decision
 **Decision: OUT OF SCOPE for v1.2.**

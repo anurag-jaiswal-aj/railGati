@@ -126,4 +126,6 @@ class JourneyOption(BaseModel):
     total_duration_minutes: int | None
     timing_confidence: TimingConfidence
     number_of_stops: int
+    transfer_station: str | None = None
+    layover_minutes: int | None = None
     provenance: ProvenanceInfo

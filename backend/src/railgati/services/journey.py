@@ -164,3 +164,216 @@ def find_direct_journeys(
 
     options.sort(key=sort_key)
     return options
+
+
+def find_one_transfer_journeys(
+    db: Session,
+    timetable_snapshot_id: int,
+    origin_station_id: int,
+    destination_station_id: int,
+    minimum_transfer_minutes: int = 120,
+    maximum_layover_minutes: int = 1440,
+) -> list[JourneyOption]:
+    """Find one-transfer historical journeys between two stations."""
+    # 1. Look up stations and snapshot provenance
+    origin_station = db.scalar(select(Station).filter(Station.id == origin_station_id))
+    destination_station = db.scalar(select(Station).filter(Station.id == destination_station_id))
+
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
+    )
+
+    if not origin_station or not destination_station or not snapshot:
+        return []
+
+    source = db.scalar(select(DataSource).filter(DataSource.id == snapshot.source_id))
+    if not source:
+        return []
+
+    provenance = ProvenanceInfo(
+        snapshot_id=snapshot.id,
+        source_name=source.name,
+        retrieved_at=snapshot.retrieved_at,
+    )
+
+    t_a_orig = aliased(TrainStopObservation)
+    t_a_trans = aliased(TrainStopObservation)
+    t_b_trans = aliased(TrainStopObservation)
+    t_b_dest = aliased(TrainStopObservation)
+    train_a = aliased(Train)
+    train_b = aliased(Train)
+    t_a_obs = aliased(TrainObservation)
+    t_b_obs = aliased(TrainObservation)
+    transfer_station_model = aliased(Station)
+
+    query = (
+        select(
+            t_a_orig,
+            t_a_trans,
+            t_a_obs,
+            train_a,
+            t_b_trans,
+            t_b_dest,
+            t_b_obs,
+            train_b,
+            transfer_station_model,
+        )
+        .join(
+            t_a_trans,
+            (t_a_orig.train_id == t_a_trans.train_id)
+            & (t_a_orig.snapshot_id == t_a_trans.snapshot_id),
+        )
+        .join(
+            t_b_trans,
+            (t_a_trans.station_id == t_b_trans.station_id)
+            & (t_a_trans.snapshot_id == t_b_trans.snapshot_id),
+        )
+        .join(
+            t_b_dest,
+            (t_b_trans.train_id == t_b_dest.train_id)
+            & (t_b_trans.snapshot_id == t_b_dest.snapshot_id),
+        )
+        .join(
+            t_a_obs,
+            (t_a_orig.train_id == t_a_obs.train_id) & (t_a_orig.snapshot_id == t_a_obs.snapshot_id),
+        )
+        .join(
+            t_b_obs,
+            (t_b_dest.train_id == t_b_obs.train_id) & (t_b_dest.snapshot_id == t_b_obs.snapshot_id),
+        )
+        .join(train_a, train_a.id == t_a_orig.train_id)
+        .join(train_b, train_b.id == t_b_dest.train_id)
+        .join(transfer_station_model, transfer_station_model.id == t_a_trans.station_id)
+        .filter(
+            t_a_orig.snapshot_id == timetable_snapshot_id,
+            t_a_orig.station_id == origin_station_id,
+            t_b_dest.station_id == destination_station_id,
+            t_a_orig.stop_sequence < t_a_trans.stop_sequence,
+            t_b_trans.stop_sequence < t_b_dest.stop_sequence,
+            t_a_orig.train_id != t_b_dest.train_id,
+            t_a_trans.station_id != origin_station_id,
+            t_a_trans.station_id != destination_station_id,
+        )
+        .order_by(
+            t_a_orig.stop_sequence.asc(),
+            t_a_trans.stop_sequence.asc(),
+            t_b_trans.stop_sequence.asc(),
+            t_b_dest.stop_sequence.asc(),
+        )
+    )
+
+    results = db.execute(query).all()
+
+    seen_paths = set()
+    options = []
+
+    for o_stop, a_trans, obs_a, t_a, b_trans, d_stop, obs_b, t_b, transfer_st in results:
+        path_key = (t_a.id, transfer_st.id, t_b.id)
+        if path_key in seen_paths:
+            continue
+
+        a_arr_mins = _parse_time_to_minutes(a_trans.arrival_time, a_trans.source_day)
+        b_dep_mins = _parse_time_to_minutes(b_trans.departure_time, b_trans.source_day)
+
+        if a_arr_mins is None or b_dep_mins is None:
+            continue
+
+        layover = b_dep_mins - a_arr_mins
+        if layover < minimum_transfer_minutes or layover > maximum_layover_minutes:
+            continue
+
+        seen_paths.add(path_key)
+
+        a_dep_mins = _parse_time_to_minutes(o_stop.departure_time, o_stop.source_day)
+        b_arr_mins = _parse_time_to_minutes(d_stop.arrival_time, d_stop.source_day)
+
+        leg1_duration = None
+        if (
+            a_dep_mins is not None
+            and a_arr_mins is not None
+            and a_trans.source_day is not None
+            and o_stop.source_day is not None
+            and a_trans.source_day >= o_stop.source_day
+        ):
+            dur = a_arr_mins - a_dep_mins
+            if dur >= 0:
+                leg1_duration = dur
+
+        leg2_duration = None
+        if (
+            b_dep_mins is not None
+            and b_arr_mins is not None
+            and d_stop.source_day is not None
+            and b_trans.source_day is not None
+            and d_stop.source_day >= b_trans.source_day
+        ):
+            dur = b_arr_mins - b_dep_mins
+            if dur >= 0:
+                leg2_duration = dur
+
+        total_duration = None
+        confidence = TimingConfidence.MISSING_DATA
+        if leg1_duration is not None and leg2_duration is not None:
+            total_duration = leg1_duration + layover + leg2_duration
+            confidence = TimingConfidence.HIGH
+
+        stops_count = (a_trans.stop_sequence - o_stop.stop_sequence) + (
+            d_stop.stop_sequence - b_trans.stop_sequence
+        )
+
+        leg1 = JourneyLeg(
+            train_number=t_a.number,
+            train_name=obs_a.name,
+            train_type=obs_a.type,
+            origin_station=origin_station.code,
+            destination_station=transfer_st.code,
+            departure_time=o_stop.departure_time,
+            arrival_time=a_trans.arrival_time,
+            source_day_offset=o_stop.source_day,
+            duration_minutes=leg1_duration,
+        )
+
+        leg2 = JourneyLeg(
+            train_number=t_b.number,
+            train_name=obs_b.name,
+            train_type=obs_b.type,
+            origin_station=transfer_st.code,
+            destination_station=destination_station.code,
+            departure_time=b_trans.departure_time,
+            arrival_time=d_stop.arrival_time,
+            source_day_offset=b_trans.source_day,
+            duration_minutes=leg2_duration,
+        )
+
+        raw_id = f"{timetable_snapshot_id}_trans_{t_a.number}_{transfer_st.id}_{t_b.number}"
+        journey_id = hashlib.sha256(raw_id.encode()).hexdigest()[:12]
+
+        option = JourneyOption(
+            journey_id=journey_id,
+            type=JourneyType.ONE_TRANSFER,
+            legs=[leg1, leg2],
+            total_duration_minutes=total_duration,
+            timing_confidence=confidence,
+            number_of_stops=stops_count,
+            transfer_station=transfer_st.code,
+            layover_minutes=layover,
+            provenance=provenance,
+        )
+        options.append(option)
+
+    def sort_key(opt: JourneyOption) -> tuple[Any, ...]:
+        dur_val = (
+            opt.total_duration_minutes if opt.total_duration_minutes is not None else float("inf")
+        )
+        dep_val = float("inf")
+        if opt.legs[0].departure_time and opt.legs[0].source_day_offset is not None:
+            mins = _parse_time_to_minutes(opt.legs[0].departure_time, opt.legs[0].source_day_offset)
+            if mins is not None:
+                dep_val = mins
+        t_a_num = opt.legs[0].train_number
+        trans_code = opt.transfer_station or ""
+        t_b_num = opt.legs[1].train_number
+        return (dur_val, dep_val, t_a_num, trans_code, t_b_num)
+
+    options.sort(key=sort_key)
+    return options
