@@ -29,11 +29,14 @@ class IngestionResult:
     invalid_coordinates: int = 0
     missing_required_fields: int = 0
     warnings: list[str] = field(default_factory=list)
+    rejections: list[dict[str, str | float | None]] = field(default_factory=list)
     status: str = "PENDING"
 
     def __post_init__(self) -> None:
         if self.warnings is None:
             self.warnings = []
+        if self.rejections is None:
+            self.rejections = []
 
     def print_report(self) -> None:
         """Print a clear report of the ingestion run."""

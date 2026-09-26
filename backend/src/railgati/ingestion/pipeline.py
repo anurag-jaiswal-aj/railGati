@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from railgati.ingestion.schema import IngestionResult, ParsedStation
 from railgati.models.provenance import DatasetSnapshot, DataSource
-from railgati.models.station import Station
+from railgati.models.station import Station, StationObservation
 
 
 class Pipeline:
@@ -47,12 +47,13 @@ class Pipeline:
     def validate_station(self, station: ParsedStation, result: IngestionResult) -> bool:
         """Validate a station record. Returns True if valid."""
         is_valid = True
+        rejection_reason = ""
 
         if not station.code or not station.name:
             result.missing_required_fields += 1
-            result.warnings.append(
-                f"Missing required fields. code='{station.code}', name='{station.name}'"
-            )
+            reason = f"Missing required fields. code='{station.code}', name='{station.name}'"
+            result.warnings.append(reason)
+            rejection_reason = reason
             is_valid = False
 
         if (
@@ -61,11 +62,25 @@ class Pipeline:
             and not (6.0 <= station.latitude <= 36.0 and 68.0 <= station.longitude <= 98.0)
         ):
             result.invalid_coordinates += 1
-            result.warnings.append(
+            reason = (
                 f"Coordinates out of bounds for {station.code}: "
                 f"{station.latitude}, {station.longitude}"
             )
+            result.warnings.append(reason)
+            if not rejection_reason:
+                rejection_reason = reason
             is_valid = False
+
+        if not is_valid:
+            result.rejections.append(
+                {
+                    "code": station.code,
+                    "name": station.name,
+                    "latitude": station.latitude,
+                    "longitude": station.longitude,
+                    "reason": rejection_reason,
+                }
+            )
 
         return is_valid
 
@@ -91,9 +106,9 @@ class Pipeline:
 
         seen_codes = set()
 
-        # Fast lookup for idempotency
-        stmt = select(Station.code)
-        existing_codes = set(self.db.scalars(stmt).all())
+        # Fast lookup for existing canonical stations
+        stmt = select(Station.code, Station.id)
+        existing_stations: dict[str, int] = dict(self.db.execute(stmt).all())
 
         try:
             for parsed in parser_gen:
@@ -105,33 +120,44 @@ class Pipeline:
                     result.records_rejected += 1
                     continue
 
-                # 3. Handle duplicates
+                # 3. Handle intra-dataset duplicates
                 if parsed.code in seen_codes:
                     result.duplicates += 1
-                    result.warnings.append(f"Duplicate code in dataset: {parsed.code}")
+                    reason = f"Duplicate code in dataset: {parsed.code}"
+                    result.warnings.append(reason)
+                    result.rejections.append(
+                        {
+                            "code": parsed.code,
+                            "name": parsed.name,
+                            "reason": reason,
+                        }
+                    )
                     result.records_rejected += 1
                     continue
 
                 seen_codes.add(parsed.code)
 
-                # Idempotency: skip if already in DB.
-                # (For v0.2, we just skip inserts. In real UPSERT we might update fields)
-                if parsed.code in existing_codes:
-                    result.duplicates += 1
-                    result.records_rejected += 1
-                    continue
+                # 4. Canonical Station Identity
+                station_id = existing_stations.get(parsed.code)
+                if not station_id:
+                    # Create new canonical identity
+                    new_station = Station(code=parsed.code)
+                    self.db.add(new_station)
+                    self.db.flush()  # to get the ID
+                    station_id = new_station.id
+                    existing_stations[parsed.code] = station_id
 
-                # 4. Insert
-                station = Station(
-                    code=parsed.code,
+                # 5. Station Observation (Snapshot Membership)
+                obs = StationObservation(
+                    snapshot_id=snapshot.id,
+                    station_id=station_id,
                     name=parsed.name,
                     state=parsed.state,
                     zone=parsed.zone,
                     latitude=parsed.latitude,
                     longitude=parsed.longitude,
-                    snapshot_id=snapshot.id,
                 )
-                self.db.add(station)
+                self.db.add(obs)
                 result.records_accepted += 1
 
             snapshot.record_count = result.records_accepted

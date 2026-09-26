@@ -1,6 +1,7 @@
 """CLI for the data ingestion pipeline."""
 
 import argparse
+import json
 from pathlib import Path
 
 from railgati.db import get_session_factory
@@ -43,6 +44,16 @@ def main() -> None:
             pipeline = Pipeline(db, dry_run=args.dry_run)
             result = pipeline.run(str(input_path), data_parser.parse())
             result.print_report()
+
+            if result.rejections and result.snapshot_id:
+                rejections_file = (
+                    input_path.parent.parent
+                    / "processed"
+                    / f"snapshot_{result.snapshot_id}_rejections.json"
+                )
+                with open(rejections_file, "w") as f:
+                    json.dump(result.rejections, f, indent=2)
+                print(f"Detailed rejections written to {rejections_file}")
 
 
 if __name__ == "__main__":

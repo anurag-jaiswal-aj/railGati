@@ -12,7 +12,7 @@ from railgati.ingestion.pipeline import Pipeline
 from railgati.ingestion.schema import ParsedStation
 from railgati.models import Base
 from railgati.models.provenance import DatasetSnapshot
-from railgati.models.station import Station
+from railgati.models.station import Station, StationObservation
 
 
 @pytest.fixture
@@ -63,6 +63,8 @@ def test_ingestion_pipeline_success(db_session: Session) -> None:
     # Check DB
     stations = db_session.query(Station).all()
     assert len(stations) == 2
+    observations = db_session.query(StationObservation).all()
+    assert len(observations) == 2
 
     snapshot = db_session.query(DatasetSnapshot).first()
     assert snapshot is not None
@@ -89,11 +91,14 @@ def test_ingestion_idempotency(db_session: Session) -> None:
     result2 = pipeline2.run(str(fixture_path), parser2.parse())
 
     assert result2.status == "SUCCESS"
-    assert result2.records_accepted == 0  # all skipped as duplicates
-    assert result2.duplicates == 3
+    assert result2.records_accepted == 2  # New observations for new snapshot
+    assert result2.duplicates == 1  # Only the intra-dataset duplicate
 
     stations_count_2 = db_session.query(Station).count()
-    assert stations_count_2 == 2  # Count should not change
+    assert stations_count_2 == 2  # Canonical count should not change
+
+    observations_count_2 = db_session.query(StationObservation).count()
+    assert observations_count_2 == 4  # 2 snapshots * 2 valid stations
 
 
 def test_ingestion_dry_run(db_session: Session) -> None:

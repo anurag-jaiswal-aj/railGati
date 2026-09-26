@@ -20,6 +20,7 @@
 - **License:** CC0 (Creative Commons Zero) — free to use
 - **Decision:** **USED** in v0.2 for the initial Station foundation.
 - **Reason:** Explicitly licensed as CC0, provides natural identifiers (codes) and geospatial data.
+- **Freshness Note:** This is a static/open community reference dataset. Its CC0 license does NOT imply the data is currently fresh or exhaustive. The dataset has known open issues regarding completeness and updates. Freshness must be independently tracked.
 
 ---
 
@@ -31,7 +32,8 @@
 - **URL:** https://data.gov.in
 - **License:** Open Government Data License (OGDL)
 - **Decision:** **CANDIDATE** (Not used in v0.2).
-- **Reason:** While legally usable (OGDL), a single comprehensive master list of all current station metadata (codes, coordinates) was not found in a unified dataset. Most datasets are granular statistical data rather than infrastructure masters.
+- **Reason:** While legally usable under OGDL, a single comprehensive master list of all current station metadata (codes, coordinates) was not found in a unified dataset. Most datasets are granular statistical snapshots rather than infrastructure masters.
+- **Evaluation Note:** Open Government Data License explicitly permits use, but dataset authority, coverage, and freshness vary wildly per uploaded dataset. Each specific dataset must be evaluated individually for suitability before being marked VERIFIED.
 
 ---
 

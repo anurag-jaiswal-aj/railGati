@@ -31,19 +31,23 @@ This document outlines the domain entities explicitly modeled in the database fo
 ## Railway Entities
 
 ### Station
-- **Purpose**: Represents a railway station.
+- **Purpose**: Represents the canonical identity of a railway station.
 - **Fields**:
   - `id` (Primary Key, Surrogate Integer)
   - `code` (String, Unique, Index): The natural identifier of the station.
+  - `created_at` (DateTime)
+- **Relationships**: One-to-Many with `StationObservation`
+- **Constraints**: 
+  - `code` must be unique and not null.
+
+### StationObservation
+- **Purpose**: Represents a record of a station as it appeared in a specific dataset snapshot.
+- **Fields**:
+  - `snapshot_id` (Primary Key, Foreign Key -> `DatasetSnapshot.id`)
+  - `station_id` (Primary Key, Foreign Key -> `Station.id`)
   - `name` (String)
   - `state` (String)
   - `zone` (String)
   - `latitude` (Float)
   - `longitude` (Float)
-  - `snapshot_id` (Foreign Key -> `DatasetSnapshot.id`)
-  - `created_at` (DateTime)
-  - `updated_at` (DateTime)
-- **Relationships**: Many-to-One with `DatasetSnapshot` (Provenance)
-- **Constraints**: 
-  - `code` must be unique.
-  - `name` and `code` must not be null.
+- **Relationships**: Many-to-One with `DatasetSnapshot`, Many-to-One with `Station`
