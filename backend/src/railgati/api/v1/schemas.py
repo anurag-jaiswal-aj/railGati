@@ -189,3 +189,34 @@ class NetworkReachabilityResponse(BaseModel):
     max_hops: int = Field(..., description="Maximum applied network hops")
     total: int = Field(..., description="Total number of reachable stations returned")
     stations: list[NetworkReachabilityItem]
+
+
+class NetworkPathStation(BaseModel):
+    """A station in a network path."""
+
+    station_code: str = Field(..., description="Canonical station code")
+    station_name: str | None = Field(
+        None, description="Canonical station name from active station snapshot"
+    )
+
+
+class NetworkPathItem(BaseModel):
+    """A single topological path."""
+
+    hop_count: int = Field(..., description="Number of network hops")
+    stations: list[NetworkPathStation] = Field(
+        ..., description="Ordered sequence of stations in the path"
+    )
+
+
+class NetworkPathResponse(BaseModel):
+    """Response containing bounded topological paths between an origin and destination."""
+
+    origin: str = Field(..., description="Canonical origin station code")
+    destination: str = Field(..., description="Canonical destination station code")
+    timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
+    max_hops: int = Field(..., description="Maximum applied network hops")
+    max_paths: int = Field(..., description="Maximum number of paths to return")
+    total_paths_returned: int = Field(..., description="Number of paths actually returned")
+    paths: list[NetworkPathItem]
+

@@ -15,6 +15,13 @@ class StationReachability(BaseModel):
     min_hops: int
 
 
+class NetworkPath(BaseModel):
+    """Result model for a topologically discovered path."""
+
+    hop_count: int
+    station_ids: list[int]
+
+
 def find_reachable_stations(
     db: Session,
     origin_station_id: int,
@@ -85,3 +92,84 @@ def find_reachable_stations(
 
     # If raw query returns records, they will be formatted as tuples
     return [StationReachability(station_id=row[0], min_hops=row[1]) for row in results]
+
+
+def find_network_paths(
+    db: Session,
+    timetable_snapshot_id: int,
+    origin_station_id: int,
+    destination_station_id: int,
+    max_hops: int,
+    max_paths: int,
+) -> list[NetworkPath]:
+    """Find simple bounded topology paths from origin to destination."""
+
+    if max_hops < 1 or max_hops > 10:
+        raise ValueError("max_hops must be between 1 and 10")
+    if max_paths < 1 or max_paths > 50:
+        raise ValueError("max_paths must be between 1 and 50")
+
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    build = db.scalar(
+        select(RailwayGraphBuild).filter(
+            RailwayGraphBuild.timetable_snapshot_id == timetable_snapshot_id
+        )
+    )
+    if not build or build.status != "ACTIVE":
+        raise ValueError("Active graph build unavailable for this snapshot")
+
+    # If origin is destination, handle explicitly without CTE
+    if origin_station_id == destination_station_id:
+        return [NetworkPath(hop_count=0, station_ids=[origin_station_id])]
+
+    query = text("""
+        WITH RECURSIVE paths AS (
+            -- Base case: neighbors of origin
+            SELECT
+                to_station_id,
+                1 AS depth,
+                ARRAY[from_station_id, to_station_id] AS visited_ids,
+                ARRAY[(SELECT code FROM stations WHERE id = from_station_id), (SELECT code FROM stations WHERE id = to_station_id)]::varchar[] AS path_codes
+            FROM railway_network_edges
+            WHERE timetable_snapshot_id = :snapshot_id
+              AND from_station_id = :origin_id
+              AND to_station_id != :origin_id
+
+            UNION ALL
+
+            -- Recursive case
+            SELECT
+                e.to_station_id,
+                p.depth + 1,
+                p.visited_ids || e.to_station_id,
+                p.path_codes || (SELECT code FROM stations WHERE id = e.to_station_id)
+            FROM railway_network_edges e
+            JOIN paths p ON e.from_station_id = p.to_station_id
+            WHERE e.timetable_snapshot_id = :snapshot_id
+              AND p.depth < :max_hops
+              AND NOT (e.to_station_id = ANY(p.visited_ids))
+        )
+        SELECT depth, visited_ids, path_codes
+        FROM paths
+        WHERE to_station_id = :destination_id
+        ORDER BY depth ASC, path_codes ASC
+        LIMIT :max_paths
+    """)
+
+    results = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "origin_id": origin_station_id,
+            "destination_id": destination_station_id,
+            "max_hops": max_hops,
+            "max_paths": max_paths,
+        },
+    ).all()
+
+    return [NetworkPath(hop_count=row[0], station_ids=row[1]) for row in results]

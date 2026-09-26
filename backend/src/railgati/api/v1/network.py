@@ -6,14 +6,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from railgati.api.v1.schemas import NetworkReachabilityItem, NetworkReachabilityResponse
+from railgati.api.v1.schemas import (
+    NetworkPathItem,
+    NetworkPathResponse,
+    NetworkPathStation,
+    NetworkReachabilityItem,
+    NetworkReachabilityResponse,
+)
 from railgati.api.v1.snapshots import (
     get_active_station_snapshot_id,
     get_active_timetable_snapshot_id,
 )
 from railgati.db import get_db
 from railgati.models.station import Station, StationObservation
-from railgati.services.network import find_reachable_stations
+from railgati.services.network import find_network_paths, find_reachable_stations
 
 router = APIRouter(prefix="/network", tags=["Network"])
 
@@ -113,3 +119,134 @@ def get_reachable_stations(
         total=len(items),
         stations=items,
     )
+
+
+@router.get(
+    "/path",
+    response_model=NetworkPathResponse,
+    summary="Explore bounded network topology paths",
+    description=(
+        "Returns simple topological paths between an origin and destination within max_hops. "
+        "This does not represent passenger routing or viability of transfers."
+    ),
+)
+def get_network_path(
+    origin: Annotated[
+        str,
+        Query(
+            description="Canonical origin station code.",
+            min_length=1,
+            max_length=50,
+        ),
+    ],
+    destination: Annotated[
+        str,
+        Query(
+            description="Canonical destination station code.",
+            min_length=1,
+            max_length=50,
+        ),
+    ],
+    max_hops: Annotated[
+        int,
+        Query(
+            description="Maximum network traversal depth.",
+            ge=1,
+            le=10,
+        ),
+    ] = 3,
+    max_paths: Annotated[
+        int,
+        Query(
+            description="Maximum number of paths to return.",
+            ge=1,
+            le=50,
+        ),
+    ] = 10,
+    db: Session = Depends(get_db),  # noqa: B008
+) -> NetworkPathResponse:
+    """Explore bounded paths between origin and destination."""
+
+    # 1. Resolve Stations
+    stations_q = db.execute(
+        select(Station)
+        .filter(
+            func.lower(Station.code).in_([origin.lower(), destination.lower()])
+        )
+    ).scalars().all()
+
+    origin_station = next((s for s in stations_q if s.code.lower() == origin.lower()), None)
+    dest_station = next((s for s in stations_q if s.code.lower() == destination.lower()), None)
+
+    if not origin_station:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Origin station '{origin.upper()}' not found.",
+        )
+    if not dest_station:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Destination station '{destination.upper()}' not found.",
+        )
+
+    # 2. Get Active Timetable Snapshot
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    # 3. Call the Discovery Service
+    try:
+        service_results = find_network_paths(
+            db=db,
+            timetable_snapshot_id=timetable_snapshot_id,
+            origin_station_id=origin_station.id,
+            destination_station_id=dest_station.id,
+            max_hops=max_hops,
+            max_paths=max_paths,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        ) from e
+
+    # 4. Resolve Station Names safely via API layer
+    station_meta: dict[int, tuple[str, str | None]] = {}
+    if service_results:
+        station_snapshot_id = get_active_station_snapshot_id(db)
+
+        # Collect all unique station IDs in all paths
+        unique_station_ids = {sid for path in service_results for sid in path.station_ids}
+
+        observations = db.execute(
+            select(Station.id, Station.code, StationObservation.name)
+            .outerjoin(
+                StationObservation,
+                (Station.id == StationObservation.station_id)
+                & (StationObservation.snapshot_id == station_snapshot_id),
+            )
+            .filter(Station.id.in_(unique_station_ids))
+        ).all()
+
+        station_meta = {row.id: (row.code, row.name) for row in observations}
+
+    # 5. Map to Response Schema
+    items = []
+    for path in service_results:
+        path_stations = [
+            NetworkPathStation(
+                station_code=station_meta[sid][0],
+                station_name=station_meta[sid][1],
+            )
+            for sid in path.station_ids
+        ]
+        items.append(NetworkPathItem(hop_count=path.hop_count, stations=path_stations))
+
+    return NetworkPathResponse(
+        origin=origin_station.code,
+        destination=dest_station.code,
+        timetable_snapshot_id=timetable_snapshot_id,
+        max_hops=max_hops,
+        max_paths=max_paths,
+        total_paths_returned=len(items),
+        paths=items,
+    )
+
