@@ -48,7 +48,7 @@ def find_reachable_stations(
             SELECT
                 to_station_id,
                 1 AS depth,
-                ',' || CAST(from_station_id AS VARCHAR) || ',' || CAST(to_station_id AS VARCHAR) || ',' AS visited
+                ARRAY[from_station_id, to_station_id] AS visited_ids
             FROM railway_network_edges
             WHERE timetable_snapshot_id = :snapshot_id
               AND from_station_id = :origin_id
@@ -60,17 +60,18 @@ def find_reachable_stations(
             SELECT
                 e.to_station_id,
                 r.depth + 1,
-                r.visited || CAST(e.to_station_id AS VARCHAR) || ','
+                r.visited_ids || e.to_station_id
             FROM railway_network_edges e
             JOIN reachable r ON e.from_station_id = r.to_station_id
             WHERE e.timetable_snapshot_id = :snapshot_id
               AND r.depth < :max_hops
-              AND r.visited NOT LIKE '%,' || CAST(e.to_station_id AS VARCHAR) || ',%'
+              AND NOT (e.to_station_id = ANY(r.visited_ids))
         )
-        SELECT to_station_id, MIN(depth) AS min_hops
-        FROM reachable
-        GROUP BY to_station_id
-        ORDER BY min_hops ASC, to_station_id ASC
+        SELECT r.to_station_id, MIN(r.depth) AS min_hops
+        FROM reachable r
+        JOIN stations s ON r.to_station_id = s.id
+        GROUP BY r.to_station_id, s.code
+        ORDER BY min_hops ASC, s.code ASC
     """)
 
     results = db.execute(
