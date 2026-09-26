@@ -74,6 +74,8 @@ class Pipeline:
         if not is_valid:
             result.rejections.append(
                 {
+                    "snapshot_id": result.snapshot_id,
+                    "source_index": station.source_index,
                     "code": station.code,
                     "name": station.name,
                     "latitude": station.latitude,
@@ -127,6 +129,8 @@ class Pipeline:
                     result.warnings.append(reason)
                     result.rejections.append(
                         {
+                            "snapshot_id": snapshot.id,
+                            "source_index": parsed.source_index,
                             "code": parsed.code,
                             "name": parsed.name,
                             "reason": reason,

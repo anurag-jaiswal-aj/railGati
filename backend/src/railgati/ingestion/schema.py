@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 class ParsedStation:
     """A station record extracted from a raw source and normalized."""
 
+    source_index: int
     code: str
     name: str
     state: str | None = None

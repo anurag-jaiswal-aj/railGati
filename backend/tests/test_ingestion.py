@@ -94,11 +94,26 @@ def test_ingestion_idempotency(db_session: Session) -> None:
     assert result2.records_accepted == 2  # New observations for new snapshot
     assert result2.duplicates == 1  # Only the intra-dataset duplicate
 
+    # Explicit Snapshot Completeness verification
+    snapshots = db_session.query(DatasetSnapshot).order_by(DatasetSnapshot.id).all()
+    assert len(snapshots) == 2
+    snapshot_a = snapshots[0]
+    snapshot_b = snapshots[1]
+
     stations_count_2 = db_session.query(Station).count()
     assert stations_count_2 == 2  # Canonical count should not change
 
-    observations_count_2 = db_session.query(StationObservation).count()
-    assert observations_count_2 == 4  # 2 snapshots * 2 valid stations
+    obs_a = db_session.query(StationObservation).filter_by(snapshot_id=snapshot_a.id).all()
+    obs_b = db_session.query(StationObservation).filter_by(snapshot_id=snapshot_b.id).all()
+
+    assert len(obs_a) == 2
+    assert len(obs_b) == 2
+
+    # Verify both snapshots reference the same canonical stations
+    obs_a_station_ids = {o.station_id for o in obs_a}
+    obs_b_station_ids = {o.station_id for o in obs_b}
+    assert obs_a_station_ids == obs_b_station_ids
+    assert len(obs_a_station_ids) == 2
 
 
 def test_ingestion_dry_run(db_session: Session) -> None:
@@ -118,26 +133,87 @@ def test_ingestion_dry_run(db_session: Session) -> None:
 
 
 def test_ingestion_failure_safety(db_session: Session) -> None:
-    """Test that fatal pipeline errors rollback and record failure."""
+    """Test that fatal errors rollback and leave previous active snapshots intact."""
     fixture_path = Path(__file__).parent / "fixtures" / "datameet_test.json"
 
-    # Mock a parser that raises an exception
+    # 1. Successful run
+    parser1 = DatameetParser(fixture_path)
+    pipeline1 = Pipeline(db_session, dry_run=False)
+    result1 = pipeline1.run(str(fixture_path), parser1.parse())
+    assert result1.status == "SUCCESS"
+
+    snapshot_a_id = result1.snapshot_id
+    assert snapshot_a_id is not None
+
+    # 2. Failing run
     def bad_parser() -> Generator[ParsedStation, None, None]:
         yield from []
         raise RuntimeError("Fake database or parsing error")
 
+    pipeline2 = Pipeline(db_session, dry_run=False)
+    result2 = pipeline2.run(str(fixture_path), bad_parser())
+
+    assert result2.status == "FAILED"
+
+    # 3. Verify Snapshot A is intact and ACTIVE
+    snapshot_a = db_session.query(DatasetSnapshot).filter_by(id=snapshot_a_id).one()
+    assert snapshot_a.status == "ACTIVE"
+
+    obs_a = db_session.query(StationObservation).filter_by(snapshot_id=snapshot_a_id).all()
+    assert len(obs_a) == 2
+
+    # 4. Verify Snapshot B is FAILED and has no observations
+    snapshot_b_id = result2.snapshot_id
+    if snapshot_b_id:
+        # If the pipeline failed after creating the snapshot record but before the final try block
+        # we expect the snapshot record was created, but then rolled back in the main try-except.
+        # However, the exception handler explicitly inserts a FAILED snapshot!
+        pass
+
+    failed_snapshots = db_session.query(DatasetSnapshot).filter_by(status="FAILED").all()
+    assert len(failed_snapshots) == 1
+    snapshot_b = failed_snapshots[0]
+
+    assert snapshot_b.error_message is not None
+    assert "Fake database or parsing error" in snapshot_b.error_message
+
+    obs_b = db_session.query(StationObservation).filter_by(snapshot_id=snapshot_b.id).all()
+    assert len(obs_b) == 0
+
+
+def test_ingestion_rejections(db_session: Session) -> None:
+    """Test that rejections are populated with correct identifiers."""
+    fixture_path = Path(__file__).parent / "fixtures" / "datameet_test.json"
+    parser = DatameetParser(fixture_path)
     pipeline = Pipeline(db_session, dry_run=False)
-    result = pipeline.run(str(fixture_path), bad_parser())
 
-    assert result.status == "FAILED"
+    result = pipeline.run(str(fixture_path), parser.parse())
+    assert result.status == "SUCCESS"
 
-    # Verify rollback
-    stations = db_session.query(Station).all()
-    assert len(stations) == 0
+    # In datameet_test.json we have:
+    # Index 2: duplicate of BDHL
+    # Index 3: missing name (code=MISSINGNAME)
+    # Index 4: invalid coords (code=INVCOORD)
 
-    # Verify failed snapshot was recorded
-    snapshot = db_session.query(DatasetSnapshot).first()
-    assert snapshot is not None
-    assert snapshot.status == "FAILED"
-    assert snapshot.error_message is not None
-    assert "Fake database or parsing error" in snapshot.error_message
+    assert len(result.rejections) == 3
+
+    # Sort rejections by source_index to assert deterministically
+    rejections = sorted(result.rejections, key=lambda x: int(str(x["source_index"])))
+
+    r_coords = rejections[0]
+    assert r_coords["code"] == "INVCOORD"
+    assert "Coordinates out of bounds" in str(r_coords["reason"])
+    assert r_coords["source_index"] == 2
+
+    r_missing = rejections[1]
+    assert r_missing["code"] == "MISSINGNAME"
+    assert "Missing required fields" in str(r_missing["reason"])
+    assert r_missing["source_index"] == 3
+
+    r_dup = rejections[2]
+    assert r_dup["code"] == "BDHL"
+    assert "Duplicate code in dataset" in str(r_dup["reason"])
+    assert r_dup["source_index"] == 4
+
+    # Verify snapshot_id is present
+    assert r_coords["snapshot_id"] == result.snapshot_id

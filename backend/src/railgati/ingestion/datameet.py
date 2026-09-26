@@ -21,7 +21,7 @@ class DatameetParser:
         if "features" not in data:
             raise ValueError("Invalid GeoJSON: missing 'features' array.")
 
-        for feature in data["features"]:
+        for i, feature in enumerate(data["features"]):
             props = feature.get("properties", {})
             geom = feature.get("geometry", {})
 
@@ -51,6 +51,7 @@ class DatameetParser:
                         pass
 
             yield ParsedStation(
+                source_index=i,
                 code=code,
                 name=name,
                 state=state,
