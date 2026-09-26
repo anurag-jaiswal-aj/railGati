@@ -25,12 +25,14 @@ class TimetablePipeline(Pipeline):
             is_valid = False
 
         if not is_valid:
-            result.rejections.append({
-                "snapshot_id": result.snapshot_id,
-                "source_index": train.source_index,
-                "number": train.number,
-                "reason": rejection_reason,
-            })
+            result.rejections.append(
+                {
+                    "snapshot_id": result.snapshot_id,
+                    "source_index": train.source_index,
+                    "number": train.number,
+                    "reason": rejection_reason,
+                }
+            )
         return is_valid
 
     def run_timetable(
@@ -116,13 +118,15 @@ class TimetablePipeline(Pipeline):
                 if parsed_schedule.station_code not in existing_stations:
                     result.unknown_station_codes += 1
                     result.records_rejected += 1
-                    result.rejections.append({
-                        "snapshot_id": snapshot.id,
-                        "source_id": parsed_schedule.source_id,
-                        "train_number": parsed_schedule.train_number,
-                        "station_code": parsed_schedule.station_code,
-                        "reason": f"Unknown station code: {parsed_schedule.station_code}",
-                    })
+                    result.rejections.append(
+                        {
+                            "snapshot_id": snapshot.id,
+                            "source_id": parsed_schedule.source_id,
+                            "train_number": parsed_schedule.train_number,
+                            "station_code": parsed_schedule.station_code,
+                            "reason": f"Unknown station code: {parsed_schedule.station_code}",
+                        }
+                    )
                     continue
 
                 if parsed_schedule.train_number not in schedules_by_train:

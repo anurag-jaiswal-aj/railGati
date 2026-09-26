@@ -39,7 +39,6 @@ class ParsedSchedule:
     day: int | None = None
 
 
-
 @dataclass
 class IngestionResult:
     """The result of an ingestion run."""
@@ -90,4 +89,3 @@ class IngestionResult:
             if len(self.warnings) > 10:
                 print(f"  ... and {len(self.warnings) - 10} more.")
         print("=" * 50)
-

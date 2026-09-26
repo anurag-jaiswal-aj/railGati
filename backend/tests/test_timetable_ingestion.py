@@ -61,7 +61,7 @@ def test_timetable_ingestion_success(db_session: Session) -> None:
         str(trains_fixture),
         str(schedules_fixture),
         trains_parser.parse_trains(),
-        schedules_parser.parse_schedules()
+        schedules_parser.parse_schedules(),
     )
 
     assert result.status == "SUCCESS"
@@ -71,9 +71,9 @@ def test_timetable_ingestion_success(db_session: Session) -> None:
 
     assert db_session.query(Train).count() == 2
     assert db_session.query(TrainObservation).count() == 2
-    
+
     print("REJECTIONS:", result.rejections)
-    
+
     assert db_session.query(TrainStopObservation).count() == 3
 
     snapshot = db_session.query(DatasetSnapshot).order_by(DatasetSnapshot.id.desc()).first()
@@ -82,7 +82,12 @@ def test_timetable_ingestion_success(db_session: Session) -> None:
 
     # Verify sequence order for train 12101
     train = db_session.query(Train).filter_by(number="12101").one()
-    stops = db_session.query(TrainStopObservation).filter_by(train_id=train.id).order_by(TrainStopObservation.stop_sequence).all()
+    stops = (
+        db_session.query(TrainStopObservation)
+        .filter_by(train_id=train.id)
+        .order_by(TrainStopObservation.stop_sequence)
+        .all()
+    )
     assert len(stops) == 2
     assert stops[0].stop_sequence == 1
     assert stops[0].station.code == "BDHL"
@@ -98,7 +103,9 @@ def test_timetable_ingestion_success(db_session: Session) -> None:
 def test_timetable_ingestion_idempotency(db_session: Session) -> None:
     """Test that running ingestion twice does not create duplicate canonical entities."""
     stations_fixture = Path(__file__).parent / "fixtures" / "datameet_test.json"
-    Pipeline(db_session, dry_run=False).run(str(stations_fixture), DatameetParser(stations_fixture).parse())
+    Pipeline(db_session, dry_run=False).run(
+        str(stations_fixture), DatameetParser(stations_fixture).parse()
+    )
 
     trains_fixture = Path(__file__).parent / "fixtures" / "trains_test.json"
     schedules_fixture = Path(__file__).parent / "fixtures" / "schedules_test.json"
@@ -109,7 +116,7 @@ def test_timetable_ingestion_idempotency(db_session: Session) -> None:
         str(trains_fixture),
         str(schedules_fixture),
         DatameetParser(trains_fixture).parse_trains(),
-        DatameetParser(schedules_fixture).parse_schedules()
+        DatameetParser(schedules_fixture).parse_schedules(),
     )
 
     trains_count_1 = db_session.query(Train).count()
@@ -121,7 +128,7 @@ def test_timetable_ingestion_idempotency(db_session: Session) -> None:
         str(trains_fixture),
         str(schedules_fixture),
         DatameetParser(trains_fixture).parse_trains(),
-        DatameetParser(schedules_fixture).parse_schedules()
+        DatameetParser(schedules_fixture).parse_schedules(),
     )
 
     trains_count_2 = db_session.query(Train).count()
@@ -129,24 +136,38 @@ def test_timetable_ingestion_idempotency(db_session: Session) -> None:
 
     # But two distinct snapshots exist for timetables
     snapshots = db_session.query(DatasetSnapshot).all()
-    timetable_snapshots = [s for s in snapshots if "_" in s.checksum]
+    timetable_snapshots = [s for s in snapshots if s.checksum and "_" in s.checksum]
     assert len(timetable_snapshots) == 2
 
-    obs_1 = db_session.query(TrainObservation).filter_by(snapshot_id=timetable_snapshots[0].id).count()
-    obs_2 = db_session.query(TrainObservation).filter_by(snapshot_id=timetable_snapshots[1].id).count()
+    obs_1 = (
+        db_session.query(TrainObservation).filter_by(snapshot_id=timetable_snapshots[0].id).count()
+    )
+    obs_2 = (
+        db_session.query(TrainObservation).filter_by(snapshot_id=timetable_snapshots[1].id).count()
+    )
     assert obs_1 == 2
     assert obs_2 == 2
 
-    stops_1 = db_session.query(TrainStopObservation).filter_by(snapshot_id=timetable_snapshots[0].id).count()
-    stops_2 = db_session.query(TrainStopObservation).filter_by(snapshot_id=timetable_snapshots[1].id).count()
+    stops_1 = (
+        db_session.query(TrainStopObservation)
+        .filter_by(snapshot_id=timetable_snapshots[0].id)
+        .count()
+    )
+    stops_2 = (
+        db_session.query(TrainStopObservation)
+        .filter_by(snapshot_id=timetable_snapshots[1].id)
+        .count()
+    )
     assert stops_1 == 3
     assert stops_2 == 3
 
 
 def test_timetable_ingestion_failure_safety(db_session: Session) -> None:
-    """Test that fatal errors rollback and leave canonical entities intact without partial insertion."""
+    """Test that fatal errors rollback and leave canonical entities intact."""
     stations_fixture = Path(__file__).parent / "fixtures" / "datameet_test.json"
-    Pipeline(db_session, dry_run=False).run(str(stations_fixture), DatameetParser(stations_fixture).parse())
+    Pipeline(db_session, dry_run=False).run(
+        str(stations_fixture), DatameetParser(stations_fixture).parse()
+    )
 
     trains_fixture = Path(__file__).parent / "fixtures" / "trains_test.json"
     schedules_fixture = Path(__file__).parent / "fixtures" / "schedules_test.json"
@@ -157,7 +178,7 @@ def test_timetable_ingestion_failure_safety(db_session: Session) -> None:
         str(trains_fixture),
         str(schedules_fixture),
         DatameetParser(trains_fixture).parse_trains(),
-        DatameetParser(schedules_fixture).parse_schedules()
+        DatameetParser(schedules_fixture).parse_schedules(),
     )
     assert result1.status == "SUCCESS"
 
@@ -174,7 +195,7 @@ def test_timetable_ingestion_failure_safety(db_session: Session) -> None:
         str(trains_fixture),
         str(schedules_fixture),
         bad_trains_parser(),
-        DatameetParser(schedules_fixture).parse_schedules()
+        DatameetParser(schedules_fixture).parse_schedules(),
     )
 
     assert result2.status == "FAILED"
@@ -193,4 +214,4 @@ def test_timetable_ingestion_failure_safety(db_session: Session) -> None:
     # 5. Verify failed snapshot behavior
     failed_snapshots = db_session.query(DatasetSnapshot).filter_by(status="FAILED").all()
     assert len(failed_snapshots) == 1
-    assert "Fake database or parsing error" in failed_snapshots[0].error_message
+    assert failed_snapshots[0].error_message and "Fake database or parsing error" in failed_snapshots[0].error_message
