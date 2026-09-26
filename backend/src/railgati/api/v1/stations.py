@@ -13,8 +13,10 @@ from railgati.api.v1.schemas import (
     StationSearchItem,
     TrainSearchItem,
 )
-from railgati.api.v1.snapshots import get_active_station_snapshot_id
-from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+from railgati.api.v1.snapshots import (
+    get_active_station_snapshot_id,
+    get_active_timetable_snapshot_id,
+)
 from railgati.db import get_db
 from railgati.models.provenance import DatasetSnapshot, DataSource
 from railgati.models.station import Station, StationObservation

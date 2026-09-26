@@ -360,7 +360,9 @@ def test_data(db_session: Session) -> dict[str, int]:
     }
 
 
-def test_direct_journey_found_and_correct_metrics(db_session: Session, test_data: dict[str, int]) -> None:
+def test_direct_journey_found_and_correct_metrics(
+    db_session: Session, test_data: dict[str, int]
+) -> None:
     """Test standard direct journey A -> B yields correct output."""
     journeys = find_direct_journeys(
         db_session, test_data["snap1"], test_data["st_a"], test_data["st_b"]
@@ -434,7 +436,9 @@ def test_cross_day_duration(db_session: Session, test_data: dict[str, int]) -> N
     assert t7.timing_confidence == TimingConfidence.HIGH
 
 
-def test_invalid_temporal_ordering_null_duration(db_session: Session, test_data: dict[str, int]) -> None:
+def test_invalid_temporal_ordering_null_duration(
+    db_session: Session, test_data: dict[str, int]
+) -> None:
     journeys = find_direct_journeys(
         db_session, test_data["snap1"], test_data["st_a"], test_data["st_b"]
     )
@@ -443,7 +447,9 @@ def test_invalid_temporal_ordering_null_duration(db_session: Session, test_data:
     assert t8.timing_confidence == TimingConfidence.MISSING_DATA
 
 
-def test_multiple_station_visits_handled_correctly(db_session: Session, test_data: dict[str, int]) -> None:
+def test_multiple_station_visits_handled_correctly(
+    db_session: Session, test_data: dict[str, int]
+) -> None:
     # 10003 visits B twice (stops 2 and 4). A is stop 1.
     # It should pick A -> first B (stop 2).
     journeys = find_direct_journeys(
