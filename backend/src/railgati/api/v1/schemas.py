@@ -1,6 +1,7 @@
 """Pydantic schemas for the v1 API."""
 
 from datetime import datetime
+from enum import StrEnum
 from typing import TypeVar
 
 from pydantic import BaseModel, Field
@@ -67,6 +68,7 @@ class TrainBase(BaseModel):
 
 class TrainSearchItem(TrainBase):
     """Train summary for search results."""
+
     pass
 
 
@@ -85,3 +87,43 @@ class TrainStopResponse(BaseModel):
     arrival_time: str | None = Field(None, description="Arrival time (HH:MM:SS) if applicable")
     departure_time: str | None = Field(None, description="Departure time (HH:MM:SS) if applicable")
     source_day: int | None = Field(None, description="Relative day of journey")
+
+
+class JourneyType(StrEnum):
+    """Types of historical journeys."""
+
+    DIRECT = "DIRECT"
+    ONE_TRANSFER = "ONE_TRANSFER"
+
+
+class TimingConfidence(StrEnum):
+    """Confidence level of the calculated timing."""
+
+    HIGH = "HIGH"
+    MISSING_DATA = "MISSING_DATA"
+
+
+class JourneyLeg(BaseModel):
+    """A segment of a journey on a single train."""
+
+    train_number: str
+    train_name: str
+    train_type: str | None
+    origin_station: str
+    destination_station: str
+    departure_time: str | None
+    arrival_time: str | None
+    source_day_offset: int | None
+    duration_minutes: int | None
+
+
+class JourneyOption(BaseModel):
+    """A viable historical journey between two stations."""
+
+    journey_id: str
+    type: JourneyType
+    legs: list[JourneyLeg]
+    total_duration_minutes: int | None
+    timing_confidence: TimingConfidence
+    number_of_stops: int
+    provenance: ProvenanceInfo

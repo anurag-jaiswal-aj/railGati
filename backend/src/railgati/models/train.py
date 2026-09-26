@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, ForeignKeyConstraint, Integer, String
+from sqlalchemy import DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from railgati.db import Base
@@ -68,6 +68,7 @@ class TrainStopObservation(Base):
             ["train_observations.snapshot_id", "train_observations.train_id"],
             name="fk_train_stop_obs_train_obs",
         ),
+        Index("ix_train_stops_snapshot_station", "snapshot_id", "station_id"),
     )
 
     snapshot_id: Mapped[int] = mapped_column(
