@@ -7,7 +7,7 @@
 v2.0 Phase 4 successfully enabled service attribution for a multi-edge topological path, allowing clients to see which historical trains operated on *each individual segment* of a route. However, it does not distinguish between a disjointed set of segment services and a single, continuous "through-service" that traverses the entire path sequentially. Currently, a client must download all segment occurrences and manually intersect `train_id` and contiguous `stop_sequence` values. This is computationally expensive, requires excessive data transfer, and leaks relational-join logic into the client application.
 
 ## 3. Why It Follows Phase 4
-Phase 4 proved that multi-segment graph properties can be queried safely while maintaining strict snapshot isolation. Phase 5 takes the exact same input (a bounded topological path) and applies a stricter structural constraint: identifying only the subset of historical trains that formed an uninterrupted, sequential chain of `RailwayServiceEdge` records covering the entire path. This completes the static network-path analysis suite by answering "Which single trains cover this entire route historically?"—establishing the ultimate foundation for future multi-train transfer feasibility without actually implementing passenger routing yet.
+Phase 4 proved that multi-segment graph properties can be queried safely while maintaining strict snapshot isolation. Phase 5 takes the exact same input (a bounded topological path) and applies a stricter structural constraint: identifying only the subset of historical trains that formed an uninterrupted, sequential chain of `RailwayServiceEdge` records covering the entire path. This completes the static network-path analysis suite by answering "Which single trains cover this entire route historically?"—proving historical structural continuity in the timetable/service-edge dataset.
 
 ## 4. Existing Capabilities Reused
 - `RailwayNetworkEdge` (for path validation)
@@ -26,7 +26,7 @@ To achieve continuous service discovery, the architecture must ensure contiguous
 - *Option A: Client-side intersection.* (Current state). High data transfer, pushes database logic to the frontend.
 - *Option B: PostgreSQL Array Aggregation.* Grouping by `train_id` and using `array_agg(station_id)`. Vulnerable to sequence gaps or out-of-order arrays if not strictly controlled.
 - *Option C: Dynamic N-way SQL JOINs.* Dynamically generating a query that self-joins `RailwayServiceEdge` $K-1$ times using its exact Primary Key `(timetable_snapshot_id, train_id, from_stop_sequence)`.
-**Selection:** *Option C* is selected. Because the maximum path length is strictly bounded (max 10 stations / 9 segments), a 9-way self-join on primary keys is trivially small for PostgreSQL. It allows the query planner to begin with the lowest-cardinality segment and execute sub-millisecond nested-loop PK lookups for the continuous segments.
+**Selection:** *Option C* is selected. Because the maximum path length is strictly bounded (max 10 stations / 9 segments), a 9-way self-join on primary keys is bounded by the maximum path length limit. The maximum path length is bounded to 10 stations. The query contains at most 9 service-edge aliases. Primary-key access is available for the relevant service-edge identity. PostgreSQL's optimizer chooses the actual execution plan. Execution behavior must be validated with EXPLAIN ANALYZE for representative and long paths.
 
 ## 7. Selected Scope
 **Continuous Path Service Discovery.** Identifying single historical trains that traversed an entire provided topological path contiguously.
@@ -44,8 +44,14 @@ To achieve continuous service discovery, the architecture must ensure contiguous
 - **Pathfinding:** It does not find the topological path; the client must provide it.
 
 ## 10. Domain Semantics
-- A **Continuous Service** is structurally defined as a single `train_id` possessing $N$ `RailwayServiceEdge` records corresponding to the $N$ requested network edges, where `edge[i].to_stop_sequence = edge[i+1].from_stop_sequence`.
-- This remains a historical graph intelligence feature. Finding a continuous service proves historical structural capability, not a guaranteed present-day ticketable journey.
+- A **Continuous Service** is structurally defined as a single `train_id` possessing $N$ `RailwayServiceEdge` records corresponding to the $N$ requested network edges.
+- For consecutive requested segments $S_i \rightarrow S_{i+1}$ and $S_{i+1} \rightarrow S_{i+2}$, the same train must have:
+  - `edge_i.to_station_id = edge_(i+1).from_station_id` (station identity matters because trains may visit the same station multiple times; `stop_sequence` alone is insufficient)
+  - `edge_i.to_stop_sequence = edge_(i+1).from_stop_sequence` (contiguous sequence)
+  - `edge_i.timetable_snapshot_id = edge_(i+1).timetable_snapshot_id` (snapshot isolation)
+  - `edge_i.train_id = edge_(i+1).train_id` (same train identity)
+- Each edge corresponds to the exact requested directed station pair.
+- This remains a historical graph intelligence feature. This is historical dataset structure only. It does not prove actual historical operation, current operation, passenger-valid travel, ticketability, or a guaranteed through journey.
 
 ## 11. Data / Query Model
 **Exact Tables & Joins:**
@@ -57,18 +63,19 @@ To achieve continuous service discovery, the architecture must ensure contiguous
 ```sql
 FROM railway_service_edges e1
 JOIN railway_service_edges e2 
-  ON e1.train_id = e2.train_id AND e1.to_stop_sequence = e2.from_stop_sequence
+  ON e1.train_id = e2.train_id AND e1.to_stop_sequence = e2.from_stop_sequence AND e1.timetable_snapshot_id = e2.timetable_snapshot_id
 ...
 JOIN trains t ON e1.train_id = t.id
+JOIN train_observations to_obs ON to_obs.train_id = t.id AND to_obs.snapshot_id = e1.timetable_snapshot_id
 ```
 
 **Expected Cardinality:**
-Highly restricted. For a 3-hop path, the result size is typically under 20 trains. For longer paths, it rapidly approaches 0-5 trains. The dynamic join inherently acts as a severe filter. A `LIMIT 500` is applied purely for API safety, but is unlikely to be hit for paths > 2 stations.
+The bounded maximum path length limits the number of self-join aliases. However, intermediate cardinality and execution strategy remain data- and planner-dependent and must be measured against the active dataset. A `LIMIT 500` is applied at the outer query for API output safety, which bounds the response payload but does not inherently bound intermediate database materialization memory.
 
 ## 12. Snapshot / Provenance Semantics
 The query is strictly bound to the active timetable snapshot.
 Every alias of `railway_service_edges` in the dynamic join must explicitly filter `timetable_snapshot_id = :snapshot_id`.
-The `RailwayGraphBuild` must be `ACTIVE`.
+If the feature relies on the materialized `RailwayNetworkEdge` graph for internal path validation (following Phase 4 conventions), the corresponding `RailwayGraphBuild` must be explicitly required to be `ACTIVE`. The service does not independently select different graph/timetable snapshots for different segments; every alias in the query is scoped to the exact same `timetable_snapshot_id`.
 
 ## 13. Service-Layer Responsibilities
 - Validate path parameters (length, duplicate consecutive stations).
@@ -126,10 +133,10 @@ Results must be deterministically ordered by:
 
 ## 20. Resource Limits
 - Maximum 10 stations per path.
-- API response truncated at 500 continuous services (safety bound).
+- API response output bound: 500 continuous services maximum per request. Note that this limits the output payload, but does not guarantee strictly bounded intermediate memory consumption in PostgreSQL.
 
 ## 21. Performance Considerations
-The dynamic self-join leverages the primary key of `railway_service_edges`. The PostgreSQL planner will execute index scans. Because it is an INNER JOIN chain, the planner will filter the dataset aggressively at the earliest possible segment. Intermediate result growth is strictly bounded and continually shrinking.
+The dynamic self-join is selected based on the strict continuity semantics and bounded path length (max 10 stations). Primary-key access paths are available for the service-edge identity. However, intermediate result growth, join order, and execution strategy are planner-dependent and must be validated with `EXPLAIN ANALYZE`.
 
 ## 22. Query Strategy
 Instead of a window function (which would pull all segments into memory before filtering), the dynamic INNER JOIN forces PostgreSQL to perform exact Primary Key lookups for continuity. 
@@ -145,20 +152,47 @@ JOIN railway_service_edges e2 ON e1.train_id = e2.train_id AND e1.to_stop_sequen
 ```
 
 ## 23. Index Strategy
-The existing `ix_service_edges_from_station` index will be used to locate `e1`. The subsequent joins (`e2`, `e3`) rely on `(timetable_snapshot_id, train_id, from_stop_sequence)` which is the **exact Primary Key** of the table. Therefore, zero new indexes are required. This query is perfectly supported by the Phase 1 schema.
+The existing indexes provide access paths for the relevant station/snapshot predicates; actual index usage must be verified with `EXPLAIN ANALYZE`. The schema supports primary key lookups, but we do not claim a particular index will be used until the implementation query is empirically benchmarked.
 
 ## 24. Benchmark Methodology
-During implementation, measure:
-1. **Normal Case**: 3-hop continuous path.
-2. **Long Case**: 8-hop continuous path.
-3. Record `EXPLAIN ANALYZE` for both to prove the planner uses Nested Loop Primary Key lookups for the inner joins.
+Replace assumptions with empirical measurement on the active dataset:
+- **A. Normal case**: 3-station / 2-segment path.
+- **B. Medium case**: Approximately 5-station path if real data contains one.
+- **C. Long case**: Maximum valid 10-station / 9-segment path, if available.
+- **D. Dense case**: Path containing a high-density service edge.
+
+For each, record:
+- `EXPLAIN ANALYZE` output
+- Planning time and execution time
+- Scan types, index usage, and join strategy
+- Rows at important stages
+- Sort/window/materialization behavior if present
+- Application-level SQLAlchemy execution time
 
 ## 25. Test Strategy
-- **Normal behavior**: Valid path returning continuous trains.
-- **Disjointed Services**: A train that runs A->B, and B->C, but *not* continuously (gap in `stop_sequence`), must be strictly excluded.
-- **Topological Validation**: 400 error for broken topological path.
-- **Snapshot Isolation**: Ensure old snapshots are ignored.
-- **Ordering**: Verify deterministic sorting.
+Expand testing to comprehensively cover:
+1. Two-station path.
+2. Three-station continuous service.
+3. Longer continuous path.
+4. Same train with contiguous stop sequences.
+5. Same train with a stop-sequence gap (must be excluded).
+6. Same train with station mismatch (must be excluded).
+7. Different trains across segments (must be excluded).
+8. Repeated station occurrence.
+9. Multiple valid continuous occurrences of the same train if data permits.
+10. Reverse direction.
+11. Timetable snapshot isolation.
+12. TrainObservation snapshot isolation.
+13. ACTIVE graph requirement.
+14. Unknown station.
+15. Invalid path parameter.
+16. Broken topology.
+17. Missing timing data handling.
+18. Cross-day timing.
+19. Deterministic ordering.
+20. 500-result API bound limit enforcement.
+21. Phase 3 regression.
+22. Phase 4 regression.
 
 ## 26. Security Considerations
 Dynamic query generation using SQLAlchemy must use parameterized binding or ORM joins to prevent SQL injection. Raw string concatenation of SQL is strictly prohibited.
@@ -167,13 +201,13 @@ Dynamic query generation using SQLAlchemy must use parameterized binding or ORM 
 Relies entirely on PostgreSQL nested loop performance. No external dependencies.
 
 ## 28. Future Extension Points
-This capability provides the exact underlying data structure needed for a future "Direct Journey Search" or "One-Seat Ride" query, stripping away graph theory and exposing direct passenger utility once calendar validation is introduced in a later phase.
+This capability provides the exact underlying data structure needed for a future "Direct Journey Search" or "One-Seat Ride" query. However, Phase 5 itself does NOT establish calendar validity, passenger eligibility, operating-date validity, current operation, or ticketability. A continuous historical service is a structural dataset result only.
 
 ## 29. Risks
 - **SQLAlchemy Dynamic Joins**: Constructing N-way self-joins dynamically in SQLAlchemy Core/ORM can be syntactically dense. The implementation must carefully alias the `RailwayServiceEdge` table (`aliased(RailwayServiceEdge)`) in a loop.
 
 ## 30. Unresolved Questions
-- **Time/Duration Calculation**: If `departure_time` or `arrival_time` are missing (null) in historical data, the calculated `total_duration_minutes` must gracefully degrade to `null`.
+- **Time/Duration Calculation**: Following established Phase 3 missing-data semantics, if required start departure or final arrival timing is missing or inconsistent, the total duration must evaluate to `null` without fabricating calendar dates.
 
 ## 31. Implementation Sequencing
 1. Write SQLAlchemy dynamic self-join logic using `aliased`.
