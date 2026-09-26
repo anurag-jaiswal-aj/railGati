@@ -114,7 +114,7 @@ Targeted B-tree indexes for fast adjacency lookups:
 - Live data routing.
 
 ## 20. Performance Considerations
-A `LEAD()` query over 417k observations partitioned by `train_id` will execute in seconds. Querying the resulting adjacency tables using standard B-tree indices takes sub-millisecond time.
+A real-world graph build over `417,070` historical train stop observations executes in ~48.6 seconds, generating `411,863` `ServiceEdges` and `19,866` aggregated `NetworkEdges`. Indexed adjacency lookups operate in sub-milliseconds.
 
 ## 21. ₹0 Compliance
 Relying entirely on PostgreSQL completely satisfies the absolute ₹0 deployment budget.
