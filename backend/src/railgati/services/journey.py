@@ -268,7 +268,7 @@ def find_one_transfer_journeys(
     options = []
 
     for o_stop, a_trans, obs_a, t_a, b_trans, d_stop, obs_b, t_b, transfer_st in results:
-        path_key = (t_a.id, transfer_st.id, t_b.id)
+        path_key = (t_a.id, a_trans.stop_sequence, transfer_st.id, t_b.id, b_trans.stop_sequence)
         if path_key in seen_paths:
             continue
 
@@ -345,7 +345,10 @@ def find_one_transfer_journeys(
             duration_minutes=leg2_duration,
         )
 
-        raw_id = f"{timetable_snapshot_id}_trans_{t_a.number}_{transfer_st.id}_{t_b.number}"
+        raw_id = (
+            f"{timetable_snapshot_id}_trans_{t_a.number}_{a_trans.stop_sequence}_"
+            f"{transfer_st.id}_{t_b.number}_{b_trans.stop_sequence}"
+        )
         journey_id = hashlib.sha256(raw_id.encode()).hexdigest()[:12]
 
         option = JourneyOption(

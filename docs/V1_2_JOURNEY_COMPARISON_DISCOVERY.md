@@ -61,10 +61,11 @@ A one-transfer journey exists if:
 3. Train A != Train B.
 4. **Different-Station Transfers**: Unsupported. Train A and Train B must transfer at the exact same canonical station.
 5. **Temporal Ordering**: `Train B departure at Transfer` > `Train A arrival at Transfer`.
-6. **Missing Temporal Information**: If any required temporal field (`arrival_time`, `departure_time`, or `source_day`) at the transfer station is missing, the connection cannot be temporally validated and is explicitly excluded.
-7. **ASSUMPTION Transfer Buffer**: The minimum transfer time is an algorithmic configurable assumption (default 120 minutes), not an Indian Railways operational guarantee. Real-world connections are not guaranteed operationally.
-8. **ASSUMPTION Maximum Layover**: The maximum layover is an algorithmic pruning/business rule (default 1440 minutes) to avoid presenting extremely long waits as useful comparisons. It is not an operational railway rule.
-9. **Multi-Transfer Routing**: Remains strictly OUT OF SCOPE.
+6. **Transfer Occurrence Identity**: A distinct one-transfer path is strictly identified by `(train_a.id, train_a.transfer_stop_sequence, transfer_station.id, train_b.id, train_b.transfer_stop_sequence)`. If a train visits the same transfer station multiple times, each valid occurrence combination is preserved as a distinct journey option.
+7. **Missing Temporal Information**: If any required temporal field (`arrival_time`, `departure_time`, or `source_day`) at the transfer station is missing, the connection cannot be temporally validated and is explicitly excluded.
+8. **ASSUMPTION Transfer Buffer**: The minimum transfer time is an algorithmic configurable assumption (default 120 minutes), not an Indian Railways operational guarantee. Real-world connections are not guaranteed operationally.
+9. **ASSUMPTION Maximum Layover**: The maximum layover is an algorithmic pruning/business rule (default 1440 minutes) to avoid presenting extremely long waits as useful comparisons. It is not an operational railway rule.
+10. **Multi-Transfer Routing**: Remains strictly OUT OF SCOPE.
 
 ## 7. Multi-Transfer Decision
 **Decision: OUT OF SCOPE for v1.2.**

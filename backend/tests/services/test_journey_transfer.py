@@ -431,3 +431,113 @@ def test_deterministic_ordering_and_multiple_stations(
             idx_4_5 = i
 
     assert idx_1_2 < idx_4_5
+
+
+def test_multiple_transfer_occurrences(db_session: Session, transfer_data: dict[str, int]) -> None:
+    t_multi = Train(number="1020")
+    t_dest = Train(number="1021")
+    db_session.add_all([t_multi, t_dest])
+    db_session.commit()
+    db_session.add(
+        TrainObservation(
+            snapshot_id=transfer_data["snap1"], train_id=t_multi.id, name="T_Multi", type="Type"
+        )
+    )
+    db_session.add(
+        TrainObservation(
+            snapshot_id=transfer_data["snap1"], train_id=t_dest.id, name="T_Dest", type="Type"
+        )
+    )
+
+    # Train A visits B twice
+    db_session.add(
+        TrainStopObservation(
+            snapshot_id=transfer_data["snap1"],
+            train_id=t_multi.id,
+            station_id=transfer_data["st_a"],
+            stop_sequence=1,
+            departure_time="05:00:00",
+            source_day=1,
+        )
+    )
+    # First visit to B
+    db_session.add(
+        TrainStopObservation(
+            snapshot_id=transfer_data["snap1"],
+            train_id=t_multi.id,
+            station_id=transfer_data["st_b"],
+            stop_sequence=2,
+            arrival_time="07:00:00",
+            departure_time="07:15:00",
+            source_day=1,
+        )
+    )
+    db_session.add(
+        TrainStopObservation(
+            snapshot_id=transfer_data["snap1"],
+            train_id=t_multi.id,
+            station_id=transfer_data["st_c"],
+            stop_sequence=3,
+            arrival_time="09:00:00",
+            departure_time="09:15:00",
+            source_day=1,
+        )
+    )
+    # Second visit to B
+    db_session.add(
+        TrainStopObservation(
+            snapshot_id=transfer_data["snap1"],
+            train_id=t_multi.id,
+            station_id=transfer_data["st_b"],
+            stop_sequence=4,
+            arrival_time="11:00:00",
+            departure_time="11:15:00",
+            source_day=1,
+        )
+    )
+
+    # Train B departs B (we add two options so both occurrences are valid connections)
+    db_session.add(
+        TrainStopObservation(
+            snapshot_id=transfer_data["snap1"],
+            train_id=t_dest.id,
+            station_id=transfer_data["st_b"],
+            stop_sequence=1,
+            departure_time="14:00:00",
+            source_day=1,
+        )
+    )
+    db_session.add(
+        TrainStopObservation(
+            snapshot_id=transfer_data["snap1"],
+            train_id=t_dest.id,
+            station_id=transfer_data["st_d"],
+            stop_sequence=2,
+            arrival_time="16:00:00",
+            source_day=1,
+        )
+    )
+    db_session.commit()
+
+    opts = find_one_transfer_journeys(
+        db_session, transfer_data["snap1"], transfer_data["st_a"], transfer_data["st_d"]
+    )
+
+    multi = [
+        o for o in opts if o.legs[0].train_number == "1020" and o.legs[1].train_number == "1021"
+    ]
+
+    # We expect exactly 2 distinct paths because both B occurrences
+    # can form valid connections to T_Dest
+    assert len(multi) == 2
+
+    # Assert journey IDs are different
+    assert multi[0].journey_id != multi[1].journey_id
+
+    # Assert layovers are different
+    # First occurrence layover: 14:00 - 07:00 = 7 hrs = 420 mins
+    # Second occurrence layover: 14:00 - 11:00 = 3 hrs = 180 mins
+    assert multi[0].layover_minutes is not None
+    assert multi[1].layover_minutes is not None
+    layovers = sorted([multi[0].layover_minutes, multi[1].layover_minutes])
+    assert layovers == [180, 420]
