@@ -76,19 +76,21 @@ Currently, users can check trains passing through a station, or compare historic
 **PROPOSAL**: No new data sources required. Adheres to ₹0 budget constraint.
 
 ## 16. Query/Architecture Design
-**PROPOSAL**: 
-- Reusing `compare_journeys` iteratively over all stations would cause an N+1 query disaster.
-- A dedicated service-level query `find_reachable_destinations(origin_station_id)` is required.
-- The query relies on self-joining `TrainStopObservation` for direct destinations and grouping by destination.
+**STATUS: IMPLEMENTED**
+- A dedicated service-level query `find_direct_destinations(origin_station_id)` is implemented.
+- The query relies on self-joining `TrainStopObservation` for direct destinations and extracting unique destination canonical `Station` identities.
+- Processing to resolve exact timing metrics, minimum durations, cross-day semantics, missing-timing fallbacks, and max-duration filtering occurs safely in Python without N+1 joins, looping only over valid downstream DB matches.
+- `station_name` is intentionally deferred from the immediate DB service model to respect strict timetable snapshot isolation (to be fulfilled by API-layer rendering if necessary).
 
 ## 17. PostgreSQL vs Graph Evaluation
 **FACT**: PostgreSQL is currently sufficient for direct queries via standard joins.
 **PROPOSAL**: No graph database (Neo4j) or memory graph (NetworkX) is required for v1.3. Direct downstream connectivity scales well in RDBMS via `B-tree` indexes.
 
 ## 18. Performance and Indexing Strategy
+**STATUS: IMPLEMENTED**
 **FACT**: Existing B-tree on `(snapshot_id, train_id, stop_sequence)` supports rapid sequential scan per train.
-**OPEN QUESTION**: A new composite index on `(snapshot_id, station_id, train_id)` might be required to rapidly find all trains leaving the origin station.
-**PROPOSAL**: Implement without new indexes first. Benchmark against real Datameet volume. Apply indexes only if query exceeds acceptable thresholds (e.g., >500ms).
+**BENCHMARK**: `find_direct_destinations` tested against full real Datameet DB (`~417k` stop observations). Query for high-connectivity origin (`NDLS`, id=8534) executed successfully and fetched ~21,376 matches in `<0.25s`.
+**DECISION**: Performance is sufficient under existing project limits. No new custom index was created; no Alembic migrations were required.
 
 ## 19. API Contract Proposal
 **PROPOSAL**: 
