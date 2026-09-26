@@ -15,17 +15,7 @@ from railgati.models.provenance import DatasetSnapshot
 from railgati.models.station import Station, StationObservation
 
 
-@pytest.fixture
-def db_session() -> Generator[Session, None, None]:
-    """Provides a clean in-memory SQLite database for testing."""
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    testing_session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    session = testing_session_local()
-    try:
-        yield session
-    finally:
-        session.close()
+# db_session fixture is now in conftest.py
 
 
 def test_datameet_parser() -> None:
