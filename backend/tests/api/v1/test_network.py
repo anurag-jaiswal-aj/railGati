@@ -227,3 +227,76 @@ def test_case_insensitive_origin(
     response = client.get(f"/api/v1/network/reachable?origin={lower_code}")
     assert response.status_code == 200
     assert response.json()["origin"] == network_api_data["org_code"]  # Should return canonical
+
+def test_station_metadata_snapshot_isolation(
+    client: TestClient, db_session: Session, network_api_data: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test that station metadata is strictly isolated to the active station snapshot."""
+    from railgati.models.station import Station, StationObservation
+    from railgati.models.provenance import DatasetSnapshot
+    from railgati.services.network import StationReachability
+
+    # Create a test station
+    test_station = Station(code="TEST_META")
+    db_session.add(test_station)
+    db_session.commit()
+
+    # Create an old inactive snapshot
+    old_snap = DatasetSnapshot(
+        source_id=db_session.query(DatasetSnapshot).first().source_id,
+        status="SUPERSEDED",
+    )
+    db_session.add(old_snap)
+    db_session.commit()
+
+    # Create an active station snapshot
+    active_snap = DatasetSnapshot(
+        source_id=old_snap.source_id,
+        status="ACTIVE",
+    )
+    db_session.add(active_snap)
+    db_session.commit()
+
+    # Deactivate the old active station snapshot created in the fixture
+    # The fixture created 2 snapshots (timetable and station).
+    # We will deactivate any other ACTIVE station snapshot to ensure active_snap is the only one.
+    station_snaps = db_session.query(DatasetSnapshot).filter(
+        DatasetSnapshot.status == "ACTIVE",
+        DatasetSnapshot.id.in_(db_session.query(StationObservation.snapshot_id))
+    ).all()
+    for snap in station_snaps:
+        if snap.id != active_snap.id:
+            snap.status = "SUPERSEDED"
+    db_session.commit()
+
+    # Add observations for the test station in both snapshots
+    obs_old = StationObservation(
+        snapshot_id=old_snap.id, station_id=test_station.id, name="Old Station Name"
+    )
+    obs_active = StationObservation(
+        snapshot_id=active_snap.id, station_id=test_station.id, name="Active Station Name"
+    )
+    db_session.add_all([obs_old, obs_active])
+    db_session.commit()
+
+    def mock_find(*args: Any, **kwargs: Any) -> list[StationReachability]:
+        return [
+            StationReachability(
+                station_id=test_station.id,
+                min_hops=1,
+            )
+        ]
+
+    monkeypatch.setattr("railgati.api.v1.network.find_reachable_stations", mock_find)
+
+    response = client.get(f"/api/v1/network/reachable?origin={network_api_data['org_code']}")
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert data["total"] == 1
+    assert len(data["stations"]) == 1
+    
+    dest = data["stations"][0]
+    assert dest["station_code"] == "TEST_META"
+    # Must be exactly the active snapshot's name
+    assert dest["station_name"] == "Active Station Name"
