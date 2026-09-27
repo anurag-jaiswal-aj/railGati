@@ -5,7 +5,7 @@ Identify the next meaningful, distinct, and technically defensible network analy
 
 ## 2. Existing Phase 1-30 Overlap Audit
 RailGati V2.0 Analytics currently provides deep dimensional coverage:
-- **Phase 14 (Directional Edge Asymmetry Analytics)**: Measures the raw forward edge occurrence volume versus reverse edge occurrence volume, and the asymmetry between those directed edge volumes. It does not explicitly link which train identities are operationally paired.
+- **Phase 14 (Directional Edge Asymmetry Analytics)**: Measures the raw forward edge occurrence volume versus reverse edge occurrence volume, and the asymmetry between those directed edge volumes. It does not explicitly link which train identities are dataset-linked paired services.
 - **Phase 18 (Paired-Service Terminal Layover Analytics)**: Links paired trains using `return_train_number` to analyze scheduled cyclic clock gaps strictly at their shared terminal. It does not test reciprocal edge traversal.
 - **Phase 25 (Network Train Paired-Service Temporal Symmetry Analytics)**: Compares the scheduled total transit duration of a forward train against its paired return train. It does not test whether the paired return train traverses a particular reciprocal edge.
 - **Phase 30 (Station Outbound Dominance Analytics)**: Measures outbound adjacent timetable occurrences from a station and their concentration among destination stations. It does not use paired-service relationships.
