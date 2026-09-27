@@ -3,7 +3,7 @@
 **DISCOVERY ONLY — NO PRODUCTION IMPLEMENTATION.**
 
 ## 1. Problem Statement
-The V2.0 Network Analytics suite has thoroughly modeled graph topology, network flows, and station characteristics. However, it lacks a mechanism to structurally compare historical train services against each other. When a user asks, "Which historical services provide identical or highly parallel topological coverage to this specific train?", existing capabilities can only answer fragmentarily (e.g., querying paths or checking corridors). We need a definitive mathematical metric of structural topological overlap between scheduled train occurrences.
+The V2.0 Network Analytics suite has thoroughly modeled graph topology, network flows, and station characteristics. However, it lacks a mechanism to structurally compare historical train services against each other. When a user asks, "Which historical services provide identical or highly overlapping topological coverage to this specific train?", existing capabilities can only answer fragmentarily (e.g., querying paths or checking corridors). We need a definitive mathematical metric of structural topological overlap between scheduled train occurrences.
 
 ## 2. Phase 1–14 Capability Boundary
 Current V2.0 phases cover:
@@ -28,11 +28,11 @@ Current V2.0 phases cover:
 - **Service Structure Comparison**: **Absent**. No feature computes holistic similarity or redundancy between distinct scheduled train occurrences.
 
 ## 4. Remaining Product/Analytical Gap
-There is no direct analytical way to discover topological redundancy or operational alternatives at a macro-service level. Users cannot automatically identify pairs of structurally twin trains (e.g., return journeys or parallel services run by different operators) without manually comparing their stop lists.
+There is no direct analytical way to discover topological overlap at a macro-service level. Users cannot automatically identify pairs of structurally twin trains without manually comparing their stop lists.
 
 ## 5. Data-Capability Audit
-The database accurately maps `Train` to `Station` occurrences via `TrainStopObservation`.
-This data cleanly supports topological intersection operations. A standard Jaccard Similarity index (Intersection over Union) between the station sets of two trains can natively describe structural overlap without requiring time-parsing or assumptions about passenger behavior.
+The database accurately maps canonical `Train` entities to `Station` entities via `TrainStopObservation` bounded by `TrainObservation` within specific snapshots.
+This data cleanly supports topological intersection operations. A standard Jaccard Similarity index (Intersection over Union) between the station sets of two trains natively evaluates structural overlap.
 
 ## 6. Candidate Directions
 1. **Scheduled Service Gaps**: Maximum interval (in minutes) between consecutive trains at a station.
@@ -44,7 +44,7 @@ This data cleanly supports topological intersection operations. A standard Jacca
 
 | Dimension | Scheduled Service Gaps | Edge Transit Duration | Train Route Similarity |
 | :--- | :--- | :--- | :--- |
-| **Product Question** | Which stations experience the longest breaks in service? | Which segments are historically the slowest? | Which services are structurally parallel? |
+| **Product Question** | Which stations experience the longest breaks in service? | Which segments are historically the slowest? | Which services share historical timetable route-set similarity? |
 | **Data Required** | `TrainStopObservation.departure_time` | `TrainStopObservation` arrival/departure | `TrainStopObservation.station_id` |
 | **Data Compatibility** | Poor (times stored as `String`) | Poor (times stored as `String`) | **Excellent** (pure relational foreign keys) |
 | **Graph Dependency** | None | Edges | None |
@@ -58,125 +58,118 @@ This data cleanly supports topological intersection operations. A standard Jacca
 ## 9. Selected Phase 15 Scope
 **Train Route Similarity (Jaccard Index Analytics)**
 
-Provide a network endpoint that, given a target `train_id`, calculates the topological structural overlap (Jaccard Similarity) against all other scheduled trains in the active timetable snapshot.
+Provide a network endpoint that, given a target railway train number, calculates the historical timetable route-set similarity (Jaccard Index) against all other scheduled trains in the active timetable snapshot.
 
 ## 10. Evidence Supporting Selection
-Real-data exploration proved this metric is highly performant (~32ms execution time) and yields profoundly useful railway intelligence. It flawlessly identified exact return journeys (98.9% overlap) and structurally parallel trains (89% overlap) without requiring complex graph traversal or recursive pathfinding.
+Read-only exploration against the current dataset measured execution at approximately 32ms. It efficiently identifies trains with historically similar station-set topologies, such as reverse-direction services or physically overlapping route segments, using standard set-theoretic operations.
 
 ## 11. Exact Metric Semantics
-The metric evaluates the topological station-set overlap between a target train $T$ and another train $O$:
-$$ Jaccard = \frac{| stations(T) \cap stations(O) |}{| stations(T) \cup stations(O) |} \times 100 $$
-Expressed strictly as a percentage from 0.0 to 100.0.
+The metric computes the topological station-set overlap between a target train $T$ and a compared train $O$:
+$$ Jaccard = \frac{| Stations(T) \cap Stations(O) |}{| Stations(T) \cup Stations(O) |} \times 100 $$
+Expressed strictly as a percentage rounded to one decimal place.
 
-## 12. Unit of Analysis
-The unit of analysis is the historical scheduled `Train` occurrence within an active snapshot.
+**CRITICAL SEMANTIC BOUNDARIES**:
+This is strictly a TOPOLOGICAL STATION-SET similarity metric. It intentionally ignores:
+- Stop sequence / order
+- Travel direction
+- Arrival and departure times
+- Calendar dates
+- Service timing or operational interchangeability
+
+As a mathematical property of this metric, routes `A -> B -> C` and `C -> B -> A` produce identical station sets and yield identical Jaccard similarity (100% if sets match perfectly). High similarity scores merely identify mathematically overlapping sets, they do NOT imply equivalent, replacement, alternative, or parallel operational services.
+
+## 12. Unit of Analysis and Identifier Semantics
+- **Target Identifier**: The public API will use the railway `train_number` (e.g., `GET /api/v1/network/trains/{train_number}/similar`). This perfectly aligns with existing V1 endpoints (e.g., `GET /api/v1/trains/{train_number}`). Internal `train_id` integers are explicitly shielded from the API path.
+- **Missing Train Behavior**: If the `train_number` does not exist in the active timetable snapshot, the API must return an HTTP 404 Not Found, matching existing conventions.
+- **Entity**: The comparison occurs between canonical `Train` entities, strictly mapped through `TrainObservation` records resolving to the active timetable snapshot.
 
 ## 13. Occurrence Semantics
-- **Train-Stop Occurrence**: The presence of a `TrainStopObservation` binds a train to a station.
-- **Set Semantics**: A station visited multiple times by the same train in a single journey (e.g., a loop) is counted natively as part of the union/intersection via distinct grouping if necessary, though typical schedules visit a station once per direction. The overlap evaluates the distinct set of stations.
+- The presence of a `TrainStopObservation` binds a train to a station within the snapshot.
+- **Repeated Station Visits**: If a train visits the same station multiple times (e.g., a looping journey), these visits must mathematically collapse into a single distinct station ID. Jaccard similarity measures the distinct set of stations. Raw stop-row counts are NOT used for Jaccard counting.
 
-## 14. Snapshot/Provenance Semantics
-- The query strictly isolates `TrainStopObservation` rows to the **active timetable snapshot**.
-- Requires the `get_active_timetable_snapshot_id()` helper.
-- Cross-snapshot contamination is structurally prevented via `snapshot_id` bindings in the CTEs.
+## 14. Jaccard Edge Cases and Self-Match Behavior
+- **Self-Match**: Excluded. The target train must NOT be compared against itself (`target_train_id != compared_train_id`).
+- **Zero Overlap**: A compared train with zero shared stations evaluates to 0.0%. However, these are excluded by the default `min_overlap_stations` filter.
+- **Empty Station Set**: If a train theoretically lacks `TrainStopObservation` records, its station set is zero. Division by zero in the Jaccard formula must be safely caught and mapped to 0.0%.
+- **Reverse Station Sequence**: Evaluates identically to the forward sequence if the distinct station sets are identical.
+- **Duplicate TrainObservations**: Structurally prevented by `(snapshot_id, train_id)` primary keys.
 
-## 15. Graph-Build Dependency
-**None.**
-This metric evaluates topological set overlap via `TrainStopObservation`, not sequential connectivity. Therefore, it does not require an active `RailwayGraphBuild` or `RailwayNetworkEdge` records. It operates purely on the schedule matrix, ensuring robustness even if graph construction fails.
+## 15. Return-Train / Metadata Semantics
+The `TrainObservation.return_train_number` field provides metadata about associated return journeys.
+- **Weighting**: The similarity calculation completely IGNORES `return_train_number`. No artificial weighting is applied. High similarity for reverse routes emerges naturally from the pure mathematical Jaccard overlap.
+- **Exposure**: The field will be exposed in the response payload for informational purposes, maintaining parity with existing search schemas.
 
-## 16. Proposed API
-**GET /api/v1/network/trains/{train_id}/similar**
+## 16. Snapshot/Provenance Semantics
+- **Timetable Bound**: The query strictly resolves and enforces the active timetable snapshot ID exactly once.
+- **Metadata**: Target train, compared trains, and stop observations must universally belong to this identical snapshot.
+- **Graph-Build Dependency**: **None.** This metric evaluates set overlap directly via `TrainStopObservation`. It does not evaluate sequential graph connectivity. Therefore, it does not require an active `RailwayGraphBuild` or `RailwayNetworkEdge` records.
+
+## 17. Proposed API
+**GET /api/v1/network/trains/{train_number}/similar**
 
 **Parameters:**
-- `limit` (int): default=10, ge=1, le=50
-- `min_overlap_stations` (int): default=1, ge=1
+- `limit` (int): minimum 1, maximum 50, default 10.
+- `min_overlap_stations` (int): minimum 1, default 1. (Candidates with 0 overlap are entirely excluded).
 
 **Response Envelope:**
 ```json
 {
   "timetable_snapshot_id": 2,
-  "target_train_id": 5,
   "target_train_number": "12345",
-  "target_total_stations": 185,
+  "target_train_name": "Example Express",
+  "target_station_count": 185,
   "limit": 10,
   "min_overlap_stations": 1,
   "items": [
     {
-      "train_id": 4932,
       "train_number": "04727",
-      "overlap_stations": 184,
-      "total_stations": 185,
+      "train_name": "Example Return",
+      "train_type": "EXP",
+      "return_train_number": "12345",
+      "overlap_station_count": 184,
+      "compared_station_count": 185,
+      "union_station_count": 186,
       "similarity_pct": 98.9
     }
   ]
 }
 ```
 
-## 17. Query Strategy
-Set-based PostgreSQL CTE approach:
-1. `target_stations`: Select distinct `station_id` for the target train.
-2. `other_trains`: Count total distinct stations for all other trains in the snapshot.
-3. `intersection`: Join `train_stop_observations` against `target_stations` to count overlapping stations per train.
-4. `SELECT`: Compute `ROUND(CAST(overlap AS FLOAT) / CAST(target_total + other_total - overlap AS FLOAT) * 100.0, 1)`.
-5. Join to `trains` to fetch canonical numbers.
+## 18. Query Strategy
+Set-based PostgreSQL CTE approach avoiding Cartesian many-to-many joins:
+1. `target_stations`: Select `DISTINCT station_id` for the target train ID.
+2. `other_trains`: Select `train_id`, `COUNT(DISTINCT station_id)` for all other trains in the snapshot.
+3. `intersection`: Join `train_stop_observations` against `target_stations` and aggregate `COUNT(DISTINCT tso.station_id)` as `intersection_count`.
+4. `computation`: Derive `union_count` mathematically: `(target_station_count + compared_station_count - intersection_count)`.
+5. Calculate `similarity_pct`: `ROUND(CAST(intersection_count AS FLOAT) / CAST(union_count AS FLOAT) * 100.0, 1)`.
+6. Join to `Train` and `TrainObservation` to attach public `train_number` and metadata.
 
-## 18. Ordering
-Strictly deterministic sorting:
-`ORDER BY similarity_pct DESC, overlap_count DESC, t.number ASC`
-
-## 19. Resource/Output Bounds
-- Bounded entirely to a single snapshot.
-- Output bounded by database-side `LIMIT`.
-- Input bounded by single `train_id`.
+## 19. Ordering
+Strictly deterministic sorting enforced on the database side:
+1. `similarity_pct DESC`
+2. `overlap_station_count DESC`
+3. `union_station_count ASC`
+4. `train_number ASC`
 
 ## 20. Performance Methodology
-- Verify using `EXPLAIN ANALYZE`.
-- Monitor execution time (target < 50ms).
-- Ensure Planner utilizes `HashAggregate` and `Hash Join` over sequential scans where optimal, avoiding N+1 loops.
-- Verify `Top-N heapsort` memory usage remains under 1MB.
+- Verify query execution using `EXPLAIN (ANALYZE, BUFFERS)` on the local dataset.
+- Exploratory execution on the current local dataset measured approximately 32ms.
+- Ensure Planner utilizes `HashAggregate` and avoids N+1 Python loops.
+- Confirm that database-side `LIMIT` safely bounds the resulting top-N sort.
 
-## 21. Real-Data Exploration
-Executed on Snapshot 2 local database against Train ID 5:
-- **Train 04727**: overlap 184, total 185, similarity 98.9% (Return journey)
-- **Train 14708**: overlap 183, total 202, similarity 89.7% (Parallel alternative)
-- **Execution Time**: ~32ms.
-- Confirmed that the metric effortlessly differentiates between highly overlapping routes and minor tangent intersections.
+## 21. Limitations and Non-Goals
+- **Non-Directional**: Identifies station sets independent of order. `A->B->C` is 100% similar to `C->B->A`.
+- **Non-Temporal**: Evaluates static timetable topology; a 100% overlapping train might operate at entirely different times of day.
+- **No Operational Substitutability**: We are NOT claiming passenger tickets can be transferred, that trains act as operational replacements, or that they run concurrently.
+- **No Live Assertions**: We do NOT model live track sharing, physical congestion, or passenger demand.
 
-## 22. EXPLAIN Methodology
-The captured plan proved highly efficient:
-- Scanned 138,962 `train_stop_observations` via parallel Seq Scan (optimal for massive aggregations).
-- Grouped intersections natively in ~7ms.
-- Executed in 32ms total.
-No new indexes are required.
+## 22. Unresolved Questions
+None remaining. The API identifier, set-based Jaccard logic, snapshot isolation, and deterministic ordering have been firmly established.
 
-## 23. Test Strategy
-**Service Tests**:
-- `test_calculate_train_similarity_perfect_match` (100% overlap)
-- `test_calculate_train_similarity_partial` (50% overlap)
-- `test_calculate_train_similarity_no_overlap` (0 overlap -> should not appear due to `min_overlap_stations`)
-- `test_invalid_train_id` (ValueError)
-
-**API Tests**:
-- `test_get_similar_trains_success` (200 OK)
-- `test_get_similar_trains_validation` (422 for limit < 1)
-- `test_get_similar_trains_not_found` (404 for missing train)
-- `test_get_similar_trains_no_snapshot` (503)
-
-## 24. Limitations
-- Similarity is strictly topological (shared stations). It does not evaluate time-of-day similarity. A 100% similar train might run 12 hours later.
-- Does not enforce identical sequence direction (A->B->C vs C->B->A yield 100% similarity).
-
-## 25. Non-Goals
-- We are NOT claiming passenger tickets can be transferred.
-- We are NOT claiming these trains run simultaneously.
-- We are NOT modeling live operational track sharing.
-
-## 26. Unresolved Questions
-- Should directional sequence penalty be applied? *Decision: No, topological Jaccard index cleanly handles undirected overlap, which is more robust for discovering return journeys as natural alternatives.*
-
-## 27. Implementation Sequencing
-1. Implement `TrainSimilarityItem` and `TrainSimilarityResponse` schemas.
+## 23. Implementation Sequencing
+1. Implement `TrainSimilarityItem` and `TrainSimilarityResponse` schemas in `schemas.py`.
 2. Implement `calculate_train_similarity` in `services/network.py`.
-3. Implement `GET /api/v1/network/trains/{train_id}/similar` in `api/v1/network.py`.
-4. Add service and API tests.
-5. Validate via `EXPLAIN ANALYZE`.
+3. Implement `GET /api/v1/network/trains/{train_number}/similar` in `api/v1/network.py`.
+4. Add service tests verifying distinct sets, self-exclusion, and sorting rules.
+5. Add API tests verifying parameter bounds (422) and missing train states (404/503).
+6. Validate via `EXPLAIN ANALYZE`.
