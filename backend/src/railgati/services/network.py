@@ -2219,24 +2219,22 @@ def calculate_station_paired_services(
     return (station_code_upper, station_name, count, avg, paired_services)
 
 
-
 def calculate_station_reversals(
     db: Session,
     timetable_snapshot_id: int,
     station_code: str,
 ) -> tuple[str, str | None, int, list[dict]]:
     """Calculate Network Station Directional Reversal Analytics."""
-    from railgati.models.station import Station, StationObservation
-    from railgati.models.provenance import DatasetSnapshot
-    from railgati.api.v1.snapshots import get_active_station_snapshot_id
     from sqlalchemy import text
+
+    from railgati.api.v1.snapshots import get_active_station_snapshot_id
+    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.station import Station, StationObservation
 
     station_code_upper = station_code.strip().upper()
 
     # 1. Resolve Station
-    station = db.scalar(
-        select(Station).filter(Station.code == station_code_upper)
-    )
+    station = db.scalar(select(Station).filter(Station.code == station_code_upper))
     if not station:
         raise ValueError(f"Station '{station_code_upper}' not found")
 
@@ -2298,9 +2296,100 @@ def calculate_station_reversals(
         for row in results
     ]
 
-    return (
-        station_code_upper,
-        station_name,
-        len(reversing_trains),
-        reversing_trains
+    return (station_code_upper, station_name, len(reversing_trains), reversing_trains)
+
+
+def calculate_station_outbound_transit(
+    db: Session,
+    timetable_snapshot_id: int,
+    station_code: str,
+) -> tuple[str, str | None, list[dict]]:
+    """Calculate Network Station Outbound Edge Transit Analytics."""
+    from sqlalchemy import text
+
+    from railgati.api.v1.snapshots import get_active_station_snapshot_id
+    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.station import Station, StationObservation
+
+    station_code_upper = station_code.strip().upper()
+
+    # 1. Resolve Station
+    station = db.scalar(select(Station).filter(Station.code == station_code_upper))
+    if not station:
+        raise ValueError(f"Station '{station_code_upper}' not found")
+
+    station_snapshot_id = get_active_station_snapshot_id(db)
+    station_obs = db.scalar(
+        select(StationObservation).filter(
+            StationObservation.station_id == station.id,
+            StationObservation.snapshot_id == station_snapshot_id,
+        )
     )
+    station_name = station_obs.name if station_obs else None
+
+    # Verify snapshot
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    is_sqlite = db.bind is not None and db.bind.dialect.name == "sqlite"
+    if is_sqlite:
+        duration_calc = "(ns.dst_day - tt.src_day) * 1440 + CAST(strftime('%s', ns.dst_arrival) AS INTEGER) / 60 - CAST(strftime('%s', tt.src_departure) AS INTEGER) / 60"
+    else:
+        duration_calc = "(ns.dst_day - tt.src_day) * 1440 + EXTRACT(EPOCH FROM ns.dst_arrival::time)/60 - EXTRACT(EPOCH FROM tt.src_departure::time)/60"
+
+    query = text(f"""
+        WITH target_trains AS (
+            SELECT train_id, stop_sequence as src_seq, departure_time as src_departure, source_day as src_day
+            FROM train_stop_observations
+            WHERE snapshot_id = :snapshot_id AND station_id = :station_id
+              AND departure_time IS NOT NULL
+        ),
+        next_stops AS (
+            SELECT tso.train_id, tso.station_id as dst_station, tso.arrival_time as dst_arrival, tso.source_day as dst_day
+            FROM target_trains tt
+            JOIN train_stop_observations tso
+              ON tso.train_id = tt.train_id
+             AND tso.snapshot_id = :snapshot_id
+             AND tso.stop_sequence = tt.src_seq + 1
+            WHERE tso.arrival_time IS NOT NULL
+        ),
+        valid_edges AS (
+            SELECT tt.train_id, ns.dst_station,
+                   {duration_calc} as duration_mins
+            FROM target_trains tt
+            JOIN next_stops ns ON tt.train_id = ns.train_id
+        )
+        SELECT s.code as next_station_code, so.name as next_station_name, COUNT(*) as vol,
+               MIN(duration_mins) as min_d, MAX(duration_mins) as max_d, ROUND(AVG(duration_mins), 1) as avg_d
+        FROM valid_edges e
+        JOIN stations s ON s.id = e.dst_station
+        LEFT JOIN station_observations so ON so.station_id = s.id AND so.snapshot_id = :station_snapshot_id
+        GROUP BY s.code, so.name
+        ORDER BY vol DESC, s.code ASC
+    """)
+
+    results = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "station_id": station.id,
+            "station_snapshot_id": station_snapshot_id,
+        },
+    ).fetchall()
+
+    edges = [
+        {
+            "next_station_code": row[0],
+            "next_station_name": row[1],
+            "train_volume": row[2],
+            "min_duration_minutes": float(row[3]),
+            "max_duration_minutes": float(row[4]),
+            "avg_duration_minutes": float(row[5]),
+        }
+        for row in results
+    ]
+
+    return (station_code_upper, station_name, edges)

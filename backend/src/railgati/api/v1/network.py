@@ -1191,3 +1191,38 @@ def get_network_station_reversals(
         "reversal_count": count,
         "reversing_trains": trains,
     }
+
+
+from railgati.api.v1.schemas import OutboundEdgeTransitResponse
+
+
+@router.get(
+    "/stations/{station_code}/outbound-edges/transit",
+    response_model=OutboundEdgeTransitResponse,
+)
+def get_network_station_outbound_transit(
+    station_code: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Calculate Network Station Outbound Edge Transit Analytics."""
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        from railgati.services.network import calculate_station_outbound_transit
+
+        (code, name, edges) = calculate_station_outbound_transit(
+            db, timetable_snapshot_id, station_code
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+
+    return {
+        "station_code": code,
+        "station_name": name,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "outbound_edges": edges,
+    }

@@ -559,3 +559,19 @@ class ReversalResponse(BaseModel):
     timetable_snapshot_id: int
     reversal_count: int
     reversing_trains: list[ReversingTrainItem]
+
+
+class OutboundEdgeItem(BaseModel):
+    next_station_code: str
+    next_station_name: str | None
+    train_volume: int
+    min_duration_minutes: float
+    max_duration_minutes: float
+    avg_duration_minutes: float
+
+
+class OutboundEdgeTransitResponse(BaseModel):
+    station_code: str
+    station_name: str | None
+    timetable_snapshot_id: int
+    outbound_edges: list[OutboundEdgeItem]
