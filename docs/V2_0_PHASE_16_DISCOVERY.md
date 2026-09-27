@@ -111,7 +111,7 @@ Set-based PostgreSQL CTE approach avoiding Cartesian N+1 bounds. The SQL cardina
 10. Apply LIMIT.
 
 ## 14. Performance Investigation & EXPLAIN Findings
-Exploratory benchmarking on the current local snapshot 2 dataset (`~8,989`-station / `~5,207`-train dataset), for target station `NDLS` / ID 1779, yielded:
+Exploratory benchmarking on the current local snapshot 2 dataset (`~8,989`-station / `~5,207`-train dataset), for target station `NDLS` / ID 8534, yielded:
 - **Planning Time**: ~0.349 ms
 - **Execution Time**: ~197.644 ms
 
@@ -136,17 +136,17 @@ Exploratory benchmarking on the current local snapshot 2 dataset (`~8,989`-stati
   "timetable_snapshot_id": 2,
   "target_station_code": "NDLS",
   "target_station_name": "New Delhi",
-  "target_train_count": 298,
+  "target_train_count": 233,
   "limit": 10,
   "min_overlap_trains": 1,
   "items": [
     {
-      "station_code": "NZM",
-      "station_name": "Hazrat Nizamuddin",
-      "overlap_train_count": 250,
-      "compared_train_count": 280,
-      "union_train_count": 328,
-      "similarity_pct": 76.2
+      "station_code": "CSB",
+      "station_name": "Shivaji Bridge",
+      "overlap_train_count": 204,
+      "compared_train_count": 204,
+      "union_train_count": 233,
+      "similarity_pct": 87.6
     }
   ]
 }
@@ -175,14 +175,14 @@ Strictly deterministic sorting enforced on the database side:
 Test manually against the local database (e.g., target `NDLS`) to confirm intersection and union arithmetic exactly match the theoretical Jaccard formula for the top result.
 
 **Exact Measured Real-Data Findings**:
-- **Target Station**: `NDLS` (ID 1779) in Active Snapshot 2.
-- **Distinct Target Train Count**: `298` trains.
-- **Top Candidate Station**: `NZM` (Hazrat Nizamuddin).
-- **Candidate Distinct Train Count**: `280` trains.
-- **Overlap (Intersection)**: `250` trains.
-- **Union Calculation**: `298 + 280 - 250 = 328` trains.
-- **Calculated Percentage**: `(250 / 328) * 100 = 76.2%` Jaccard similarity.
-- **Plausibility**: The 76.2% Jaccard similarity indicates that 250 of the 328 trains in the combined distinct-train membership set were shared by both stations in this historical timetable snapshot. This metric explicitly describes historical timetable train-set overlap only. It does not establish that the stations are duplicates, interchangeable, geographically equivalent, or operationally equivalent.
+- **Target Station**: `NDLS` (ID 8534) in Active Snapshot 2.
+- **Distinct Target Train Count**: `233` trains.
+- **Top Candidate Station**: `CSB` (Shivaji Bridge).
+- **Candidate Distinct Train Count**: `204` trains.
+- **Overlap (Intersection)**: `204` trains.
+- **Union Calculation**: `233 + 204 - 204 = 233` trains.
+- **Calculated Percentage**: `(204 / 233) * 100 = 87.6%` Jaccard similarity.
+- **Plausibility**: The 87.6% Jaccard similarity indicates that 204 of the 233 trains in the combined distinct-train membership set were shared by both stations in this historical timetable snapshot. This metric explicitly describes historical timetable train-set overlap only. It does not establish that the stations are duplicates, interchangeable, geographically equivalent, or operationally equivalent.
 
 ## 20. Implementation Boundary
 - **Status**: Discovery Only.
