@@ -27,6 +27,7 @@ from railgati.api.v1.schemas import (
     StationNeighborhoodTriadicClosureResponse,
     StationOutboundDominanceResponse,
     StationSimilarityResponse,
+    StationTransitArticulationResponse,
     StructuralHaltResponse,
     TemporalConcentrationResponse,
     TerminusResponse,
@@ -1618,5 +1619,29 @@ def get_station_neighborhood_triadic_closure(
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
         if "no active timetable snapshot" in str(e).lower():
+            raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get(
+    "/stations/{station_code}/transit-articulation",
+    response_model=StationTransitArticulationResponse,
+    summary="Calculate network station transit articulation analytics",
+    description=(
+        "Measures a station's local structural transit-pair dependency in the active timetable graph. "
+        "Evaluates whether a station acts as a strict local cut-vertex between its inbound and "
+        "outbound neighborhoods. Returns HTTP 400 for mathematically undefined constraints."
+    ),
+)
+def get_station_transit_articulation(
+    station_code: str, db: Session = Depends(get_db)
+) -> dict[str, typing.Any]:
+    from railgati.services.network import calculate_station_transit_articulation
+
+    try:
+        return calculate_station_transit_articulation(db, station_code)
+    except ValueError as e:
+        if "not found" in str(e):
+            raise HTTPException(status_code=404, detail=str(e))
+        if "No active" in str(e):
             raise HTTPException(status_code=503, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))

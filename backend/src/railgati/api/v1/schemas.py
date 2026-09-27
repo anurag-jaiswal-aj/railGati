@@ -726,3 +726,13 @@ class StationNeighborhoodTriadicClosureResponse(BaseModel):
     possible_neighbor_pairs: int
     closed_neighbor_pairs: int
     triadic_closure_ratio: float
+
+class StationTransitArticulationResponse(BaseModel):
+    station_code: str
+    station_name: str
+    timetable_snapshot_id: int
+    inbound_degree: int
+    outbound_degree: int
+    transit_pairs_count: int
+    articulation_pairs_count: int
+    articulation_ratio: float

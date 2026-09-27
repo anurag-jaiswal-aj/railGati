@@ -3648,7 +3648,10 @@ def calculate_station_neighborhood_symmetry(
 
 def calculate_station_neighborhood_triadic_closure(db: Session, station_code: str) -> dict:
     """Phase 33: Calculates Network Station Neighborhood Triadic Closure Analytics."""
-    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id, get_active_station_snapshot_id
+    from railgati.api.v1.snapshots import (
+        get_active_station_snapshot_id,
+        get_active_timetable_snapshot_id,
+    )
     from railgati.models.station import Station, StationObservation
 
     timetable_snapshot_id = get_active_timetable_snapshot_id(db)
@@ -3730,5 +3733,142 @@ def calculate_station_neighborhood_triadic_closure(db: Session, station_code: st
         "possible_neighbor_pairs": possible_count,
         "closed_neighbor_pairs": actual_count,
         "triadic_closure_ratio": float(actual_count) / float(possible_count),
+    }
+
+
+def calculate_station_transit_articulation(db: Session, station_code: str) -> dict[str, typing.Any]:
+    """Phase 34: Calculates Network Station Transit Articulation Analytics."""
+    from sqlalchemy import select, text
+
+    from railgati.api.v1.snapshots import (
+        get_active_station_snapshot_id,
+        get_active_timetable_snapshot_id,
+    )
+    from railgati.models.station import Station, StationObservation
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+    if not timetable_snapshot_id:
+        raise ValueError("No active timetable snapshot available.")
+
+    station = db.scalar(select(Station).filter(Station.code == station_code.upper()))
+    if not station:
+        raise ValueError(f"Station {station_code.upper()} not found.")
+
+    station_snapshot_id = get_active_station_snapshot_id(db)
+    if not station_snapshot_id:
+        raise ValueError("No active station snapshot available.")
+
+    obs = db.scalar(
+        select(StationObservation).filter(
+            StationObservation.station_id == station.id,
+            StationObservation.snapshot_id == station_snapshot_id,
+        )
+    )
+    if not obs:
+        raise ValueError(f"Station {station_code.upper()} not found in active station snapshot.")
+    station_name = obs.name
+
+    query = text("""
+        WITH target AS (
+            SELECT :station_id AS id
+        ),
+        inbound AS (
+            SELECT DISTINCT tso1.station_id as o
+            FROM train_stop_observations tso1
+            JOIN train_stop_observations tso2 
+              ON tso1.train_id = tso2.train_id 
+              AND tso1.snapshot_id = tso2.snapshot_id
+              AND tso1.stop_sequence + 1 = tso2.stop_sequence
+            WHERE tso2.snapshot_id = :snapshot_id AND tso2.station_id = (SELECT id FROM target)
+        ),
+        outbound AS (
+            SELECT DISTINCT tso2.station_id as d
+            FROM train_stop_observations tso1
+            JOIN train_stop_observations tso2 
+              ON tso1.train_id = tso2.train_id 
+              AND tso1.snapshot_id = tso2.snapshot_id
+              AND tso1.stop_sequence + 1 = tso2.stop_sequence
+            WHERE tso1.snapshot_id = :snapshot_id AND tso1.station_id = (SELECT id FROM target)
+        ),
+        pairs AS (
+            SELECT i.o, o.d
+            FROM inbound i
+            CROSS JOIN outbound o
+            WHERE i.o != o.d
+              AND i.o != (SELECT id FROM target)
+              AND o.d != (SELECT id FROM target)
+        ),
+        direct_edges AS (
+            SELECT p.o, p.d
+            FROM pairs p
+            WHERE EXISTS (
+                SELECT 1
+                FROM train_stop_observations t1
+                JOIN train_stop_observations t2
+                  ON t1.train_id = t2.train_id
+                  AND t1.snapshot_id = t2.snapshot_id
+                  AND t1.stop_sequence + 1 = t2.stop_sequence
+                WHERE t1.snapshot_id = :snapshot_id
+                  AND t1.station_id = p.o
+                  AND t2.station_id = p.d
+            )
+        ),
+        alt_paths AS (
+            SELECT p.o, p.d
+            FROM pairs p
+            WHERE EXISTS (
+                SELECT 1
+                FROM train_stop_observations t1
+                JOIN train_stop_observations t2
+                  ON t1.train_id = t2.train_id
+                  AND t1.snapshot_id = t2.snapshot_id
+                  AND t1.stop_sequence + 1 = t2.stop_sequence
+                JOIN train_stop_observations t3
+                  ON t2.train_id = t3.train_id
+                  AND t2.snapshot_id = t3.snapshot_id
+                  AND t2.stop_sequence + 1 = t3.stop_sequence
+                WHERE t1.snapshot_id = :snapshot_id
+                  AND t1.station_id = p.o
+                  AND t3.station_id = p.d
+                  AND t2.station_id != (SELECT id FROM target)
+            )
+        ),
+        dependent_pairs AS (
+            SELECT p.o, p.d
+            FROM pairs p
+            WHERE NOT EXISTS (SELECT 1 FROM direct_edges d WHERE d.o = p.o AND d.d = p.d)
+              AND NOT EXISTS (SELECT 1 FROM alt_paths a WHERE a.o = p.o AND a.d = p.d)
+        )
+        SELECT 
+            (SELECT COUNT(*) FROM inbound) as in_deg,
+            (SELECT COUNT(*) FROM outbound) as out_deg,
+            (SELECT COUNT(*) FROM pairs) as transit_pairs,
+            (SELECT COUNT(*) FROM dependent_pairs) as articulation_pairs
+    """)
+
+    result = db.execute(
+        query, {"snapshot_id": timetable_snapshot_id, "station_id": station.id}
+    ).fetchone()
+
+    if not result:
+        raise ValueError(f"No qualifying analytical data for {station_code.upper()}")
+
+    in_degree = int(result[0] or 0)
+    out_degree = int(result[1] or 0)
+    transit_pairs_count = int(result[2] or 0)
+    articulation_pairs_count = int(result[3] or 0)
+
+    if transit_pairs_count == 0:
+        raise ValueError(f"Station {station_code.upper()} has transit_pairs_count == 0. Transit articulation is mathematically undefined.")
+
+    return {
+        "station_code": station.code,
+        "station_name": station_name,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "inbound_degree": in_degree,
+        "outbound_degree": out_degree,
+        "transit_pairs_count": transit_pairs_count,
+        "articulation_pairs_count": articulation_pairs_count,
+        "articulation_ratio": float(articulation_pairs_count) / float(transit_pairs_count),
     }
 
