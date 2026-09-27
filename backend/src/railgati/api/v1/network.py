@@ -1525,9 +1525,7 @@ def get_network_station_outbound_dominance(
     timetable_snapshot_id = get_active_timetable_snapshot_id(db)
 
     try:
-        return calculate_station_outbound_dominance(
-            db, timetable_snapshot_id, station_code
-        )
+        return calculate_station_outbound_dominance(db, timetable_snapshot_id, station_code)
     except ValueError as e:
         if "not found" in str(e):
             raise HTTPException(status_code=404, detail="Station not found")

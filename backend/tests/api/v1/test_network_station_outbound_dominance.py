@@ -4,7 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from railgati.models.provenance import DatasetSnapshot
-from railgati.models.station import Station
+from railgati.models.station import Station, StationObservation
 from railgati.models.train import Train, TrainObservation
 
 
@@ -35,6 +35,9 @@ def setup_api_data(db_session: Session) -> typing.Any:
         stations.append(s)
     db_session.flush()
     s_map = {s.code: s.id for s in stations}
+    for s in stations:
+        db_session.add(StationObservation(snapshot_id=2, station_id=s.id, name=f"{s.code} Name"))
+    db_session.flush()
 
     # API -> DEST (10 occurrences, using different trains)
     for i in range(1, 11):
@@ -84,10 +87,5 @@ def test_api_station_outbound_dominance_empty(
     client: typing.Any, setup_api_data: typing.Any
 ) -> None:
     response = client.get("/api/v1/network/stations/TERM/outbound-dominance")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["station_code"] == "TERM"
-    assert data["total_outbound_occurrences"] == 0
-    assert data["max_outbound_occurrences"] == 0
-    assert data["dominant_destination_station_code"] is None
-    assert data["dominance_ratio"] == 0.0
+    assert response.status_code == 400
+    assert "No qualifying outbound occurrences" in response.json()["detail"]

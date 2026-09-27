@@ -3391,20 +3391,25 @@ def calculate_train_relative_station_dwell(
 
 
 def calculate_station_outbound_dominance(
-    db: Session, snapshot_id: int, station_code: str
+    db: Session, timetable_snapshot_id: int, station_code: str
 ) -> dict[str, typing.Any]:
     from sqlalchemy import text
+    from sqlalchemy import select
 
+    from railgati.api.v1.snapshots import get_active_station_snapshot_id
     from railgati.models.station import Station, StationObservation
 
-    station = db.query(Station).filter(Station.code == station_code).first()
+    station = db.scalar(select(Station).filter(Station.code == station_code.upper()))
     if not station:
         raise ValueError(f"Station {station_code} not found")
-        
-    obs = db.query(StationObservation).filter(
-        StationObservation.station_id == station.id,
-        StationObservation.snapshot_id == snapshot_id
-    ).first()
+
+    station_snapshot_id = get_active_station_snapshot_id(db)
+    obs = db.scalar(
+        select(StationObservation).filter(
+            StationObservation.station_id == station.id,
+            StationObservation.snapshot_id == station_snapshot_id,
+        )
+    )
     station_name = obs.name if obs else f"{station_code} (Unknown)"
 
     query = text("""
@@ -3451,24 +3456,20 @@ def calculate_station_outbound_dominance(
         LEFT JOIN ranked_destinations rd ON rd.rnk = 1
     """)
 
-    result = db.execute(query, {"snapshot_id": snapshot_id, "station_id": station.id}).first()
+    result = db.execute(
+        query, {"snapshot_id": timetable_snapshot_id, "station_id": station.id}
+    ).first()
 
     if not result or not result._mapping.get("total_outbound"):
-        return {
-            "station_code": station.code,
-            "station_name": station_name,
-            "timetable_snapshot_id": snapshot_id,
-            "total_outbound_occurrences": 0,
-            "max_outbound_occurrences": 0,
-            "dominant_destination_station_code": None,
-            "dominance_ratio": 0.0,
-        }
+        raise ValueError(
+            f"No qualifying outbound occurrences for station '{station_code.upper()}' in snapshot {timetable_snapshot_id}"
+        )
 
     row = dict(result._mapping)
     return {
         "station_code": station.code,
         "station_name": station_name,
-        "timetable_snapshot_id": snapshot_id,
+        "timetable_snapshot_id": timetable_snapshot_id,
         "total_outbound_occurrences": int(row["total_outbound"]),
         "max_outbound_occurrences": int(row["max_outbound"]),
         "dominant_destination_station_code": row["dominant_destination"],
