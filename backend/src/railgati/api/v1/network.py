@@ -8,8 +8,6 @@ from sqlalchemy.orm import Session
 
 from railgati.api.v1 import schemas
 from railgati.api.v1.schemas import (
-    PairedSymmetryResponse,
-
     ComplexityResponse,
     DwellResponse,
     EdgeAsymmetryResponse,
@@ -351,8 +349,6 @@ def get_network_service_attribution(
 
     # 4. Map to Response Schema
     from railgati.api.v1.schemas import NetworkServiceOccurrenceItem
-    PairedSymmetryResponse,
-
 
     items = [
         NetworkServiceOccurrenceItem(
@@ -466,8 +462,6 @@ def get_network_path_service_attribution(
 
     # 4. Map to Response Schema
     from railgati.api.v1.schemas import NetworkPathAttributionSegment, NetworkServiceOccurrenceItem
-    PairedSymmetryResponse,
-
 
     segments = []
     # Create an inverse map for returning original matched station codes
@@ -1126,9 +1120,7 @@ def get_network_travel_time(
     }
 
 
-from railgati.api.v1.schemas import PairedServiceResponse
-    PairedSymmetryResponse,
-
+from railgati.api.v1.schemas import PairedServiceResponse, PairedSymmetryResponse
 
 
 @router.get(
@@ -1166,8 +1158,6 @@ def get_network_station_paired_services(
 
 
 from railgati.api.v1.schemas import ReversalResponse
-    PairedSymmetryResponse,
-
 
 
 @router.get(
@@ -1204,8 +1194,6 @@ def get_network_station_reversals(
 
 
 from railgati.api.v1.schemas import OutboundEdgeTransitResponse
-    PairedSymmetryResponse,
-
 
 
 @router.get(
@@ -1241,8 +1229,6 @@ def get_network_station_outbound_transit(
 
 
 from railgati.api.v1.schemas import TrainRouteProfileResponse
-    PairedSymmetryResponse,
-
 
 
 @router.get(
@@ -1271,8 +1257,6 @@ def get_network_train_profile(
 
 
 from railgati.api.v1.schemas import ODBridgesResponse
-    PairedSymmetryResponse,
-
 
 
 @router.get(
@@ -1301,8 +1285,6 @@ def get_network_station_od_bridges(
 
 
 from railgati.api.v1.schemas import TemporalGapsResponse
-    PairedSymmetryResponse,
-
 
 
 @router.get(
@@ -1331,8 +1313,6 @@ def get_network_station_temporal_gaps(
 
 
 from railgati.api.v1.schemas import EdgeTemporalBunchingResponse
-    PairedSymmetryResponse,
-
 
 
 @router.get(
@@ -1361,8 +1341,6 @@ def get_network_edge_temporal_bunching(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
     return result
-
-
 
 
 @router.get(
