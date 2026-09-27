@@ -1663,8 +1663,8 @@ def calculate_train_similarity(
             ot.total_stations AS compared_station_count,
             (tc.c + ot.total_stations - i.overlap_count) AS union_station_count,
             ROUND(
-                CAST(i.overlap_count AS NUMERIC) /
-                CAST(tc.c + ot.total_stations - i.overlap_count AS NUMERIC) * 100.0,
+                (i.overlap_count * 100.0) /
+                (tc.c + ot.total_stations - i.overlap_count),
             1) AS similarity_pct,
             tc.c AS target_station_count
         FROM intersection i
