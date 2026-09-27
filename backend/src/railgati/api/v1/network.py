@@ -1226,3 +1226,31 @@ def get_network_station_outbound_transit(
         "timetable_snapshot_id": timetable_snapshot_id,
         "outbound_edges": edges,
     }
+
+
+from railgati.api.v1.schemas import TrainRouteProfileResponse
+
+
+@router.get(
+    "/trains/{train_number}/profile",
+    response_model=TrainRouteProfileResponse,
+)
+def get_network_train_profile(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Calculate Network Train Route Profile Analytics."""
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        from railgati.services.network import calculate_train_profile
+
+        result = calculate_train_profile(db, timetable_snapshot_id, train_number)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower() or "no usable observations" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+
+    return result

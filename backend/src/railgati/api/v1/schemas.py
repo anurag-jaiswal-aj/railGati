@@ -575,3 +575,14 @@ class OutboundEdgeTransitResponse(BaseModel):
     station_name: str | None
     timetable_snapshot_id: int
     outbound_edges: list[OutboundEdgeItem]
+
+
+class TrainRouteProfileResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    origin_station_code: str
+    destination_station_code: str
+    total_stops: int
+    total_duration_minutes: float | None
+    total_dwell_minutes: float | None
+    dwell_percentage: float | None

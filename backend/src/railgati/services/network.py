@@ -2393,3 +2393,107 @@ def calculate_station_outbound_transit(
     ]
 
     return (station_code_upper, station_name, edges)
+
+
+def calculate_train_profile(
+    db: Session,
+    timetable_snapshot_id: int,
+    train_number: str,
+) -> dict:
+    """Calculate Network Train Route Profile Analytics."""
+    from sqlalchemy import text
+
+    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.train import Train
+
+    # Verify snapshot
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    train = db.scalar(select(Train).filter(Train.number == train_number))
+    if not train:
+        raise ValueError(f"Train '{train_number}' not found")
+
+    is_sqlite = db.bind is not None and db.bind.dialect.name == "sqlite"
+    if is_sqlite:
+        duration_calc = "(d_day - o_day) * 1440 + CAST(strftime('%s', d_arr) AS INTEGER) / 60 - CAST(strftime('%s', o_dep) AS INTEGER) / 60"
+        dwell_calc = "SUM(CAST(strftime('%s', departure_time) AS INTEGER) / 60 - CAST(strftime('%s', arrival_time) AS INTEGER) / 60 + CASE WHEN departure_time < arrival_time THEN 1440 ELSE 0 END)"
+    else:
+        duration_calc = "(d_day - o_day) * 1440 + EXTRACT(EPOCH FROM d_arr::time)/60 - EXTRACT(EPOCH FROM o_dep::time)/60"
+        dwell_calc = "SUM(EXTRACT(EPOCH FROM departure_time::time)/60 - EXTRACT(EPOCH FROM arrival_time::time)/60 + CASE WHEN departure_time < arrival_time THEN 1440 ELSE 0 END)"
+
+    query = text(f"""
+        WITH train_stops AS (
+            SELECT snapshot_id, train_id, station_id, stop_sequence, departure_time, arrival_time, source_day
+            FROM train_stop_observations
+            WHERE snapshot_id = :snapshot_id AND train_id = :train_id
+        ),
+        termini AS (
+            SELECT snapshot_id, train_id,
+                   MAX(stop_sequence) as max_seq,
+                   MIN(stop_sequence) as min_seq,
+                   COUNT(*) as total_stops
+            FROM train_stops
+            GROUP BY snapshot_id, train_id
+        ),
+        span_bounds AS (
+            SELECT t.train_id, t.total_stops,
+                   o.station_id as origin_id, o.departure_time as o_dep, o.source_day as o_day,
+                   d.station_id as dest_id, d.arrival_time as d_arr, d.source_day as d_day
+            FROM termini t
+            JOIN train_stops o ON o.train_id = t.train_id AND o.stop_sequence = t.min_seq
+            JOIN train_stops d ON d.train_id = t.train_id AND d.stop_sequence = t.max_seq
+        ),
+        span_calc AS (
+            SELECT train_id, total_stops, origin_id, dest_id,
+                   {duration_calc} as total_duration_mins
+            FROM span_bounds
+        ),
+        dwells AS (
+            SELECT ts.train_id,
+                   {dwell_calc} as total_dwell_mins
+            FROM train_stops ts
+            JOIN termini t ON t.train_id = ts.train_id
+            WHERE ts.stop_sequence > t.min_seq AND ts.stop_sequence < t.max_seq
+              AND ts.arrival_time IS NOT NULL AND ts.departure_time IS NOT NULL
+            GROUP BY ts.train_id
+        )
+        SELECT sc.total_stops, sc.total_duration_mins, d.total_dwell_mins,
+               ROUND((d.total_dwell_mins * 100.0 / NULLIF(sc.total_duration_mins, 0)), 1) as dwell_percentage,
+               o_st.code as origin_station_code, d_st.code as dest_station_code
+        FROM span_calc sc
+        LEFT JOIN dwells d ON sc.train_id = d.train_id
+        JOIN stations o_st ON o_st.id = sc.origin_id
+        JOIN stations d_st ON d_st.id = sc.dest_id
+    """)
+
+    result = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "train_id": train.id,
+        },
+    ).fetchone()
+
+    if not result:
+        raise ValueError(
+            f"No usable observations for train '{train_number}' in snapshot {timetable_snapshot_id}"
+        )
+
+    return {
+        "train_number": train_number,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "origin_station_code": result[4],
+        "destination_station_code": result[5],
+        "total_stops": result[0],
+        "total_duration_minutes": float(result[1]) if result[1] is not None else None,
+        "total_dwell_minutes": float(result[2])
+        if result[2] is not None
+        else (0.0 if result[0] > 0 else None),
+        "dwell_percentage": float(result[3])
+        if result[3] is not None
+        else (0.0 if result[1] is not None and result[2] is None and result[1] > 0 else None),
+    }
