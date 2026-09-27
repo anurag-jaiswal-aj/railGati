@@ -5,6 +5,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from railgati.api.v1.schemas import (
+    ComplexityItem,
     DwellItem,
     EdgeVolumeItem,
     FlowItem,
@@ -1326,6 +1327,76 @@ def calculate_network_dwells(
             station_name=row.station_name,
             avg_dwell_minutes=row.avg_dwell_minutes,
             transit_count=row.transit_count,
+        )
+        for row in results
+    ]
+
+
+def calculate_network_complexities(
+    db: Session,
+    timetable_snapshot_id: int,
+    station_snapshot_id: int,
+    limit: int = 50,
+    min_service_count: int = 10,
+) -> list[ComplexityItem]:
+    """
+    Calculate the historical station route complexity.
+
+    This derives the average scheduled route length (in total stops)
+    for all canonical train occurrences visiting a station in the snapshot.
+    """
+    query = text("""
+        WITH train_lengths AS (
+            SELECT
+                train_id,
+                COUNT(*) as total_stops
+            FROM train_stop_observations
+            WHERE snapshot_id = :timetable_snapshot_id
+            GROUP BY train_id
+        ),
+        station_avg_length AS (
+            SELECT
+                tso.station_id,
+                COUNT(tso.train_id) as service_count,
+                AVG(tl.total_stops) as avg_route_stops
+            FROM train_stop_observations tso
+            JOIN train_lengths tl ON tso.train_id = tl.train_id
+            WHERE tso.snapshot_id = :timetable_snapshot_id
+            GROUP BY tso.station_id
+            HAVING COUNT(tso.train_id) >= :min_service_count
+        )
+        SELECT
+            s.code as station_code,
+            so.name as station_name,
+            CAST(s_avg.avg_route_stops AS FLOAT) as avg_route_stops,
+            CAST(s_avg.service_count AS INTEGER) as service_count
+        FROM station_avg_length s_avg
+        JOIN stations s ON s_avg.station_id = s.id
+        JOIN station_observations so ON so.station_id = s.id
+        WHERE so.snapshot_id = :station_snapshot_id
+        ORDER BY
+            s_avg.avg_route_stops DESC,
+            s_avg.service_count DESC,
+            s.code ASC
+        LIMIT :limit
+    """)
+
+    results = db.execute(
+        query,
+        {
+            "timetable_snapshot_id": timetable_snapshot_id,
+            "station_snapshot_id": station_snapshot_id,
+            "limit": limit,
+            "min_service_count": min_service_count,
+        },
+    ).fetchall()
+
+    return [
+        ComplexityItem(
+            station_code=row.station_code,
+            station_name=row.station_name,
+            avg_route_stops=row.avg_route_stops,
+            service_count=row.service_count,
         )
         for row in results
     ]

@@ -1,6 +1,6 @@
 """Network reachability API endpoint."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from railgati.api.v1 import schemas
 from railgati.api.v1.schemas import (
+    ComplexityResponse,
     DwellResponse,
     FlowResponse,
     NetworkPathAttributionResponse,
@@ -27,6 +28,7 @@ from railgati.db import get_db
 from railgati.models.station import Station, StationObservation
 from railgati.services.network import (
     calculate_edge_volume,
+    calculate_network_complexities,
     find_network_paths,
     find_reachable_stations,
 )
@@ -870,3 +872,36 @@ def get_network_dwells(
         min_transit_count=min_transit_count,
         items=dwell_data,
     )
+
+
+@router.get("/complexities", response_model=ComplexityResponse)
+def get_network_complexities(
+    limit: int = Query(50, ge=1, le=500, description="Max results"),
+    min_service_count: int = Query(
+        10, ge=1, le=1000, description="Minimum transit occurrences to qualify"
+    ),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Calculate Network Station Route Complexity.
+
+    Returns the average historical scheduled route length (in total stops)
+    of all canonical train occurrences visiting a station in the active snapshot.
+    """
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+    station_snapshot_id = get_active_station_snapshot_id(db)
+
+    complexities = calculate_network_complexities(
+        db,
+        timetable_snapshot_id,
+        station_snapshot_id,
+        limit=limit,
+        min_service_count=min_service_count,
+    )
+
+    return {
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "limit": limit,
+        "min_service_count": min_service_count,
+        "items": complexities,
+    }

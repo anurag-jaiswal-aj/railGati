@@ -404,3 +404,21 @@ class DwellResponse(BaseModel):
     limit: int
     min_transit_count: int
     items: list[DwellItem]
+
+
+class ComplexityItem(BaseModel):
+    """Historical scheduled route complexity for a station."""
+
+    station_code: str
+    station_name: str
+    avg_route_stops: float
+    service_count: int
+
+
+class ComplexityResponse(BaseModel):
+    """Network station route complexity analytics for the active timetable snapshot."""
+
+    timetable_snapshot_id: int
+    limit: int
+    min_service_count: int
+    items: list[ComplexityItem]
