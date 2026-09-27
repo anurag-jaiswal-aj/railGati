@@ -165,3 +165,90 @@ def test_edge_volume_empty_network(db_session: Session) -> None:
     # No edges added
     edges = calculate_edge_volume(db_session, 2)
     assert len(edges) == 0
+
+
+def test_edge_volume_snapshot_isolation(db_session: Session) -> None:
+    source = create_deps(db_session)
+    # 2 snapshots
+    db_session.add(DatasetSnapshot(id=1, source_id=source.id, status="ACTIVE"))
+    db_session.flush()
+    db_session.add(DatasetSnapshot(id=2, source_id=source.id, status="ACTIVE"))
+    db_session.flush()
+
+    # Build only for snapshot 2
+    db_session.add(RailwayGraphBuild(timetable_snapshot_id=2, status="ACTIVE"))
+    db_session.flush()
+
+    s1, s2, s3 = setup_stations(db_session)
+
+    # Add edge for snapshot 1 (Should be ignored)
+    db_session.add(
+        RailwayNetworkEdge(
+            timetable_snapshot_id=1,
+            from_station_id=s1.id,
+            to_station_id=s2.id,
+            train_count=500,
+        )
+    )
+    # Add edge for snapshot 2 (Should be included)
+    db_session.add(
+        RailwayNetworkEdge(
+            timetable_snapshot_id=2,
+            from_station_id=s1.id,
+            to_station_id=s3.id,
+            train_count=100,
+        )
+    )
+    db_session.flush()
+
+    edges = calculate_edge_volume(db_session, 2)
+    assert len(edges) == 1
+    assert edges[0].service_occurrence_volume == 100
+    assert edges[0].to_station_code == "C"
+
+
+def test_edge_volume_active_station_metadata(db_session: Session) -> None:
+    source = create_deps(db_session)
+    
+    # Old snapshot (inactive)
+    db_session.add(DatasetSnapshot(id=1, source_id=source.id, status="INACTIVE"))
+    db_session.flush()
+    # Active snapshot
+    db_session.add(DatasetSnapshot(id=2, source_id=source.id, status="ACTIVE"))
+    db_session.flush()
+
+    db_session.add(RailwayGraphBuild(timetable_snapshot_id=2, status="ACTIVE"))
+    db_session.flush()
+
+    s1 = Station(code="A")
+    s2 = Station(code="B")
+    db_session.add_all([s1, s2])
+    db_session.flush()
+
+    # Snapshot 1 station names
+    db_session.add_all([
+        StationObservation(snapshot_id=1, station_id=s1.id, name="Old Name A"),
+        StationObservation(snapshot_id=1, station_id=s2.id, name="Old Name B"),
+    ])
+    
+    # Snapshot 2 station names
+    db_session.add_all([
+        StationObservation(snapshot_id=2, station_id=s1.id, name="Active Name A"),
+        StationObservation(snapshot_id=2, station_id=s2.id, name="Active Name B"),
+    ])
+    db_session.flush()
+
+    db_session.add(
+        RailwayNetworkEdge(
+            timetable_snapshot_id=2,
+            from_station_id=s1.id,
+            to_station_id=s2.id,
+            train_count=10,
+        )
+    )
+    db_session.flush()
+
+    edges = calculate_edge_volume(db_session, 2)
+    assert len(edges) == 1
+    assert edges[0].from_station_name == "Active Name A"
+    assert edges[0].to_station_name == "Active Name B"
