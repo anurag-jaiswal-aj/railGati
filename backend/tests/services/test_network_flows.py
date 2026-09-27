@@ -45,43 +45,51 @@ def flow_test_data(db_session: Session) -> None:
     db_session.add(t1)
     db_session.flush()
     db_session.add(TrainObservation(snapshot_id=1, train_id=t1.id, name="T1"))
-    db_session.add_all([
-        TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=1, station_id=s1.id),
-        TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=2, station_id=s2.id),
-        TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=3, station_id=s3.id),
-    ])
+    db_session.add_all(
+        [
+            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=1, station_id=s1.id),
+            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=2, station_id=s2.id),
+            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=3, station_id=s3.id),
+        ]
+    )
 
     # Train 2: C -> B (Flow C -> B)
     t2 = Train(number="102")
     db_session.add(t2)
     db_session.flush()
     db_session.add(TrainObservation(snapshot_id=1, train_id=t2.id, name="T2"))
-    db_session.add_all([
-        TrainStopObservation(snapshot_id=1, train_id=t2.id, stop_sequence=1, station_id=s3.id),
-        TrainStopObservation(snapshot_id=1, train_id=t2.id, stop_sequence=2, station_id=s2.id),
-    ])
+    db_session.add_all(
+        [
+            TrainStopObservation(snapshot_id=1, train_id=t2.id, stop_sequence=1, station_id=s3.id),
+            TrainStopObservation(snapshot_id=1, train_id=t2.id, stop_sequence=2, station_id=s2.id),
+        ]
+    )
 
     # Train 3: Loop A -> B -> A (Flow A -> A)
     t3 = Train(number="103")
     db_session.add(t3)
     db_session.flush()
     db_session.add(TrainObservation(snapshot_id=1, train_id=t3.id, name="T3"))
-    db_session.add_all([
-        TrainStopObservation(snapshot_id=1, train_id=t3.id, stop_sequence=1, station_id=s1.id),
-        TrainStopObservation(snapshot_id=1, train_id=t3.id, stop_sequence=2, station_id=s2.id),
-        TrainStopObservation(snapshot_id=1, train_id=t3.id, stop_sequence=3, station_id=s1.id),
-    ])
+    db_session.add_all(
+        [
+            TrainStopObservation(snapshot_id=1, train_id=t3.id, stop_sequence=1, station_id=s1.id),
+            TrainStopObservation(snapshot_id=1, train_id=t3.id, stop_sequence=2, station_id=s2.id),
+            TrainStopObservation(snapshot_id=1, train_id=t3.id, stop_sequence=3, station_id=s1.id),
+        ]
+    )
 
     # Train 4: A -> B -> C (Flow A -> C) - duplicate occurrence
     t4 = Train(number="104")
     db_session.add(t4)
     db_session.flush()
     db_session.add(TrainObservation(snapshot_id=1, train_id=t4.id, name="T4"))
-    db_session.add_all([
-        TrainStopObservation(snapshot_id=1, train_id=t4.id, stop_sequence=1, station_id=s1.id),
-        TrainStopObservation(snapshot_id=1, train_id=t4.id, stop_sequence=2, station_id=s2.id),
-        TrainStopObservation(snapshot_id=1, train_id=t4.id, stop_sequence=3, station_id=s3.id),
-    ])
+    db_session.add_all(
+        [
+            TrainStopObservation(snapshot_id=1, train_id=t4.id, stop_sequence=1, station_id=s1.id),
+            TrainStopObservation(snapshot_id=1, train_id=t4.id, stop_sequence=2, station_id=s2.id),
+            TrainStopObservation(snapshot_id=1, train_id=t4.id, stop_sequence=3, station_id=s3.id),
+        ]
+    )
 
     db_session.flush()
 
@@ -133,10 +141,12 @@ def test_calculate_network_flows_snapshot_isolation(db_session: Session) -> None
 
     # Train in snapshot 2 (Flow A -> B)
     db_session.add(TrainObservation(snapshot_id=2, train_id=t1.id, name="T1"))
-    db_session.add_all([
-        TrainStopObservation(snapshot_id=2, train_id=t1.id, stop_sequence=1, station_id=s1.id),
-        TrainStopObservation(snapshot_id=2, train_id=t1.id, stop_sequence=2, station_id=s2.id),
-    ])
+    db_session.add_all(
+        [
+            TrainStopObservation(snapshot_id=2, train_id=t1.id, stop_sequence=1, station_id=s1.id),
+            TrainStopObservation(snapshot_id=2, train_id=t1.id, stop_sequence=2, station_id=s2.id),
+        ]
+    )
     db_session.flush()
 
     # Query snapshot 1 (should be empty)

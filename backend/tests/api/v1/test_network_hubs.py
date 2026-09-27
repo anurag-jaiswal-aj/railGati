@@ -27,6 +27,7 @@ def hub_test_data(db_session: Session) -> None:
     db_session.flush()
 
     from railgati.models.train import Train, TrainObservation
+
     t1 = Train(number="123")
     db_session.add(t1)
     db_session.flush()

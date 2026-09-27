@@ -124,13 +124,13 @@ def test_edge_volume_tie_break(db_session: Session) -> None:
             RailwayNetworkEdge(
                 timetable_snapshot_id=2,
                 from_station_id=s2.id,  # B
-                to_station_id=s3.id,    # C
+                to_station_id=s3.id,  # C
                 train_count=100,
             ),
             RailwayNetworkEdge(
                 timetable_snapshot_id=2,
                 from_station_id=s1.id,  # A
-                to_station_id=s2.id,    # B
+                to_station_id=s2.id,  # B
                 train_count=100,
             ),
         ]
@@ -226,16 +226,20 @@ def test_edge_volume_active_station_metadata(db_session: Session) -> None:
     db_session.flush()
 
     # Snapshot 1 station names
-    db_session.add_all([
-        StationObservation(snapshot_id=1, station_id=s1.id, name="Old Name A"),
-        StationObservation(snapshot_id=1, station_id=s2.id, name="Old Name B"),
-    ])
+    db_session.add_all(
+        [
+            StationObservation(snapshot_id=1, station_id=s1.id, name="Old Name A"),
+            StationObservation(snapshot_id=1, station_id=s2.id, name="Old Name B"),
+        ]
+    )
 
     # Snapshot 2 station names
-    db_session.add_all([
-        StationObservation(snapshot_id=2, station_id=s1.id, name="Active Name A"),
-        StationObservation(snapshot_id=2, station_id=s2.id, name="Active Name B"),
-    ])
+    db_session.add_all(
+        [
+            StationObservation(snapshot_id=2, station_id=s1.id, name="Active Name A"),
+            StationObservation(snapshot_id=2, station_id=s2.id, name="Active Name B"),
+        ]
+    )
     db_session.flush()
 
     db_session.add(

@@ -44,11 +44,13 @@ def terminus_api_test_data(db_session: Session) -> None:
     db_session.add(t1)
     db_session.flush()
     db_session.add(TrainObservation(snapshot_id=1, train_id=t1.id, name="T1"))
-    db_session.add_all([
-        TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=1, station_id=s1.id),
-        TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=2, station_id=s2.id),
-        TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=3, station_id=s3.id),
-    ])
+    db_session.add_all(
+        [
+            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=1, station_id=s1.id),
+            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=2, station_id=s2.id),
+            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=3, station_id=s3.id),
+        ]
+    )
     db_session.flush()
 
 
@@ -75,7 +77,9 @@ def test_api_get_network_termini_basic(client: TestClient, terminus_api_test_dat
     assert termini[1]["total_terminus_volume"] == 1
 
 
-def test_api_get_network_termini_explicit_limit(client: TestClient, terminus_api_test_data: None) -> None:
+def test_api_get_network_termini_explicit_limit(
+    client: TestClient, terminus_api_test_data: None
+) -> None:
     response = client.get("/api/v1/network/termini?limit=1")
     assert response.status_code == 200
     data = response.json()

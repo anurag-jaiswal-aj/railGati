@@ -44,11 +44,13 @@ def flow_api_test_data(db_session: Session) -> None:
     db_session.add(t1)
     db_session.flush()
     db_session.add(TrainObservation(snapshot_id=1, train_id=t1.id, name="T1"))
-    db_session.add_all([
-        TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=1, station_id=s1.id),
-        TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=2, station_id=s2.id),
-        TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=3, station_id=s3.id),
-    ])
+    db_session.add_all(
+        [
+            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=1, station_id=s1.id),
+            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=2, station_id=s2.id),
+            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=3, station_id=s3.id),
+        ]
+    )
     db_session.flush()
 
 
