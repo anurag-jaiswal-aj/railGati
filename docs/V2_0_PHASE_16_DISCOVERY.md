@@ -120,7 +120,7 @@ Exploratory benchmarking on the current local snapshot 2 dataset (`~8,989`-stati
 - **Candidate-set scan**: Handled via `Index Scan` on `train_stop_observations_pkey`.
 - **Joins**: Uses `Nested Loop` leveraging primary keys, avoiding heavy sequential hash joins.
 - **Aggregates**: Utilizes `HashAggregate` for distinct train mapping and `GroupAggregate` for the overlap counting.
-- **Sort & LIMIT**: `LIMIT` operates over a `Top-N heapsort` (cost=19217.23). The database-side `LIMIT` effectively bounds the rows returned to Python, but candidate aggregation still completely processes all necessary subset candidates before final ranking.
+- **Sort & LIMIT**: `LIMIT` operates over a Top-N heapsort (cost=19217.23). The database-side `LIMIT` bounds the rows returned to Python after the analytical aggregation, but candidate aggregation still completely processes all necessary subset candidates before final ranking. The PostgreSQL Top-N sort memory was reported as ~25kB.
 - **Sequential Scans**: None for the core analytical intersections.
 
 ## 15. Proposed API
@@ -181,8 +181,8 @@ Test manually against the local database (e.g., target `NDLS`) to confirm inters
 - **Candidate Distinct Train Count**: `280` trains.
 - **Overlap (Intersection)**: `250` trains.
 - **Union Calculation**: `298 + 280 - 250 = 328` trains.
-- **Calculated Percentage**: `(250 / 328) * 100 = 76.2%`.
-- **Plausibility**: `NZM` and `NDLS` are adjacent major hubs in Delhi. It is mathematically and structurally highly plausible that they share 250 scheduled timetable service occurrences, representing topological timetable-service-set similarity.
+- **Calculated Percentage**: `(250 / 328) * 100 = 76.2%` Jaccard similarity.
+- **Plausibility**: The 76.2% Jaccard similarity indicates that 250 of the 328 trains in the combined distinct-train membership set were shared by both stations in this historical timetable snapshot. This metric explicitly describes historical timetable train-set overlap only. It does not establish that the stations are duplicates, interchangeable, geographically equivalent, or operationally equivalent.
 
 ## 20. Implementation Boundary
 - **Status**: Discovery Only.
