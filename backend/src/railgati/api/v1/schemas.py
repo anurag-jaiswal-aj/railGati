@@ -621,3 +621,12 @@ class EdgeTemporalBunchingResponse(BaseModel):
     timetable_snapshot_id: int
     total_edge_volume: int
     peak_60min_trains: int
+
+
+class PairedSymmetryResponse(BaseModel):
+    train_number: str
+    return_train_number: str
+    timetable_snapshot_id: int
+    forward_train_duration_minutes: float
+    return_train_duration_minutes: float
+    duration_asymmetry_minutes: float

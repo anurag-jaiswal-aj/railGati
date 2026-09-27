@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from railgati.api.v1 import schemas
 from railgati.api.v1.schemas import (
+    PairedSymmetryResponse,
+
     ComplexityResponse,
     DwellResponse,
     EdgeAsymmetryResponse,
@@ -349,6 +351,8 @@ def get_network_service_attribution(
 
     # 4. Map to Response Schema
     from railgati.api.v1.schemas import NetworkServiceOccurrenceItem
+    PairedSymmetryResponse,
+
 
     items = [
         NetworkServiceOccurrenceItem(
@@ -462,6 +466,8 @@ def get_network_path_service_attribution(
 
     # 4. Map to Response Schema
     from railgati.api.v1.schemas import NetworkPathAttributionSegment, NetworkServiceOccurrenceItem
+    PairedSymmetryResponse,
+
 
     segments = []
     # Create an inverse map for returning original matched station codes
@@ -578,8 +584,8 @@ def get_network_path_continuous_services(
         elif "Active graph build unavailable" in msg:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg)
         elif "does not exist in the active network topology" in msg:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
 
 @router.get(
@@ -646,7 +652,7 @@ def get_network_corridors(
         msg = str(e)
         if "Active graph build unavailable" in msg:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
 
 from enum import Enum
@@ -696,7 +702,7 @@ def get_network_hubs(
         msg = str(e)
         if "unavailable" in msg.lower() or "not found" in msg.lower():
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
 
 @router.get(
@@ -1103,8 +1109,8 @@ def get_network_travel_time(
     except ValueError as e:
         msg = str(e)
         if "not found" in msg.lower() or "no qualifying adjacent" in msg.lower():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
     return {
         "timetable_snapshot_id": timetable_snapshot_id,
@@ -1121,6 +1127,8 @@ def get_network_travel_time(
 
 
 from railgati.api.v1.schemas import PairedServiceResponse
+    PairedSymmetryResponse,
+
 
 
 @router.get(
@@ -1144,8 +1152,8 @@ def get_network_station_paired_services(
     except ValueError as e:
         msg = str(e)
         if "not found" in msg.lower() or "no qualifying adjacent" in msg.lower():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
     return {
         "station_code": code,
@@ -1158,6 +1166,8 @@ def get_network_station_paired_services(
 
 
 from railgati.api.v1.schemas import ReversalResponse
+    PairedSymmetryResponse,
+
 
 
 @router.get(
@@ -1181,8 +1191,8 @@ def get_network_station_reversals(
     except ValueError as e:
         msg = str(e)
         if "not found" in msg.lower() or "no qualifying adjacent" in msg.lower():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
     return {
         "station_code": code,
@@ -1194,6 +1204,8 @@ def get_network_station_reversals(
 
 
 from railgati.api.v1.schemas import OutboundEdgeTransitResponse
+    PairedSymmetryResponse,
+
 
 
 @router.get(
@@ -1217,8 +1229,8 @@ def get_network_station_outbound_transit(
     except ValueError as e:
         msg = str(e)
         if "not found" in msg.lower() or "no qualifying adjacent" in msg.lower():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
     return {
         "station_code": code,
@@ -1229,6 +1241,8 @@ def get_network_station_outbound_transit(
 
 
 from railgati.api.v1.schemas import TrainRouteProfileResponse
+    PairedSymmetryResponse,
+
 
 
 @router.get(
@@ -1250,13 +1264,15 @@ def get_network_train_profile(
     except ValueError as e:
         msg = str(e)
         if "not found" in msg.lower() or "no usable observations" in msg.lower():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
     return result
 
 
 from railgati.api.v1.schemas import ODBridgesResponse
+    PairedSymmetryResponse,
+
 
 
 @router.get(
@@ -1278,13 +1294,15 @@ def get_network_station_od_bridges(
     except ValueError as e:
         msg = str(e)
         if "not found" in msg.lower() or "no qualifying adjacent" in msg.lower():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
     return result
 
 
 from railgati.api.v1.schemas import TemporalGapsResponse
+    PairedSymmetryResponse,
+
 
 
 @router.get(
@@ -1306,13 +1324,15 @@ def get_network_station_temporal_gaps(
     except ValueError as e:
         msg = str(e)
         if "not found" in msg.lower() or "no qualifying departures" in msg.lower():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
     return result
 
 
 from railgati.api.v1.schemas import EdgeTemporalBunchingResponse
+    PairedSymmetryResponse,
+
 
 
 @router.get(
@@ -1337,7 +1357,38 @@ def get_network_edge_temporal_bunching(
     except ValueError as e:
         msg = str(e)
         if "not found" in msg.lower() or "no qualifying adjacent" in msg.lower():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+
+    return result
+
+
+
+
+@router.get(
+    "/trains/{train_number}/paired-symmetry",
+    response_model=PairedSymmetryResponse,
+)
+def get_network_train_paired_symmetry(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Calculate Network Train Paired-Service Temporal Symmetry Analytics."""
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        from railgati.services.network import calculate_paired_service_symmetry
+
+        result = calculate_paired_service_symmetry(db, timetable_snapshot_id, train_number)
+    except ValueError as e:
+        msg = str(e)
+        if (
+            "not found" in msg.lower()
+            or "no paired service found" in msg.lower()
+            or "not present or incomplete" in msg.lower()
+            or "incomplete timing data" in msg.lower()
+        ):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
     return result

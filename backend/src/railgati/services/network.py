@@ -2868,3 +2868,122 @@ def calculate_edge_temporal_bunching(
         "total_edge_volume": result[0],
         "peak_60min_trains": result[1],
     }
+
+
+def calculate_paired_service_symmetry(
+    db: Session,
+    timetable_snapshot_id: int,
+    train_number: str,
+) -> dict:
+    """Calculate Network Train Paired-Service Temporal Symmetry Analytics."""
+    from sqlalchemy import text
+
+    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.train import Train, TrainObservation
+
+    # Verify snapshot
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    train = db.scalar(select(Train).filter(Train.number == train_number))
+    if not train:
+        raise ValueError(f"Train '{train_number}' not found")
+
+    # Get return train
+    train_obs = db.scalar(
+        select(TrainObservation)
+        .filter(TrainObservation.snapshot_id == timetable_snapshot_id)
+        .filter(TrainObservation.train_id == train.id)
+    )
+    if not train_obs or not train_obs.return_train_number:
+        raise ValueError(f"No paired service found for train '{train_number}'")
+
+    return_train_number = train_obs.return_train_number
+
+    is_sqlite = db.bind is not None and db.bind.dialect.name == "sqlite"
+    if is_sqlite:
+        duration_calc = "(d.source_day - o.source_day) * 1440 + CAST(strftime('%s', d.arrival_time) AS INTEGER) / 60 - CAST(strftime('%s', o.departure_time) AS INTEGER) / 60"  # noqa: E501
+    else:
+        duration_calc = "(d.source_day - o.source_day) * 1440 + EXTRACT(EPOCH FROM d.arrival_time::time)/60 - EXTRACT(EPOCH FROM o.departure_time::time)/60"  # noqa: E501
+
+    query = text(f"""
+        WITH forward_stops AS (
+            SELECT tso.train_id,
+                   MIN(tso.stop_sequence) as min_seq,
+                   MAX(tso.stop_sequence) as max_seq
+            FROM train_stop_observations tso
+            WHERE tso.snapshot_id = :snapshot_id AND tso.train_id = :train_id
+            GROUP BY tso.train_id
+        ),
+        forward_duration AS (
+            SELECT
+                {duration_calc} as f_dur_mins
+            FROM forward_stops fs
+            JOIN train_stop_observations o ON o.train_id = fs.train_id AND o.stop_sequence = fs.min_seq AND o.snapshot_id = :snapshot_id
+            JOIN train_stop_observations d ON d.train_id = fs.train_id AND d.stop_sequence = fs.max_seq AND d.snapshot_id = :snapshot_id
+            WHERE o.departure_time IS NOT NULL AND d.arrival_time IS NOT NULL
+        ),
+        return_train_data AS (
+            SELECT t.id as r_train_id
+            FROM trains t
+            WHERE t.number = :return_train_number
+        ),
+        return_stops AS (
+            SELECT tso.train_id,
+                   MIN(tso.stop_sequence) as min_seq,
+                   MAX(tso.stop_sequence) as max_seq
+            FROM train_stop_observations tso
+            JOIN return_train_data rtd ON rtd.r_train_id = tso.train_id
+            WHERE tso.snapshot_id = :snapshot_id
+            GROUP BY tso.train_id
+        ),
+        return_duration AS (
+            SELECT
+                {duration_calc} as r_dur_mins
+            FROM return_stops rs
+            JOIN train_stop_observations o ON o.train_id = rs.train_id AND o.stop_sequence = rs.min_seq AND o.snapshot_id = :snapshot_id
+            JOIN train_stop_observations d ON d.train_id = rs.train_id AND d.stop_sequence = rs.max_seq AND d.snapshot_id = :snapshot_id
+            WHERE o.departure_time IS NOT NULL AND d.arrival_time IS NOT NULL
+        )
+        SELECT f.f_dur_mins, r.r_dur_mins
+        FROM forward_duration f
+        LEFT JOIN return_duration r ON 1=1;
+    """)
+
+    result = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "train_id": train.id,
+            "return_train_number": return_train_number,
+        },
+    ).fetchone()
+
+    if not result:
+        raise ValueError(
+            f"Incomplete timing data for train '{train_number}' in snapshot {timetable_snapshot_id}"
+        )
+
+    f_dur = result[0]
+    r_dur = result[1]
+
+    if f_dur is None:
+        raise ValueError(
+            f"Incomplete timing data for train '{train_number}' in snapshot {timetable_snapshot_id}"
+        )
+    if r_dur is None:
+        raise ValueError(
+            f"Paired service '{return_train_number}' not present or incomplete in snapshot {timetable_snapshot_id}"  # noqa: E501
+        )
+
+    return {
+        "train_number": train_number,
+        "return_train_number": return_train_number,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "forward_train_duration_minutes": float(f_dur),
+        "return_train_duration_minutes": float(r_dur),
+        "duration_asymmetry_minutes": float(abs(f_dur - r_dur)),
+    }
