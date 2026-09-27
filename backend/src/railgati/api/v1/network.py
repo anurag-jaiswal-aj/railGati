@@ -888,7 +888,7 @@ def get_network_complexities(
         10, ge=1, le=1000, description="Minimum transit occurrences to qualify"
     ),
     db: Session = Depends(get_db),
-) -> dict[str, Any]:
+) -> dict:
     """
     Calculate Network Station Route Complexity.
 
@@ -921,7 +921,7 @@ def get_network_temporal_concentration(
         15, ge=1, le=1000, description="Minimum total occurrences to qualify"
     ),
     db: Session = Depends(get_db),
-) -> dict[str, Any]:
+) -> dict:
     """
     Calculate Network Station Temporal Concentration.
 
@@ -954,7 +954,7 @@ def get_network_edge_asymmetry(
         15, ge=0, description="Minimum combined total volume for the edge pair to qualify"
     ),
     db: Session = Depends(get_db),
-) -> dict[str, Any]:
+) -> dict:
     """
     Calculate Network Directional Edge Asymmetry Analytics.
 
@@ -1074,7 +1074,7 @@ def get_network_travel_time(
     from_station_code: str,
     to_station_code: str,
     db: Session = Depends(get_db),
-) -> dict[str, Any]:
+) -> dict:
     """Calculate Network O-D Travel Time Analytics."""
     if from_station_code.lower() == to_station_code.lower():
         raise HTTPException(
@@ -1130,7 +1130,7 @@ from railgati.api.v1.schemas import PairedServiceResponse
 def get_network_station_paired_services(
     station_code: str,
     db: Session = Depends(get_db),
-) -> dict[str, Any]:
+) -> dict:
     """Calculate Network Station Paired-Service Analytics."""
 
     timetable_snapshot_id = get_active_timetable_snapshot_id(db)
@@ -1167,7 +1167,7 @@ from railgati.api.v1.schemas import ReversalResponse
 def get_network_station_reversals(
     station_code: str,
     db: Session = Depends(get_db),
-) -> dict[str, Any]:
+) -> dict:
     """Calculate Network Station Directional Reversal Analytics."""
 
     timetable_snapshot_id = get_active_timetable_snapshot_id(db)
@@ -1203,7 +1203,7 @@ from railgati.api.v1.schemas import OutboundEdgeTransitResponse
 def get_network_station_outbound_transit(
     station_code: str,
     db: Session = Depends(get_db),
-) -> dict[str, Any]:
+) -> dict:
     """Calculate Network Station Outbound Edge Transit Analytics."""
 
     timetable_snapshot_id = get_active_timetable_snapshot_id(db)
@@ -1238,7 +1238,7 @@ from railgati.api.v1.schemas import TrainRouteProfileResponse
 def get_network_train_profile(
     train_number: str,
     db: Session = Depends(get_db),
-) -> dict[str, Any]:
+) -> dict:
     """Calculate Network Train Route Profile Analytics."""
 
     timetable_snapshot_id = get_active_timetable_snapshot_id(db)
@@ -1250,6 +1250,34 @@ def get_network_train_profile(
     except ValueError as e:
         msg = str(e)
         if "not found" in msg.lower() or "no usable observations" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+
+    return result
+
+
+from railgati.api.v1.schemas import ODBridgesResponse
+
+
+@router.get(
+    "/stations/{station_code}/od-bridges",
+    response_model=ODBridgesResponse,
+)
+def get_network_station_od_bridges(
+    station_code: str,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Calculate Network Station O-D Bridging Analytics."""
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        from railgati.services.network import calculate_station_od_bridges
+
+        result = calculate_station_od_bridges(db, timetable_snapshot_id, station_code)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 

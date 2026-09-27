@@ -2497,3 +2497,184 @@ def calculate_train_profile(
         if result[3] is not None
         else (0.0 if result[1] is not None and result[2] is None and result[1] > 0 else None),
     }
+
+
+def calculate_station_od_bridges(
+    db: Session,
+    timetable_snapshot_id: int,
+    station_code: str,
+) -> dict:
+    """Calculate Network Station O-D Bridging Analytics."""
+    from sqlalchemy import text
+
+    from railgati.api.v1.snapshots import get_active_station_snapshot_id
+    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.station import Station, StationObservation
+
+    station_code_upper = station_code.strip().upper()
+
+    # 1. Resolve Station
+    station = db.scalar(select(Station).filter(Station.code == station_code_upper))
+    if not station:
+        raise ValueError(f"Station '{station_code_upper}' not found")
+
+    station_snapshot_id = get_active_station_snapshot_id(db)
+    station_obs = db.scalar(
+        select(StationObservation).filter(
+            StationObservation.station_id == station.id,
+            StationObservation.snapshot_id == station_snapshot_id,
+        )
+    )
+    station_name = station_obs.name if station_obs else None
+
+    # Verify snapshot
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    query = text("""
+        WITH target_trains AS (
+            SELECT DISTINCT train_id
+            FROM train_stop_observations
+            WHERE snapshot_id = :snapshot_id AND station_id = :station_id
+        ),
+        train_bounds AS (
+            SELECT tt.train_id,
+                   (SELECT station_id FROM train_stop_observations WHERE snapshot_id = :snapshot_id AND train_id = tt.train_id ORDER BY stop_sequence ASC LIMIT 1) as origin_id,
+                   (SELECT station_id FROM train_stop_observations WHERE snapshot_id = :snapshot_id AND train_id = tt.train_id ORDER BY stop_sequence DESC LIMIT 1) as dest_id
+            FROM target_trains tt
+        ),
+        counts AS (
+            SELECT
+                COUNT(DISTINCT origin_id) as unique_origins,
+                COUNT(DISTINCT dest_id) as unique_destinations,
+                COUNT(DISTINCT CAST(origin_id AS TEXT) || '-' || CAST(dest_id AS TEXT)) as unique_od_pairs
+            FROM train_bounds
+        ),
+        top_pairs AS (
+            SELECT tb.origin_id, tb.dest_id, COUNT(*) as volume
+            FROM train_bounds tb
+            GROUP BY tb.origin_id, tb.dest_id
+        ),
+        top_pairs_detailed AS (
+            SELECT o.code as o_code, o_obs.name as o_name,
+                   d.code as d_code, d_obs.name as d_name,
+                   tp.volume
+            FROM top_pairs tp
+            JOIN stations o ON tp.origin_id = o.id
+            LEFT JOIN station_observations o_obs ON o_obs.station_id = o.id AND o_obs.snapshot_id = :station_snapshot_id
+            JOIN stations d ON tp.dest_id = d.id
+            LEFT JOIN station_observations d_obs ON d_obs.station_id = d.id AND d_obs.snapshot_id = :station_snapshot_id
+            ORDER BY tp.volume DESC, o.code ASC, d.code ASC
+            LIMIT 10
+        )
+        SELECT
+            c.unique_origins, c.unique_destinations, c.unique_od_pairs,
+            COALESCE(
+                (SELECT json_group_array(
+                            json_object(
+                                'origin_station_code', tpd.o_code,
+                                'origin_station_name', tpd.o_name,
+                                'destination_station_code', tpd.d_code,
+                                'destination_station_name', tpd.d_name,
+                                'train_volume', tpd.volume
+                            )
+                        ) FROM top_pairs_detailed tpd),
+                '[]'
+            ) as pairs_json
+        FROM counts c;
+    """)
+
+    is_sqlite = db.bind is not None and db.bind.dialect.name == "sqlite"
+
+    if not is_sqlite:
+        query = text("""
+            WITH target_trains AS (
+                SELECT DISTINCT train_id
+                FROM train_stop_observations
+                WHERE snapshot_id = :snapshot_id AND station_id = :station_id
+            ),
+            train_bounds AS (
+                SELECT tt.train_id,
+                       (SELECT station_id FROM train_stop_observations WHERE snapshot_id = :snapshot_id AND train_id = tt.train_id ORDER BY stop_sequence ASC LIMIT 1) as origin_id,
+                       (SELECT station_id FROM train_stop_observations WHERE snapshot_id = :snapshot_id AND train_id = tt.train_id ORDER BY stop_sequence DESC LIMIT 1) as dest_id
+                FROM target_trains tt
+            ),
+            counts AS (
+                SELECT
+                    COUNT(DISTINCT origin_id) as unique_origins,
+                    COUNT(DISTINCT dest_id) as unique_destinations,
+                    COUNT(DISTINCT origin_id::text || '-' || dest_id::text) as unique_od_pairs
+                FROM train_bounds
+            ),
+            top_pairs AS (
+                SELECT tb.origin_id, tb.dest_id, COUNT(*) as volume
+                FROM train_bounds tb
+                GROUP BY tb.origin_id, tb.dest_id
+            ),
+            top_pairs_detailed AS (
+                SELECT o.code as o_code, o_obs.name as o_name,
+                       d.code as d_code, d_obs.name as d_name,
+                       tp.volume
+                FROM top_pairs tp
+                JOIN stations o ON tp.origin_id = o.id
+                LEFT JOIN station_observations o_obs ON o_obs.station_id = o.id AND o_obs.snapshot_id = :station_snapshot_id
+                JOIN stations d ON tp.dest_id = d.id
+                LEFT JOIN station_observations d_obs ON d_obs.station_id = d.id AND d_obs.snapshot_id = :station_snapshot_id
+                ORDER BY tp.volume DESC, o.code ASC, d.code ASC
+                LIMIT 10
+            )
+            SELECT
+                c.unique_origins, c.unique_destinations, c.unique_od_pairs,
+                COALESCE(
+                    (SELECT json_agg(
+                                json_build_object(
+                                    'origin_station_code', tpd.o_code,
+                                    'origin_station_name', tpd.o_name,
+                                    'destination_station_code', tpd.d_code,
+                                    'destination_station_name', tpd.d_name,
+                                    'train_volume', tpd.volume
+                                )
+                            ) FROM top_pairs_detailed tpd),
+                    '[]'::json
+                ) as pairs_json
+            FROM counts c;
+        """)
+
+    result = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "station_id": station.id,
+            "station_snapshot_id": station_snapshot_id,
+        },
+    ).fetchone()
+
+    import json
+
+    unique_origins = 0
+    unique_dests = 0
+    unique_pairs = 0
+    pairs = []
+
+    if result:
+        unique_origins = result[0]
+        unique_dests = result[1]
+        unique_pairs = result[2]
+        if result[3]:
+            if isinstance(result[3], str):
+                pairs = json.loads(result[3])
+            else:
+                pairs = result[3]
+
+    return {
+        "station_code": station_code_upper,
+        "station_name": station_name,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "unique_origins_count": unique_origins,
+        "unique_destinations_count": unique_dests,
+        "unique_od_pairs_count": unique_pairs,
+        "top_od_pairs": pairs,
+    }

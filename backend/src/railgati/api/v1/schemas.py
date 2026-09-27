@@ -586,3 +586,21 @@ class TrainRouteProfileResponse(BaseModel):
     total_duration_minutes: float | None
     total_dwell_minutes: float | None
     dwell_percentage: float | None
+
+
+class ODBridgePairItem(BaseModel):
+    origin_station_code: str
+    origin_station_name: str | None
+    destination_station_code: str
+    destination_station_name: str | None
+    train_volume: int
+
+
+class ODBridgesResponse(BaseModel):
+    station_code: str
+    station_name: str | None
+    timetable_snapshot_id: int
+    unique_origins_count: int
+    unique_destinations_count: int
+    unique_od_pairs_count: int
+    top_od_pairs: list[ODBridgePairItem]
