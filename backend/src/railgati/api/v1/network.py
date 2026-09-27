@@ -15,6 +15,7 @@ from railgati.api.v1.schemas import (
     NetworkReachabilityItem,
     NetworkReachabilityResponse,
     NetworkServiceAttributionResponse,
+    TerminusResponse,
 )
 from railgati.api.v1.snapshots import (
     get_active_station_snapshot_id,
@@ -723,4 +724,48 @@ def get_edge_volume(
     return schemas.EdgeVolumeResponse(
         timetable_snapshot_id=snapshot_id,
         edges=items,
+    )
+
+
+@router.get(
+    "/termini",
+    response_model=TerminusResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get Network Terminus Analytics",
+    description="Retrieve stations ranked by historical terminus occurrence volume.",
+)
+def get_network_termini(
+    limit: Annotated[
+        int,
+        Query(
+            description="Maximum number of stations to return",
+            ge=1,
+            le=500,
+        ),
+    ] = 50,
+    db: Session = Depends(get_db),  # noqa: B008
+) -> TerminusResponse:
+    """Discover the historical timetable occurrence boundaries for terminus stations."""
+    try:
+        timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+
+    from railgati.services.network import calculate_network_termini
+
+    try:
+        termini_data = calculate_network_termini(
+            db=db,
+            timetable_snapshot_id=timetable_snapshot_id,
+            limit=limit,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        )
+
+    return TerminusResponse(
+        timetable_snapshot_id=timetable_snapshot_id,
+        termini=termini_data,
     )

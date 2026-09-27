@@ -351,3 +351,17 @@ class EdgeVolumeResponse(BaseModel):
         ..., description="The ID of the dataset snapshot providing the active timetable data"
     )
     edges: list[EdgeVolumeItem] = Field(..., description="List of segments ranked by volume")
+
+class TerminusItem(BaseModel):
+    """Historical timetable occurrence boundaries for a terminus station."""
+    station_code: str
+    station_name: str
+    originating_count: int
+    terminating_count: int
+    total_terminus_volume: int
+
+
+class TerminusResponse(BaseModel):
+    """Network terminus analytics for the active timetable snapshot."""
+    timetable_snapshot_id: int
+    termini: list[TerminusItem]

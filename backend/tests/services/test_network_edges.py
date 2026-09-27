@@ -209,7 +209,7 @@ def test_edge_volume_snapshot_isolation(db_session: Session) -> None:
 
 def test_edge_volume_active_station_metadata(db_session: Session) -> None:
     source = create_deps(db_session)
-    
+
     # Old snapshot (inactive)
     db_session.add(DatasetSnapshot(id=1, source_id=source.id, status="INACTIVE"))
     db_session.flush()
@@ -230,7 +230,7 @@ def test_edge_volume_active_station_metadata(db_session: Session) -> None:
         StationObservation(snapshot_id=1, station_id=s1.id, name="Old Name A"),
         StationObservation(snapshot_id=1, station_id=s2.id, name="Old Name B"),
     ])
-    
+
     # Snapshot 2 station names
     db_session.add_all([
         StationObservation(snapshot_id=2, station_id=s1.id, name="Active Name A"),

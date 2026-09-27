@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from railgati.api.v1.schemas import EdgeVolumeItem, HubCentralityItem
+from railgati.api.v1.schemas import EdgeVolumeItem, HubCentralityItem, TerminusItem
 from railgati.models.graph import RailwayGraphBuild
 from railgati.models.provenance import DatasetSnapshot
 
@@ -996,6 +996,98 @@ def calculate_edge_volume(
             to_station_code=row.to_station_code,
             to_station_name=row.to_station_name,
             service_occurrence_volume=row.service_occurrence_volume,
+        )
+        for row in results
+    ]
+
+def calculate_network_termini(db: Session, timetable_snapshot_id: int, limit: int = 50) -> list[TerminusItem]:
+    """
+    Computes historical timetable occurrence boundaries (originating/terminating counts)
+    for all stations in the specified active timetable snapshot.
+    
+    A train occurrence's absolute first stop contributes +1 to originating_count.
+    A train occurrence's absolute last stop contributes +1 to terminating_count.
+    
+    Args:
+        db: SQLAlchemy session.
+        timetable_snapshot_id: The ID of the active timetable snapshot.
+        limit: Max number of stations to return (default 50).
+        
+    Returns:
+        List of TerminusItem.
+        
+    Raises:
+        ValueError: If snapshot is invalid or active station snapshot missing.
+    """
+    station_snapshot_id = db.scalar(
+        select(DatasetSnapshot.id)
+        .filter(DatasetSnapshot.status == "ACTIVE")
+        .filter(DatasetSnapshot.id.in_(
+            select(text("station_observations.snapshot_id FROM station_observations"))
+        ))
+        .order_by(DatasetSnapshot.retrieved_at.desc())
+        .limit(1)
+    )
+    if not station_snapshot_id:
+        res = db.execute(text("SELECT snapshot_id FROM station_observations LIMIT 1")).scalar()
+        if res:
+             station_snapshot_id = res
+
+    query = text("""
+        WITH train_bounds AS (
+            SELECT 
+                train_id,
+                MIN(stop_sequence) as start_seq,
+                MAX(stop_sequence) as end_seq
+            FROM train_stop_observations
+            WHERE snapshot_id = :timetable_snapshot_id
+            GROUP BY train_id
+        ),
+        termini AS (
+            SELECT 
+                tso.station_id,
+                SUM(CASE WHEN tso.stop_sequence = tb.start_seq THEN 1 ELSE 0 END) as originating_count,
+                SUM(CASE WHEN tso.stop_sequence = tb.end_seq THEN 1 ELSE 0 END) as terminating_count
+            FROM train_stop_observations tso
+            JOIN train_bounds tb ON tso.train_id = tb.train_id
+            WHERE tso.snapshot_id = :timetable_snapshot_id
+              AND (tso.stop_sequence = tb.start_seq OR tso.stop_sequence = tb.end_seq)
+            GROUP BY tso.station_id
+        )
+        SELECT 
+            s.code as station_code,
+            so.name as station_name,
+            CAST(t.originating_count AS INTEGER) as originating_count,
+            CAST(t.terminating_count AS INTEGER) as terminating_count,
+            CAST(t.originating_count + t.terminating_count AS INTEGER) as total_terminus_volume
+        FROM termini t
+        JOIN stations s ON t.station_id = s.id
+        JOIN station_observations so ON so.station_id = s.id
+        WHERE so.snapshot_id = :station_snapshot_id
+        ORDER BY 
+            (t.originating_count + t.terminating_count) DESC,
+            t.originating_count DESC,
+            t.terminating_count DESC,
+            s.code ASC
+        LIMIT :limit
+    """)
+
+    results = db.execute(
+        query,
+        {
+            "timetable_snapshot_id": timetable_snapshot_id,
+            "station_snapshot_id": station_snapshot_id,
+            "limit": limit,
+        },
+    ).fetchall()
+
+    return [
+        TerminusItem(
+            station_code=row.station_code,
+            station_name=row.station_name,
+            originating_count=row.originating_count,
+            terminating_count=row.terminating_count,
+            total_terminus_volume=row.total_terminus_volume,
         )
         for row in results
     ]
