@@ -1742,8 +1742,8 @@ def calculate_station_similarity(
         select(Station.id, Station.code, StationObservation.name)
         .outerjoin(
             StationObservation,
-            (StationObservation.station_id == Station.id) &
-            (StationObservation.snapshot_id == timetable_snapshot_id)
+            (StationObservation.station_id == Station.id)
+            & (StationObservation.snapshot_id == timetable_snapshot_id),
         )
         .filter(func.lower(Station.code) == target_station_code.lower())
     ).first()
@@ -1862,9 +1862,7 @@ def calculate_network_od_travel_time(
         raise ValueError("Origin and destination stations must be different")
 
     # 1. Resolve Origin Station
-    origin_station = db.scalar(
-        select(Station).filter(Station.code == from_code_upper)
-    )
+    origin_station = db.scalar(select(Station).filter(Station.code == from_code_upper))
     if not origin_station:
         raise ValueError(f"Origin station '{from_code_upper}' not found")
 
@@ -1877,9 +1875,7 @@ def calculate_network_od_travel_time(
     origin_name = origin_obs.name if origin_obs else None
 
     # 2. Resolve Destination Station
-    dest_station = db.scalar(
-        select(Station).filter(Station.code == to_code_upper)
-    )
+    dest_station = db.scalar(select(Station).filter(Station.code == to_code_upper))
     if not dest_station:
         raise ValueError(f"Destination station '{to_code_upper}' not found")
 
@@ -1959,13 +1955,15 @@ def calculate_network_od_travel_time(
         avg_dur = round(sum(durations) / len(durations), 1) if durations else None
 
         return (
-            from_code_upper, origin_name,
-            to_code_upper, dest_name,
+            from_code_upper,
+            origin_name,
+            to_code_upper,
+            dest_name,
             qual_count,
             len(trains),
             min_dur,
             max_dur,
-            avg_dur
+            avg_dur,
         )
 
     # Postgres Query
@@ -2035,5 +2033,187 @@ def calculate_network_od_travel_time(
         distinct_train_count,
         min_duration,
         max_duration,
-        avg_duration
+        avg_duration,
     )
+
+
+def calculate_station_paired_services(
+    db: Session,
+    timetable_snapshot_id: int,
+    station_code: str,
+) -> tuple[str, str | None, int, float | None, list[dict]]:
+    """Calculate Network Station Paired-Service Analytics."""
+    from sqlalchemy import text
+
+    from railgati.api.v1.snapshots import get_active_station_snapshot_id
+    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.station import Station, StationObservation
+
+    station_code_upper = station_code.strip().upper()
+
+    # 1. Resolve Station
+    station = db.scalar(select(Station).filter(Station.code == station_code_upper))
+    if not station:
+        raise ValueError(f"Station '{station_code_upper}' not found")
+
+    station_snapshot_id = get_active_station_snapshot_id(db)
+    station_obs = db.scalar(
+        select(StationObservation).filter(
+            StationObservation.station_id == station.id,
+            StationObservation.snapshot_id == station_snapshot_id,
+        )
+    )
+    station_name = station_obs.name if station_obs else None
+
+    # Verify snapshot
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    is_sqlite = db.bind is not None and db.bind.dialect.name == "sqlite"
+
+    if is_sqlite:
+        query = text("""
+            WITH termini AS (
+                SELECT
+                    snapshot_id, train_id, station_id,
+                    MAX(stop_sequence) OVER (PARTITION BY snapshot_id, train_id) as max_seq,
+                    MIN(stop_sequence) OVER (PARTITION BY snapshot_id, train_id) as min_seq,
+                    stop_sequence, arrival_time, departure_time
+                FROM train_stop_observations
+                WHERE snapshot_id = :snapshot_id AND station_id = :station_id
+            ),
+            arrivals AS (
+                SELECT t.snapshot_id, t.train_id, t.station_id, t.arrival_time, tr.number as train_number, obs.return_train_number
+                FROM termini t
+                JOIN train_observations obs ON t.train_id = obs.train_id AND t.snapshot_id = obs.snapshot_id
+                JOIN trains tr ON t.train_id = tr.id
+                WHERE t.stop_sequence = t.max_seq AND t.arrival_time IS NOT NULL AND obs.return_train_number IS NOT NULL
+            ),
+            departures AS (
+                SELECT t.snapshot_id, t.train_id, t.station_id, t.departure_time, tr.number as train_number
+                FROM termini t
+                JOIN trains tr ON t.train_id = tr.id
+                WHERE t.stop_sequence = t.min_seq AND t.departure_time IS NOT NULL
+            )
+            SELECT
+                a.train_number as arriving_train,
+                a.return_train_number as departing_train,
+                a.arrival_time,
+                d.departure_time
+            FROM arrivals a
+            JOIN departures d
+              ON a.station_id = d.station_id
+             AND a.return_train_number = d.train_number
+             AND a.snapshot_id = d.snapshot_id
+        """)
+        results = db.execute(
+            query,
+            {
+                "snapshot_id": timetable_snapshot_id,
+                "station_id": station.id,
+            },
+        ).fetchall()
+
+        paired_services = []
+        for row in results:
+            arr_train, dep_train, arr_time, dep_time = row
+            try:
+                arr_h, arr_m, _ = map(int, str(arr_time).split(":"))
+                dep_h, dep_m, _ = map(int, str(dep_time).split(":"))
+
+                arr_mins = arr_h * 60 + arr_m
+                dep_mins = dep_h * 60 + dep_m
+
+                clock_gap = (dep_mins - arr_mins + 1440) % 1440
+
+                paired_services.append(
+                    {
+                        "arriving_train_number": str(arr_train),
+                        "departing_train_number": str(dep_train),
+                        "arrival_time": str(arr_time),
+                        "departure_time": str(dep_time),
+                        "clock_gap_minutes": clock_gap,
+                    }
+                )
+            except Exception:
+                pass
+
+        paired_services.sort(key=lambda x: x["clock_gap_minutes"])
+
+        count = len(paired_services)
+        avg = (
+            round(sum(p["clock_gap_minutes"] for p in paired_services) / count, 1)
+            if count > 0
+            else None
+        )
+
+        return (station_code_upper, station_name, count, avg, paired_services)
+
+    # Postgres Query
+    query = text("""
+        WITH termini AS (
+            SELECT
+                snapshot_id, train_id, station_id,
+                MAX(stop_sequence) OVER (PARTITION BY snapshot_id, train_id) as max_seq,
+                MIN(stop_sequence) OVER (PARTITION BY snapshot_id, train_id) as min_seq,
+                stop_sequence, arrival_time, departure_time
+            FROM train_stop_observations
+            WHERE snapshot_id = :snapshot_id AND station_id = :station_id
+        ),
+        arrivals AS (
+            SELECT t.snapshot_id, t.train_id, t.station_id, t.arrival_time, tr.number as train_number, obs.return_train_number
+            FROM termini t
+            JOIN train_observations obs ON t.train_id = obs.train_id AND t.snapshot_id = obs.snapshot_id
+            JOIN trains tr ON t.train_id = tr.id
+            WHERE t.stop_sequence = t.max_seq AND t.arrival_time IS NOT NULL AND obs.return_train_number IS NOT NULL
+        ),
+        departures AS (
+            SELECT t.snapshot_id, t.train_id, t.station_id, t.departure_time, tr.number as train_number
+            FROM termini t
+            JOIN trains tr ON t.train_id = tr.id
+            WHERE t.stop_sequence = t.min_seq AND t.departure_time IS NOT NULL
+        )
+        SELECT
+            a.train_number as arriving_train,
+            a.return_train_number as departing_train,
+            a.arrival_time,
+            d.departure_time,
+            MOD(CAST((EXTRACT(EPOCH FROM d.departure_time::time)/60 - EXTRACT(EPOCH FROM a.arrival_time::time)/60 + 1440) AS integer), 1440) as clock_gap_mins
+        FROM arrivals a
+        JOIN departures d
+          ON a.station_id = d.station_id
+         AND a.return_train_number = d.train_number
+         AND a.snapshot_id = d.snapshot_id
+        ORDER BY clock_gap_mins ASC
+    """)
+
+    res = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "station_id": station.id,
+        },
+    ).fetchall()
+
+    paired_services = [
+        {
+            "arriving_train_number": row[0],
+            "departing_train_number": row[1],
+            "arrival_time": row[2],
+            "departure_time": row[3],
+            "clock_gap_minutes": row[4],
+        }
+        for row in res
+    ]
+
+    count = len(paired_services)
+    avg = (
+        round(sum(p["clock_gap_minutes"] for p in paired_services) / count, 1)
+        if count > 0
+        else None
+    )
+
+    return (station_code_upper, station_name, count, avg, paired_services)

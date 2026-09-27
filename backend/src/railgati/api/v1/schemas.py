@@ -526,3 +526,20 @@ class TravelTimeResponse(BaseModel):
     min_duration_minutes: int | None = None
     max_duration_minutes: int | None = None
     avg_duration_minutes: float | None = None
+
+
+class PairedServiceItem(BaseModel):
+    arriving_train_number: str
+    departing_train_number: str
+    arrival_time: str
+    departure_time: str
+    clock_gap_minutes: int
+
+
+class PairedServiceResponse(BaseModel):
+    station_code: str
+    station_name: str | None
+    timetable_snapshot_id: int
+    paired_service_count: int
+    avg_clock_gap_minutes: float | None
+    paired_services: list[PairedServiceItem]
