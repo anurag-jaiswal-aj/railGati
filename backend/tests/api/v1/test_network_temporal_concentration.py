@@ -90,17 +90,23 @@ def test_get_temporal_concentration(client: TestClient, db_session: Session) -> 
     # Peak hour for B tie breaks to the earlier hour (18)
     assert data["items"][1]["peak_hour_val"] == 18
 
+    def test_get_temporal_concentration_empty(client: TestClient, db_session: Session) -> None:
+        source = DataSource(name="test_api2", url="http://test", publisher="test", license="test")
+        db_session.add(source)
+        db_session.flush()
+        snap = DatasetSnapshot(id=1, source_id=source.id, status="ACTIVE")
+        db_session.add(snap)
+        db_session.flush()
 
-def test_get_temporal_concentration_empty(client: TestClient, db_session: Session) -> None:
-    source = DataSource(name="test_api2", url="http://test", publisher="test", license="test")
-    db_session.add(source)
-    db_session.flush()
-    db_session.add(DatasetSnapshot(id=1, source_id=source.id, status="ACTIVE"))
-    db_session.commit()
+        t1 = Train(number="111")
+        db_session.add(t1)
+        db_session.flush()
+        db_session.add(TrainObservation(snapshot_id=1, train_id=t1.id, name="Test"))
+        db_session.commit()
 
-    response = client.get("/api/v1/network/temporal-concentration")
-    assert response.status_code == 200
-    assert response.json()["items"] == []
+        response = client.get("/api/v1/network/temporal-concentration")
+        assert response.status_code == 200
+        assert response.json()["items"] == []
 
 
 def test_get_temporal_concentration_validation(client: TestClient) -> None:
