@@ -2991,6 +2991,7 @@ def calculate_paired_service_symmetry(
 
 import typing
 
+
 def calculate_train_topology_loops(
     db: Session,
     timetable_snapshot_id: int,
@@ -3069,4 +3070,95 @@ def calculate_train_topology_loops(
         "has_loops": len(loops) > 0,
         "loop_count": len(loops),
         "loops": loops,
+    }
+
+
+def calculate_train_structural_halts(
+    db: Session,
+    timetable_snapshot_id: int,
+    train_number: str,
+    limit: int = 10,
+) -> dict[str, typing.Any]:
+    """Calculate Network Train Structural Halt Analytics."""
+    from sqlalchemy import text
+
+    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.train import Train
+
+    # Verify snapshot
+    snapshot = db.scalar(select(DatasetSnapshot).filter_by(id=timetable_snapshot_id))
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    if snapshot.status == "ARCHIVED":
+        raise ValueError("Timetable snapshot is archived")
+
+    # Verify train
+    train = db.scalar(select(Train).filter_by(number=train_number))
+    if not train:
+        raise ValueError(f"Train '{train_number}' not found")
+
+    is_sqlite = db.bind is not None and db.bind.dialect.name == "sqlite"
+
+    if is_sqlite:
+        time_diff_expr = """
+            (strftime("%s", "1970-01-01 " || tso.departure_time) - strftime("%s", "1970-01-01 " || tso.arrival_time)) +
+            CASE WHEN strftime("%s", "1970-01-01 " || tso.departure_time) < strftime("%s", "1970-01-01 " || tso.arrival_time)
+                 THEN 86400 ELSE 0 END
+        """
+    else:
+        time_diff_expr = """
+            (EXTRACT(EPOCH FROM tso.departure_time::time) - EXTRACT(EPOCH FROM tso.arrival_time::time)) +
+            CASE WHEN EXTRACT(EPOCH FROM tso.departure_time::time) < EXTRACT(EPOCH FROM tso.arrival_time::time)
+                 THEN 86400 ELSE 0 END
+        """
+
+    query = text(f"""
+        WITH train_bounds AS (
+            SELECT MIN(stop_sequence) as min_seq, MAX(stop_sequence) as max_seq
+            FROM train_stop_observations
+            WHERE snapshot_id = :snapshot_id AND train_id = :train_id
+        )
+        SELECT s.code as station_code, 
+               CAST(({time_diff_expr}) / 60.0 AS FLOAT) as dwell_minutes
+        FROM train_stop_observations tso
+        JOIN stations s ON s.id = tso.station_id
+        JOIN train_bounds tb ON 1=1
+        WHERE tso.snapshot_id = :snapshot_id 
+          AND tso.train_id = :train_id
+          AND tso.arrival_time IS NOT NULL 
+          AND tso.departure_time IS NOT NULL
+          AND tso.arrival_time != 'None'
+          AND tso.departure_time != 'None'
+          AND tso.stop_sequence > tb.min_seq
+          AND tso.stop_sequence < tb.max_seq
+        ORDER BY dwell_minutes DESC, s.code ASC
+        LIMIT :limit
+    """)
+
+    results = db.execute(
+        query,
+        {"snapshot_id": timetable_snapshot_id, "train_id": train.id, "limit": limit},
+    ).fetchall()
+
+    # We also need to check if the train exists in the snapshot at all.
+    if not results:
+        obs_count = db.execute(
+            text(
+                "SELECT 1 FROM train_stop_observations "
+                "WHERE snapshot_id = :snapshot_id AND train_id = :train_id LIMIT 1"
+            ),
+            {"snapshot_id": timetable_snapshot_id, "train_id": train.id},
+        ).scalar()
+        if not obs_count:
+            raise ValueError(
+                f"Train '{train_number}' not present in snapshot {timetable_snapshot_id}"
+            )
+
+    halts = [{"station_code": r[0], "dwell_minutes": float(r[1])} for r in results]
+
+    return {
+        "train_number": train_number,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "halts": halts,
     }

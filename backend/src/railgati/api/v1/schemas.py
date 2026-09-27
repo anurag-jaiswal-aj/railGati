@@ -644,3 +644,14 @@ class PairedSymmetryResponse(BaseModel):
     forward_train_duration_minutes: float
     return_train_duration_minutes: float
     duration_asymmetry_minutes: float
+
+
+class StructuralHaltItem(BaseModel):
+    station_code: str
+    dwell_minutes: float
+
+
+class StructuralHaltResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    halts: list[StructuralHaltItem]

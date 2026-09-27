@@ -21,6 +21,7 @@ from railgati.api.v1.schemas import (
     NetworkReachabilityResponse,
     NetworkServiceAttributionResponse,
     StationSimilarityResponse,
+    StructuralHaltResponse,
     TemporalConcentrationResponse,
     TerminusResponse,
     TrainSimilarityResponse,
@@ -1406,3 +1407,35 @@ def get_network_train_paired_symmetry(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
     return result
+
+
+@router.get(
+    "/trains/{train_number}/structural-halts",
+    response_model=StructuralHaltResponse,
+)
+def get_network_train_structural_halts(
+    train_number: str,
+    limit: int = Query(10, ge=1, le=50, description="Max stations to return"),
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    """
+    Calculate Network Train Structural Halt Analytics.
+    This endpoint reports scheduled timetable dwell at intermediate stops.
+    It does not establish why a train dwells there and does not represent live/current operational halts.
+    """
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.services.network import calculate_train_structural_halts
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return calculate_train_structural_halts(
+            db=db,
+            timetable_snapshot_id=timetable_snapshot_id,
+            train_number=train_number,
+            limit=limit,
+        )
+    except ValueError as e:
+        if "not found" in str(e).lower() or "not present" in str(e).lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
