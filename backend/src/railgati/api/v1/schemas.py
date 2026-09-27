@@ -686,3 +686,13 @@ class RelativeStationDwellResponse(BaseModel):
     train_number: str
     timetable_snapshot_id: int
     relative_dwells: list[RelativeStationDwellItem]
+
+
+class StationOutboundDominanceResponse(BaseModel):
+    station_code: str
+    station_name: str
+    timetable_snapshot_id: int
+    total_outbound_occurrences: int
+    max_outbound_occurrences: int
+    dominant_destination_station_code: str | None
+    dominance_ratio: float

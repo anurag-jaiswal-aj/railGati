@@ -3388,3 +3388,91 @@ def calculate_train_relative_station_dwell(
         "timetable_snapshot_id": snapshot_id,
         "relative_dwells": relative_dwells,
     }
+
+
+def calculate_station_outbound_dominance(
+    db: Session, snapshot_id: int, station_code: str
+) -> dict[str, typing.Any]:
+    from sqlalchemy import text
+
+    from railgati.models.station import Station, StationObservation
+
+    station = db.query(Station).filter(Station.code == station_code).first()
+    if not station:
+        raise ValueError(f"Station {station_code} not found")
+        
+    obs = db.query(StationObservation).filter(
+        StationObservation.station_id == station.id,
+        StationObservation.snapshot_id == snapshot_id
+    ).first()
+    station_name = obs.name if obs else f"{station_code} (Unknown)"
+
+    query = text("""
+        WITH target_station AS (
+            SELECT :station_id as id
+        ),
+        outbound_edges AS (
+            SELECT 
+                tso1.station_id as from_id,
+                tso2.station_id as to_id,
+                COUNT(*) as occurrences
+            FROM train_stop_observations tso1
+            JOIN train_stop_observations tso2 
+              ON tso1.train_id = tso2.train_id 
+              AND tso1.snapshot_id = tso2.snapshot_id
+              AND tso1.stop_sequence + 1 = tso2.stop_sequence
+            WHERE tso1.snapshot_id = :snapshot_id
+              AND tso1.station_id = (SELECT id FROM target_station)
+            GROUP BY tso1.station_id, tso2.station_id
+        ),
+        ranked_destinations AS (
+            SELECT 
+                oe.to_id,
+                s.code as dest_code,
+                oe.occurrences,
+                ROW_NUMBER() OVER (ORDER BY oe.occurrences DESC, s.code ASC) as rnk
+            FROM outbound_edges oe
+            JOIN stations s ON s.id = oe.to_id
+        ),
+        station_totals AS (
+            SELECT 
+                from_id,
+                SUM(occurrences) as total_outbound,
+                MAX(occurrences) as max_outbound
+            FROM outbound_edges
+            GROUP BY from_id
+        )
+        SELECT 
+            st.total_outbound,
+            st.max_outbound,
+            rd.dest_code as dominant_destination,
+            CAST(st.max_outbound AS FLOAT) / NULLIF(st.total_outbound, 0) as dominance_ratio
+        FROM station_totals st
+        LEFT JOIN ranked_destinations rd ON rd.rnk = 1
+    """)
+
+    result = db.execute(query, {"snapshot_id": snapshot_id, "station_id": station.id}).first()
+
+    if not result or not result._mapping.get("total_outbound"):
+        return {
+            "station_code": station.code,
+            "station_name": station_name,
+            "timetable_snapshot_id": snapshot_id,
+            "total_outbound_occurrences": 0,
+            "max_outbound_occurrences": 0,
+            "dominant_destination_station_code": None,
+            "dominance_ratio": 0.0,
+        }
+
+    row = dict(result._mapping)
+    return {
+        "station_code": station.code,
+        "station_name": station_name,
+        "timetable_snapshot_id": snapshot_id,
+        "total_outbound_occurrences": int(row["total_outbound"]),
+        "max_outbound_occurrences": int(row["max_outbound"]),
+        "dominant_destination_station_code": row["dominant_destination"],
+        "dominance_ratio": float(row["dominance_ratio"])
+        if row["dominance_ratio"] is not None
+        else 0.0,
+    }

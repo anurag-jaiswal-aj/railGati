@@ -22,6 +22,7 @@ from railgati.api.v1.schemas import (
     NetworkServiceAttributionResponse,
     RelativeEdgeSlownessResponse,
     RelativeStationDwellResponse,
+    StationOutboundDominanceResponse,
     StationSimilarityResponse,
     StructuralHaltResponse,
     TemporalConcentrationResponse,
@@ -1501,4 +1502,33 @@ def get_network_train_relative_station_dwell(
     except ValueError as e:
         if "not found" in str(e):
             raise HTTPException(status_code=404, detail="Train not found")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get(
+    "/stations/{station_code}/outbound-dominance",
+    response_model=StationOutboundDominanceResponse,
+)
+def get_network_station_outbound_dominance(
+    station_code: str,
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    """
+    Calculate Network Station Outbound Dominance Analytics.
+    This metric determines the concentration of scheduled outbound timetable occurrences from a station.
+    It does not measure physical track capacity, passenger demand, or operational routing.
+    """
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.services.network import calculate_station_outbound_dominance
+
+    station_code = station_code.upper()
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return calculate_station_outbound_dominance(
+            db, timetable_snapshot_id, station_code
+        )
+    except ValueError as e:
+        if "not found" in str(e):
+            raise HTTPException(status_code=404, detail="Station not found")
         raise HTTPException(status_code=400, detail=str(e))
