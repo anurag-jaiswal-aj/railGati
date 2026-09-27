@@ -1608,9 +1608,10 @@ def calculate_train_similarity(
     min_overlap_stations: int = 1,
 ) -> tuple[int, str, str, list[TrainSimilarityItem]]:
     """Calculate historical timetable route-set similarity for a target train."""
+    from sqlalchemy import func
+
     from railgati.api.v1.schemas import TrainSimilarityItem
     from railgati.models.train import Train, TrainObservation
-    from sqlalchemy import func
 
     # 1. Resolve target train ID and metadata in the active snapshot
     target_train = db.execute(
@@ -1721,3 +1722,124 @@ def calculate_train_similarity(
         target_station_count = count or 0
 
     return target_station_count, target_train_number_resolved, target_train_name, items
+
+
+def calculate_station_similarity(
+    db: Session,
+    timetable_snapshot_id: int,
+    target_station_code: str,
+    limit: int = 10,
+    min_overlap_trains: int = 1,
+) -> tuple[int, str, str | None, list]:
+    """Calculate historical timetable service-set similarity for a target station."""
+    from sqlalchemy import func
+
+    from railgati.api.v1.schemas import StationSimilarityItem
+    from railgati.models.station import Station, StationObservation
+
+    # 1. Resolve target station ID and metadata in the active snapshot
+    target_station = db.execute(
+        select(Station.id, Station.code, StationObservation.name)
+        .outerjoin(
+            StationObservation,
+            (StationObservation.station_id == Station.id) &
+            (StationObservation.snapshot_id == timetable_snapshot_id)
+        )
+        .filter(func.lower(Station.code) == target_station_code.lower())
+    ).first()
+
+    if not target_station:
+        raise ValueError(f"Historical timetable station '{target_station_code}' not found.")
+
+    target_station_id = target_station.id
+    target_station_code_resolved = target_station.code
+    target_station_name = target_station.name
+
+    query = text("""
+        WITH target_trains AS (
+            SELECT DISTINCT train_id
+            FROM train_stop_observations
+            WHERE snapshot_id = :timetable_snapshot_id
+              AND station_id = :target_station_id
+        ),
+        target_count AS (
+            SELECT COUNT(*) AS c FROM target_trains
+        ),
+        other_stations AS (
+            SELECT station_id, COUNT(DISTINCT train_id) as total_trains
+            FROM train_stop_observations
+            WHERE snapshot_id = :timetable_snapshot_id
+              AND station_id != :target_station_id
+            GROUP BY station_id
+        ),
+        intersection AS (
+            SELECT tso.station_id, COUNT(DISTINCT tso.train_id) as overlap_count
+            FROM train_stop_observations tso
+            JOIN target_trains tt ON tso.train_id = tt.train_id
+            WHERE tso.snapshot_id = :timetable_snapshot_id
+              AND tso.station_id != :target_station_id
+            GROUP BY tso.station_id
+        )
+        SELECT
+            s.code AS station_code,
+            s_obs.name AS station_name,
+            i.overlap_count AS overlap_train_count,
+            os.total_trains AS compared_train_count,
+            (tc.c + os.total_trains - i.overlap_count) AS union_train_count,
+            ROUND(
+                (i.overlap_count * 100.0) /
+                (tc.c + os.total_trains - i.overlap_count),
+            1) AS similarity_pct,
+            tc.c AS target_train_count
+        FROM intersection i
+        JOIN other_stations os ON i.station_id = os.station_id
+        JOIN stations s ON s.id = i.station_id
+        LEFT JOIN station_observations s_obs
+          ON s_obs.station_id = s.id
+         AND s_obs.snapshot_id = :timetable_snapshot_id
+        CROSS JOIN target_count tc
+        WHERE i.overlap_count >= :min_overlap_trains
+        ORDER BY similarity_pct DESC, i.overlap_count DESC, union_train_count ASC, s.code ASC
+        LIMIT :limit
+    """)
+
+    results = db.execute(
+        query,
+        {
+            "timetable_snapshot_id": timetable_snapshot_id,
+            "target_station_id": target_station_id,
+            "min_overlap_trains": min_overlap_trains,
+            "limit": limit,
+        },
+    ).fetchall()
+
+    items = []
+    target_train_count = 0
+    if results:
+        target_train_count = results[0].target_train_count
+
+    for row in results:
+        items.append(
+            StationSimilarityItem(
+                station_code=row.station_code,
+                station_name=row.station_name,
+                compared_train_count=row.compared_train_count,
+                overlap_train_count=row.overlap_train_count,
+                union_train_count=row.union_train_count,
+                similarity_pct=row.similarity_pct,
+            )
+        )
+
+    # If no results, we still need target_train_count
+    if not results:
+        count = db.execute(
+            text("""
+                SELECT COUNT(DISTINCT train_id)
+                FROM train_stop_observations
+                WHERE snapshot_id = :snapshot_id AND station_id = :station_id
+            """),
+            {"snapshot_id": timetable_snapshot_id, "station_id": target_station_id},
+        ).scalar()
+        target_train_count = count or 0
+
+    return target_train_count, target_station_code_resolved, target_station_name, items

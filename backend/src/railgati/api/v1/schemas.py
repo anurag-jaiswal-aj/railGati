@@ -489,3 +489,26 @@ class TrainSimilarityResponse(BaseModel):
     limit: int
     min_overlap_stations: int
     items: list[TrainSimilarityItem]
+
+
+class StationSimilarityItem(BaseModel):
+    """Historical timetable service-set similarity for a compared station."""
+
+    station_code: str
+    station_name: str | None = None
+    compared_train_count: int
+    overlap_train_count: int
+    union_train_count: int
+    similarity_pct: float
+
+
+class StationSimilarityResponse(BaseModel):
+    """Network station service similarity analytics for the active timetable snapshot."""
+
+    timetable_snapshot_id: int
+    target_station_code: str
+    target_station_name: str | None = None
+    target_train_count: int
+    limit: int
+    min_overlap_trains: int
+    items: list[StationSimilarityItem]

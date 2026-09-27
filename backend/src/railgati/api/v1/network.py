@@ -19,6 +19,7 @@ from railgati.api.v1.schemas import (
     NetworkReachabilityItem,
     NetworkReachabilityResponse,
     NetworkServiceAttributionResponse,
+    StationSimilarityResponse,
     TemporalConcentrationResponse,
     TerminusResponse,
     TrainSimilarityResponse,
@@ -1018,5 +1019,47 @@ def get_train_similarity(
         target_station_count=target_count,
         limit=limit,
         min_overlap_stations=min_overlap_stations,
+        items=items,
+    )
+
+
+@router.get(
+    "/stations/{station_code}/similar",
+    response_model=StationSimilarityResponse,
+)
+def get_station_similarity(
+    station_code: str,
+    db: Session = Depends(get_db),  # noqa: B008
+    limit: Annotated[int, Query(ge=1, le=50, description="Max similar stations to return")] = 10,
+    min_overlap_trains: Annotated[
+        int, Query(ge=0, description="Minimum shared distinct trains")
+    ] = 1,
+) -> StationSimilarityResponse:
+    """Return historical timetable service-set similarity for a target station."""
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        from railgati.services.network import calculate_station_similarity
+
+        target_count, resolved_code, target_name, items = calculate_station_similarity(
+            db=db,
+            timetable_snapshot_id=timetable_snapshot_id,
+            target_station_code=station_code,
+            limit=limit,
+            min_overlap_trains=min_overlap_trains,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+
+    return StationSimilarityResponse(
+        timetable_snapshot_id=timetable_snapshot_id,
+        target_station_code=resolved_code,
+        target_station_name=target_name,
+        target_train_count=target_count,
+        limit=limit,
+        min_overlap_trains=min_overlap_trains,
         items=items,
     )
