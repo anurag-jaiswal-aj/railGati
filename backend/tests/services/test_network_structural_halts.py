@@ -1,4 +1,5 @@
 import typing
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -74,7 +75,9 @@ def setup_service_data(db_session: Session) -> typing.Any:
     return snapshot, train, s_map
 
 
-def test_calculate_train_structural_halts(db_session: Session, setup_service_data: typing.Any) -> None:
+def test_calculate_train_structural_halts(
+    db_session: Session, setup_service_data: typing.Any
+) -> None:
     result = calculate_train_structural_halts(db_session, 2, "12004")
     assert result["train_number"] == "12004"
     assert result["timetable_snapshot_id"] == 2
@@ -85,7 +88,9 @@ def test_calculate_train_structural_halts(db_session: Session, setup_service_dat
     assert result["halts"][1]["dwell_minutes"] == 2.0
 
 
-def test_calculate_train_structural_halts_empty(db_session: Session, setup_service_data: typing.Any) -> None:
+def test_calculate_train_structural_halts_empty(
+    db_session: Session, setup_service_data: typing.Any
+) -> None:
     # Train 12301 has only 2 stops, so no intermediate halts
     result = calculate_train_structural_halts(db_session, 2, "12301")
     assert result["train_number"] == "12301"
@@ -93,6 +98,8 @@ def test_calculate_train_structural_halts_empty(db_session: Session, setup_servi
     assert len(result["halts"]) == 0
 
 
-def test_calculate_train_structural_halts_unknown_train(db_session: Session, setup_service_data: typing.Any) -> None:
+def test_calculate_train_structural_halts_unknown_train(
+    db_session: Session, setup_service_data: typing.Any
+) -> None:
     with pytest.raises(ValueError, match="not found"):
         calculate_train_structural_halts(db_session, 2, "99999")

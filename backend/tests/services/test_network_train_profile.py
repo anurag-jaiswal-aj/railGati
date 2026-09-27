@@ -38,8 +38,22 @@ def setup_data(db_session: Session) -> None:
 
     db_session.add_all(
         [
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=1, station_id=s_orig.id, departure_time="10:00:00", source_day=1),
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=2, station_id=s_dest.id, arrival_time="11:00:00", source_day=1),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=1,
+                station_id=s_orig.id,
+                departure_time="10:00:00",
+                source_day=1,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=2,
+                station_id=s_dest.id,
+                arrival_time="11:00:00",
+                source_day=1,
+            ),
         ]
     )
     db_session.commit()
@@ -55,6 +69,7 @@ def test_service_network_train_profile_success(db_session: Session) -> None:
     assert result["total_duration_minutes"] == 60.0
     assert result["total_dwell_minutes"] == 0.0
     assert result["dwell_percentage"] == 0.0
+
 
 def test_service_network_train_profile_invalid_train(db_session: Session) -> None:
     setup_data(db_session)

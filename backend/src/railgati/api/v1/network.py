@@ -20,6 +20,7 @@ from railgati.api.v1.schemas import (
     NetworkReachabilityItem,
     NetworkReachabilityResponse,
     NetworkServiceAttributionResponse,
+    RelativeEdgeSlownessResponse,
     StationSimilarityResponse,
     StructuralHaltResponse,
     TemporalConcentrationResponse,
@@ -1439,3 +1440,34 @@ def get_network_train_structural_halts(
         if "not found" in str(e).lower() or "not present" in str(e).lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get(
+    "/trains/{train_number}/relative-edge-slowness",
+    response_model=RelativeEdgeSlownessResponse,
+)
+def get_network_train_relative_edge_slowness(
+    train_number: str,
+    limit: int = Query(10, ge=1, le=50, description="Max edges to return"),
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    """
+    Calculate Network Train Relative Edge Slowness Analytics.
+    This metric compares scheduled timetable duration for a train's adjacent edge occurrences
+    against the timetable-average scheduled duration for the same adjacent station pair.
+    It does not measure physical speed, actual travel time, congestion, capacity,
+    passenger demand, or operational causes.
+    """
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.services.network import calculate_train_relative_edge_slowness
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return calculate_train_relative_edge_slowness(
+            db, timetable_snapshot_id, train_number, limit=limit
+        )
+    except ValueError as e:
+        if "not found" in str(e):
+            raise HTTPException(status_code=404, detail="Train not found")
+        raise HTTPException(status_code=400, detail=str(e))

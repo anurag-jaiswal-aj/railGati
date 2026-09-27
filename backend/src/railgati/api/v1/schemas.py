@@ -655,3 +655,19 @@ class StructuralHaltResponse(BaseModel):
     train_number: str
     timetable_snapshot_id: int
     halts: list[StructuralHaltItem]
+
+
+class RelativeEdgeSlownessItem(BaseModel):
+    target_stop_sequence: int
+    source_station_code: str
+    destination_station_code: str
+    target_duration_minutes: float
+    network_average_minutes: float
+    network_occurrence_count: int
+    slowness_ratio: float
+
+
+class RelativeEdgeSlownessResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    slow_edges: list[RelativeEdgeSlownessItem]

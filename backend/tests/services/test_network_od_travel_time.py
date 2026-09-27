@@ -46,9 +46,33 @@ def setup_data(db_session: Session) -> None:
 
     db_session.add_all(
         [
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=1, station_id=s_ndls.id, arrival_time=None, departure_time="10:00:00", source_day=1),
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=2, station_id=s_xx.id, arrival_time="12:00:00", departure_time="12:10:00", source_day=1),
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=3, station_id=s_cnb.id, arrival_time="14:34:00", departure_time=None, source_day=1),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=1,
+                station_id=s_ndls.id,
+                arrival_time=None,
+                departure_time="10:00:00",
+                source_day=1,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=2,
+                station_id=s_xx.id,
+                arrival_time="12:00:00",
+                departure_time="12:10:00",
+                source_day=1,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=3,
+                station_id=s_cnb.id,
+                arrival_time="14:34:00",
+                departure_time=None,
+                source_day=1,
+            ),
         ]
     )
 
@@ -62,11 +86,12 @@ def test_service_network_travel_time_success(db_session: Session) -> None:
     assert result[1] == "New Delhi"
     assert result[2] == "CNB"
     assert result[3] == "Kanpur"
-    assert result[4] == 1 # qual
-    assert result[5] == 1 # dist
-    assert result[6] == 274 # min
-    assert result[7] == 274 # max
-    assert result[8] == 274.0 # avg
+    assert result[4] == 1  # qual
+    assert result[5] == 1  # dist
+    assert result[6] == 274  # min
+    assert result[7] == 274  # max
+    assert result[8] == 274.0  # avg
+
 
 def test_service_network_travel_time_invalid_station(db_session: Session) -> None:
     setup_data(db_session)

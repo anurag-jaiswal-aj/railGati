@@ -49,15 +49,50 @@ def setup_data(db_session: Session) -> None:
     # Sum: 1440, Total departures: 3. Avg: 480. Max: 720
     db_session.add_all(
         [
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=1, station_id=s1.id, departure_time="10:00:00", source_day=1),
-            TrainStopObservation(snapshot_id=1, train_id=t2.id, stop_sequence=1, station_id=s1.id, departure_time="11:30:00", source_day=1),
-            TrainStopObservation(snapshot_id=1, train_id=t3.id, stop_sequence=1, station_id=s1.id, arrival_time="23:25:00", departure_time="23:30:00", source_day=1),
-            
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=1,
+                station_id=s1.id,
+                departure_time="10:00:00",
+                source_day=1,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t2.id,
+                stop_sequence=1,
+                station_id=s1.id,
+                departure_time="11:30:00",
+                source_day=1,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t3.id,
+                stop_sequence=1,
+                station_id=s1.id,
+                arrival_time="23:25:00",
+                departure_time="23:30:00",
+                source_day=1,
+            ),
             # Null departure (terminating)
-            TrainStopObservation(snapshot_id=1, train_id=t3.id, stop_sequence=2, station_id=s1.id, arrival_time="23:45:00", departure_time=None, source_day=1),
-            
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t3.id,
+                stop_sequence=2,
+                station_id=s1.id,
+                arrival_time="23:45:00",
+                departure_time=None,
+                source_day=1,
+            ),
             # SGL gets one departure
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=2, station_id=s_single.id, departure_time="12:00:00", source_day=1),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=2,
+                station_id=s_single.id,
+                departure_time="12:00:00",
+                source_day=1,
+            ),
         ]
     )
 
@@ -69,21 +104,25 @@ def test_api_network_temporal_gaps_success(client: TestClient, db_session: Sessi
     response = client.get("/api/v1/network/stations/STA/temporal-gaps")
     assert response.status_code == 200
     data = response.json()
-    
+
     assert data["station_code"] == "STA"
     assert data["total_departures"] == 3
     assert data["max_departure_gap_minutes"] == 720.0
     assert data["average_departure_gap_minutes"] == 480.0
 
-def test_api_network_temporal_gaps_single_departure(client: TestClient, db_session: Session) -> None:
+
+def test_api_network_temporal_gaps_single_departure(
+    client: TestClient, db_session: Session
+) -> None:
     setup_data(db_session)
     response = client.get("/api/v1/network/stations/SGL/temporal-gaps")
     assert response.status_code == 200
     data = response.json()
-    
+
     assert data["station_code"] == "SGL"
     assert data["total_departures"] == 1
     assert data["max_departure_gap_minutes"] == 1440.0
+
 
 def test_api_network_temporal_gaps_no_departures(client: TestClient, db_session: Session) -> None:
     setup_data(db_session)
@@ -91,16 +130,18 @@ def test_api_network_temporal_gaps_no_departures(client: TestClient, db_session:
     assert response.status_code == 404
     assert "no qualifying departures" in response.json()["detail"].lower()
 
+
 def test_api_network_temporal_gaps_unknown_station(client: TestClient, db_session: Session) -> None:
     setup_data(db_session)
     response = client.get("/api/v1/network/stations/XXX/temporal-gaps")
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
 
+
 def test_api_network_temporal_gaps_isolation(client: TestClient, db_session: Session) -> None:
     setup_data(db_session)
     db_session.execute(DatasetSnapshot.__table__.update().values(status="ARCHIVED"))
     db_session.commit()
-    
+
     response = client.get("/api/v1/network/stations/STA/temporal-gaps")
     assert response.status_code == 503

@@ -38,8 +38,22 @@ def setup_data(db_session: Session) -> None:
 
     db_session.add_all(
         [
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=1, station_id=s1.id, departure_time="10:00:00", source_day=1),
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=2, station_id=s1.id, departure_time="10:00:00", source_day=1), # duplicate
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=1,
+                station_id=s1.id,
+                departure_time="10:00:00",
+                source_day=1,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=2,
+                station_id=s1.id,
+                departure_time="10:00:00",
+                source_day=1,
+            ),  # duplicate
         ]
     )
     db_session.commit()
@@ -55,10 +69,12 @@ def test_service_network_temporal_gaps_success(db_session: Session) -> None:
     assert result["max_departure_gap_minutes"] == 1440.0
     assert result["average_departure_gap_minutes"] == 720.0
 
+
 def test_service_network_temporal_gaps_invalid_station(db_session: Session) -> None:
     setup_data(db_session)
     with pytest.raises(ValueError, match="not found"):
         calculate_station_temporal_gaps(db_session, 1, "XXX")
+
 
 def test_service_network_temporal_gaps_no_departures(db_session: Session) -> None:
     setup_data(db_session)

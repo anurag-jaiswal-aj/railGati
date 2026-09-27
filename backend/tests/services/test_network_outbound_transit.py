@@ -38,8 +38,22 @@ def setup_data(db_session: Session) -> None:
 
     db_session.add_all(
         [
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=1, station_id=s_ndls.id, departure_time="10:00:00", source_day=1),
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=2, station_id=s_csb.id, arrival_time="10:05:00", source_day=1),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=1,
+                station_id=s_ndls.id,
+                departure_time="10:00:00",
+                source_day=1,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=2,
+                station_id=s_csb.id,
+                arrival_time="10:05:00",
+                source_day=1,
+            ),
         ]
     )
     db_session.commit()
@@ -50,12 +64,13 @@ def test_service_network_outbound_transit_success(db_session: Session) -> None:
     result = calculate_station_outbound_transit(db_session, 1, "NDLS")
     assert result[0] == "NDLS"
     assert result[1] == "New Delhi"
-    
+
     edges = result[2]
     assert len(edges) == 1
     assert edges[0]["next_station_code"] == "CSB"
     assert edges[0]["train_volume"] == 1
     assert edges[0]["min_duration_minutes"] == 5.0
+
 
 def test_service_network_outbound_transit_invalid_station(db_session: Session) -> None:
     setup_data(db_session)

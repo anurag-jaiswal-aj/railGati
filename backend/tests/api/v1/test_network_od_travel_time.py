@@ -32,8 +32,8 @@ def setup_data(db_session: Session) -> None:
     )
 
     t1 = Train(number="111")
-    t2 = Train(number="222") # loops MTD->DNA
-    t3 = Train(number="333") # missing timing
+    t2 = Train(number="222")  # loops MTD->DNA
+    t3 = Train(number="333")  # missing timing
     db_session.add_all([t1, t2, t3])
     db_session.flush()
 
@@ -48,9 +48,33 @@ def setup_data(db_session: Session) -> None:
     # Train 1: NDLS -> CNB (Day 1 to Day 1)
     db_session.add_all(
         [
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=1, station_id=s_ndls.id, arrival_time=None, departure_time="10:00:00", source_day=1),
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=2, station_id=s_xx.id, arrival_time="12:00:00", departure_time="12:10:00", source_day=1),
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=3, station_id=s_cnb.id, arrival_time="14:34:00", departure_time=None, source_day=1),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=1,
+                station_id=s_ndls.id,
+                arrival_time=None,
+                departure_time="10:00:00",
+                source_day=1,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=2,
+                station_id=s_xx.id,
+                arrival_time="12:00:00",
+                departure_time="12:10:00",
+                source_day=1,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=3,
+                station_id=s_cnb.id,
+                arrival_time="14:34:00",
+                departure_time=None,
+                source_day=1,
+            ),
         ]
     )
 
@@ -61,18 +85,66 @@ def setup_data(db_session: Session) -> None:
     # seq4: DNA (Day 2 01:00) - day crossing
     db_session.add_all(
         [
-            TrainStopObservation(snapshot_id=1, train_id=t2.id, stop_sequence=1, station_id=s_mtd.id, departure_time="10:00:00", source_day=1, arrival_time=None),
-            TrainStopObservation(snapshot_id=1, train_id=t2.id, stop_sequence=2, station_id=s_dna.id, arrival_time="11:00:00", departure_time="11:05:00", source_day=1),
-            TrainStopObservation(snapshot_id=1, train_id=t2.id, stop_sequence=3, station_id=s_mtd.id, arrival_time="12:00:00", departure_time="12:10:00", source_day=1),
-            TrainStopObservation(snapshot_id=1, train_id=t2.id, stop_sequence=4, station_id=s_dna.id, arrival_time="01:00:00", departure_time=None, source_day=2),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t2.id,
+                stop_sequence=1,
+                station_id=s_mtd.id,
+                departure_time="10:00:00",
+                source_day=1,
+                arrival_time=None,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t2.id,
+                stop_sequence=2,
+                station_id=s_dna.id,
+                arrival_time="11:00:00",
+                departure_time="11:05:00",
+                source_day=1,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t2.id,
+                stop_sequence=3,
+                station_id=s_mtd.id,
+                arrival_time="12:00:00",
+                departure_time="12:10:00",
+                source_day=1,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t2.id,
+                stop_sequence=4,
+                station_id=s_dna.id,
+                arrival_time="01:00:00",
+                departure_time=None,
+                source_day=2,
+            ),
         ]
     )
 
     # Train 3: NDLS -> CNB with missing timing
     db_session.add_all(
         [
-            TrainStopObservation(snapshot_id=1, train_id=t3.id, stop_sequence=1, station_id=s_ndls.id, arrival_time=None, departure_time=None, source_day=1),
-            TrainStopObservation(snapshot_id=1, train_id=t3.id, stop_sequence=2, station_id=s_cnb.id, arrival_time="15:00:00", departure_time=None, source_day=1),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t3.id,
+                stop_sequence=1,
+                station_id=s_ndls.id,
+                arrival_time=None,
+                departure_time=None,
+                source_day=1,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t3.id,
+                stop_sequence=2,
+                station_id=s_cnb.id,
+                arrival_time="15:00:00",
+                departure_time=None,
+                source_day=1,
+            ),
         ]
     )
 
@@ -88,11 +160,14 @@ def test_api_network_travel_time_success(client: TestClient, db_session: Session
     assert data["to_station_code"] == "CNB"
     assert data["qualifying_occurrence_count"] == 1
     assert data["distinct_train_count"] == 1
-    assert data["min_duration_minutes"] == 274 # 10:00 to 14:34
+    assert data["min_duration_minutes"] == 274  # 10:00 to 14:34
     assert data["max_duration_minutes"] == 274
     assert data["avg_duration_minutes"] == 274.0
 
-def test_api_network_travel_time_repeated_and_cross_day(client: TestClient, db_session: Session) -> None:
+
+def test_api_network_travel_time_repeated_and_cross_day(
+    client: TestClient, db_session: Session
+) -> None:
     setup_data(db_session)
     response = client.get("/api/v1/network/stations/MTD/travel-time/DNA")
     assert response.status_code == 200
@@ -111,9 +186,10 @@ def test_api_network_travel_time_repeated_and_cross_day(client: TestClient, db_s
     assert data["max_duration_minutes"] == 900
     assert data["avg_duration_minutes"] == round((60 + 900 + 770) / 3, 1)
 
+
 def test_api_network_travel_time_no_route(client: TestClient, db_session: Session) -> None:
     setup_data(db_session)
-    response = client.get("/api/v1/network/stations/CNB/travel-time/NDLS") # reverse
+    response = client.get("/api/v1/network/stations/CNB/travel-time/NDLS")  # reverse
     assert response.status_code == 200
     data = response.json()
     assert data["qualifying_occurrence_count"] == 0
@@ -122,11 +198,13 @@ def test_api_network_travel_time_no_route(client: TestClient, db_session: Sessio
     assert data["max_duration_minutes"] is None
     assert data["avg_duration_minutes"] is None
 
+
 def test_api_network_travel_time_same_station(client: TestClient, db_session: Session) -> None:
     setup_data(db_session)
     response = client.get("/api/v1/network/stations/NDLS/travel-time/NDLS")
     assert response.status_code == 400
     assert "different" in response.json()["detail"]
+
 
 def test_api_network_travel_time_unknown_station(client: TestClient, db_session: Session) -> None:
     setup_data(db_session)

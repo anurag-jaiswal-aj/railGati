@@ -3160,3 +3160,122 @@ def calculate_train_structural_halts(
         "timetable_snapshot_id": timetable_snapshot_id,
         "halts": halts,
     }
+
+
+def calculate_train_relative_edge_slowness(
+    db: Session, snapshot_id: int, train_number: str, limit: int = 10
+) -> dict[str, typing.Any]:
+    from railgati.models.train import Train
+    
+    train = db.query(Train).filter(Train.number == train_number).first()
+    if not train:
+        raise ValueError(f"Train {train_number} not found")
+
+    bind = db.get_bind()
+    is_sqlite = bind.dialect.name == "sqlite" if bind else False
+
+    if is_sqlite:
+        time_diff_expr = """
+            (strftime("%s", "1970-01-01 " || tso2.arrival_time) - strftime("%s", "1970-01-01 " || tso1.departure_time)) +
+            CASE WHEN strftime("%s", "1970-01-01 " || tso2.arrival_time) < strftime("%s", "1970-01-01 " || tso1.departure_time)
+                 THEN 86400 ELSE 0 END
+        """
+    else:
+        time_diff_expr = """
+            (EXTRACT(EPOCH FROM tso2.arrival_time::time) - EXTRACT(EPOCH FROM tso1.departure_time::time)) +
+            CASE WHEN EXTRACT(EPOCH FROM tso2.arrival_time::time) < EXTRACT(EPOCH FROM tso1.departure_time::time)
+                 THEN 86400 ELSE 0 END
+        """
+
+    query = text(f"""
+        WITH target_edges AS (
+            SELECT 
+                tso1.stop_sequence as target_seq,
+                tso1.station_id as src_station_id,
+                tso2.station_id as dst_station_id,
+                s1.code as src,
+                s2.code as dst,
+                CAST(({time_diff_expr}) / 60.0 AS FLOAT) as target_duration
+            FROM train_stop_observations tso1
+            JOIN train_stop_observations tso2 
+              ON tso1.snapshot_id = tso2.snapshot_id 
+             AND tso1.train_id = tso2.train_id 
+             AND tso1.stop_sequence + 1 = tso2.stop_sequence
+            JOIN stations s1 ON s1.id = tso1.station_id
+            JOIN stations s2 ON s2.id = tso2.station_id
+            WHERE tso1.snapshot_id = :snapshot_id
+              AND tso1.train_id = :train_id
+              AND tso1.departure_time IS NOT NULL
+              AND tso2.arrival_time IS NOT NULL
+        ),
+        network_edges AS (
+            SELECT 
+                tso1.station_id as src_station_id,
+                tso2.station_id as dst_station_id,
+                CAST(({time_diff_expr}) / 60.0 AS FLOAT) as duration
+            FROM train_stop_observations tso1
+            JOIN train_stop_observations tso2 
+              ON tso1.snapshot_id = tso2.snapshot_id 
+             AND tso1.train_id = tso2.train_id 
+             AND tso1.stop_sequence + 1 = tso2.stop_sequence
+            JOIN target_edges te 
+              ON te.src_station_id = tso1.station_id AND te.dst_station_id = tso2.station_id
+            WHERE tso1.snapshot_id = :snapshot_id
+              AND tso1.departure_time IS NOT NULL
+              AND tso2.arrival_time IS NOT NULL
+        ),
+        network_stats AS (
+            SELECT 
+                src_station_id, 
+                dst_station_id,
+                AVG(duration) as avg_duration,
+                COUNT(*) as occurrence_count
+            FROM network_edges
+            GROUP BY src_station_id, dst_station_id
+        )
+        SELECT 
+            te.target_seq,
+            te.src,
+            te.dst,
+            te.target_duration,
+            ns.avg_duration,
+            ns.occurrence_count,
+            te.target_duration / NULLIF(ns.avg_duration, 0) as slowness_ratio
+        FROM target_edges te
+        JOIN network_stats ns 
+          ON te.src_station_id = ns.src_station_id AND te.dst_station_id = ns.dst_station_id
+        WHERE (te.target_duration / NULLIF(ns.avg_duration, 0)) > 1.0
+        ORDER BY slowness_ratio DESC, te.target_seq ASC
+        LIMIT :limit
+    """)
+
+    results = db.execute(
+        query, {"snapshot_id": snapshot_id, "train_id": train.id, "limit": limit}
+    ).fetchall()
+
+    slow_edges = []
+    for r in results:
+        row = dict(r._mapping)
+        slow_edges.append(
+            {
+                "target_stop_sequence": row["target_seq"],
+                "source_station_code": row["src"],
+                "destination_station_code": row["dst"],
+                "target_duration_minutes": round(row["target_duration"], 2)
+                if row["target_duration"] is not None
+                else 0.0,
+                "network_average_minutes": round(row["avg_duration"], 2)
+                if row["avg_duration"] is not None
+                else 0.0,
+                "network_occurrence_count": row["occurrence_count"],
+                "slowness_ratio": round(row["slowness_ratio"], 2)
+                if row["slowness_ratio"] is not None
+                else 0.0,
+            }
+        )
+
+    return {
+        "train_number": train_number,
+        "timetable_snapshot_id": snapshot_id,
+        "slow_edges": slow_edges,
+    }

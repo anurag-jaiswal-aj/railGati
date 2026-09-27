@@ -44,28 +44,62 @@ def setup_data(db_session: Session) -> None:
     # Reversal: MIPM -> VSKP -> MIPM
     db_session.add_all(
         [
-            TrainStopObservation(snapshot_id=1, train_id=t_rev.id, stop_sequence=1, station_id=s_other.id),
-            TrainStopObservation(snapshot_id=1, train_id=t_rev.id, stop_sequence=2, station_id=s_mipm.id),
-            TrainStopObservation(snapshot_id=1, train_id=t_rev.id, stop_sequence=3, station_id=s_vskp.id, arrival_time="20:55:00", departure_time="21:15:00"),
-            TrainStopObservation(snapshot_id=1, train_id=t_rev.id, stop_sequence=4, station_id=s_mipm.id),
-            TrainStopObservation(snapshot_id=1, train_id=t_rev.id, stop_sequence=5, station_id=s_other.id),
+            TrainStopObservation(
+                snapshot_id=1, train_id=t_rev.id, stop_sequence=1, station_id=s_other.id
+            ),
+            TrainStopObservation(
+                snapshot_id=1, train_id=t_rev.id, stop_sequence=2, station_id=s_mipm.id
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t_rev.id,
+                stop_sequence=3,
+                station_id=s_vskp.id,
+                arrival_time="20:55:00",
+                departure_time="21:15:00",
+            ),
+            TrainStopObservation(
+                snapshot_id=1, train_id=t_rev.id, stop_sequence=4, station_id=s_mipm.id
+            ),
+            TrainStopObservation(
+                snapshot_id=1, train_id=t_rev.id, stop_sequence=5, station_id=s_other.id
+            ),
         ]
     )
 
     # Straight: MIPM -> VSKP -> OTHER
     db_session.add_all(
         [
-            TrainStopObservation(snapshot_id=1, train_id=t_straight.id, stop_sequence=1, station_id=s_mipm.id),
-            TrainStopObservation(snapshot_id=1, train_id=t_straight.id, stop_sequence=2, station_id=s_vskp.id, arrival_time="10:00:00", departure_time="10:10:00"),
-            TrainStopObservation(snapshot_id=1, train_id=t_straight.id, stop_sequence=3, station_id=s_other.id),
+            TrainStopObservation(
+                snapshot_id=1, train_id=t_straight.id, stop_sequence=1, station_id=s_mipm.id
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t_straight.id,
+                stop_sequence=2,
+                station_id=s_vskp.id,
+                arrival_time="10:00:00",
+                departure_time="10:10:00",
+            ),
+            TrainStopObservation(
+                snapshot_id=1, train_id=t_straight.id, stop_sequence=3, station_id=s_other.id
+            ),
         ]
     )
-    
+
     # Terminal: OTHER -> VSKP (no next stop)
     db_session.add_all(
         [
-            TrainStopObservation(snapshot_id=1, train_id=t_terminal.id, stop_sequence=1, station_id=s_other.id),
-            TrainStopObservation(snapshot_id=1, train_id=t_terminal.id, stop_sequence=2, station_id=s_vskp.id, arrival_time="12:00:00"),
+            TrainStopObservation(
+                snapshot_id=1, train_id=t_terminal.id, stop_sequence=1, station_id=s_other.id
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t_terminal.id,
+                stop_sequence=2,
+                station_id=s_vskp.id,
+                arrival_time="12:00:00",
+            ),
         ]
     )
 
@@ -79,12 +113,13 @@ def test_api_network_reversals_success(client: TestClient, db_session: Session) 
     data = response.json()
     assert data["station_code"] == "VSKP"
     assert data["reversal_count"] == 1
-    
+
     p1 = data["reversing_trains"][0]
     assert p1["train_number"] == "11019"
     assert p1["adjoining_station_code"] == "MIPM"
     assert p1["arrival_time"] == "20:55:00"
     assert p1["departure_time"] == "21:15:00"
+
 
 def test_api_network_reversals_empty(client: TestClient, db_session: Session) -> None:
     setup_data(db_session)
@@ -95,17 +130,19 @@ def test_api_network_reversals_empty(client: TestClient, db_session: Session) ->
     assert data["reversal_count"] == 0
     assert data["reversing_trains"] == []
 
+
 def test_api_network_reversals_unknown_station(client: TestClient, db_session: Session) -> None:
     setup_data(db_session)
     response = client.get("/api/v1/network/stations/XXX/reversals")
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
 
+
 def test_api_network_reversals_isolation(client: TestClient, db_session: Session) -> None:
     # Set inactive
     setup_data(db_session)
     db_session.execute(DatasetSnapshot.__table__.update().values(status="ARCHIVED"))
     db_session.commit()
-    
+
     response = client.get("/api/v1/network/stations/VSKP/reversals")
     assert response.status_code == 503

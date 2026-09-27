@@ -40,12 +40,39 @@ def setup_data(db_session: Session) -> None:
 
     db_session.add_all(
         [
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=1, station_id=s_orig.id, departure_time="10:00:00", source_day=1),
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=2, station_id=s_dest.id, arrival_time="11:00:00", source_day=1), 
-            
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=1,
+                station_id=s_orig.id,
+                departure_time="10:00:00",
+                source_day=1,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=2,
+                station_id=s_dest.id,
+                arrival_time="11:00:00",
+                source_day=1,
+            ),
             # Exactly 60 minutes later! (should NOT be in the window of 10:00 since it is half-open)
-            TrainStopObservation(snapshot_id=1, train_id=t2.id, stop_sequence=1, station_id=s_orig.id, departure_time="11:00:00", source_day=1),
-            TrainStopObservation(snapshot_id=1, train_id=t2.id, stop_sequence=2, station_id=s_dest.id, arrival_time="12:00:00", source_day=1),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t2.id,
+                stop_sequence=1,
+                station_id=s_orig.id,
+                departure_time="11:00:00",
+                source_day=1,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t2.id,
+                stop_sequence=2,
+                station_id=s_dest.id,
+                arrival_time="12:00:00",
+                source_day=1,
+            ),
         ]
     )
     db_session.commit()
@@ -62,15 +89,18 @@ def test_service_network_bunching_success(db_session: Session) -> None:
     # Therefore max count is 1.
     assert result["peak_60min_trains"] == 1
 
+
 def test_service_network_bunching_invalid_station(db_session: Session) -> None:
     setup_data(db_session)
     with pytest.raises(ValueError, match="(?i)not found"):
         calculate_edge_temporal_bunching(db_session, 1, "XXX", "DST")
 
+
 def test_service_network_bunching_no_edge(db_session: Session) -> None:
     setup_data(db_session)
     with pytest.raises(ValueError, match="(?i)no qualifying adjacent timetable edge found"):
         calculate_edge_temporal_bunching(db_session, 1, "DST", "ORG")
+
 
 def test_service_network_bunching_same_station(db_session: Session) -> None:
     setup_data(db_session)

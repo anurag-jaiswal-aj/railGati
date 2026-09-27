@@ -24,14 +24,28 @@ def setup_structural_halts_data(db_session: Session) -> typing.Any:
 
     train = Train(id=1, number="15905")
     db_session.add(train)
-    
+
     train_two_stop = Train(id=2, number="12301")
     db_session.add(train_two_stop)
     db_session.flush()
 
     # Create dummy stations
     stations = []
-    for code in ["CAPE", "DGR", "BZA", "NJP", "GHY", "DBRG", "TNY", "ABC", "XYZ", "NULL_ARR", "NULL_DEP", "START", "END"]:
+    for code in [
+        "CAPE",
+        "DGR",
+        "BZA",
+        "NJP",
+        "GHY",
+        "DBRG",
+        "TNY",
+        "ABC",
+        "XYZ",
+        "NULL_ARR",
+        "NULL_DEP",
+        "START",
+        "END",
+    ]:
         s = Station(code=code)
         db_session.add(s)
         stations.append(s)
@@ -108,7 +122,7 @@ def test_get_structural_halts_success(
     data = response.json()
     assert data["train_number"] == "15905"
     assert data["timetable_snapshot_id"] == 2
-    
+
     # 40m, 20m, 15m, 15m, 15m, 15m, 0m -> 7 qualifying intermediate stops
     assert len(data["halts"]) == 7
 
@@ -139,7 +153,7 @@ def test_get_structural_halts_success(
 
     assert data["halts"][4]["station_code"] == "NJP"
     assert data["halts"][4]["dwell_minutes"] == 15.0
-    
+
     assert data["halts"][5]["station_code"] == "XYZ"
     assert data["halts"][5]["dwell_minutes"] == 15.0
 

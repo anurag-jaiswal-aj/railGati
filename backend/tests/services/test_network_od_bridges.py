@@ -38,8 +38,22 @@ def setup_data(db_session: Session) -> None:
 
     db_session.add_all(
         [
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=1, station_id=s_orig.id, departure_time="10:00:00", source_day=1),
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=2, station_id=s_dest.id, arrival_time="11:00:00", source_day=1),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=1,
+                station_id=s_orig.id,
+                departure_time="10:00:00",
+                source_day=1,
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=2,
+                station_id=s_dest.id,
+                arrival_time="11:00:00",
+                source_day=1,
+            ),
         ]
     )
     db_session.commit()
@@ -52,11 +66,12 @@ def test_service_network_od_bridges_success(db_session: Session) -> None:
     assert result["unique_origins_count"] == 1
     assert result["unique_destinations_count"] == 1
     assert result["unique_od_pairs_count"] == 1
-    
+
     pairs = result["top_od_pairs"]
     assert len(pairs) == 1
     assert pairs[0]["origin_station_code"] == "ORG"
     assert pairs[0]["destination_station_code"] == "DST"
+
 
 def test_service_network_od_bridges_invalid_station(db_session: Session) -> None:
     setup_data(db_session)

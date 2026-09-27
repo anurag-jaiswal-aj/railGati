@@ -40,10 +40,34 @@ def setup_data(db_session: Session) -> None:
 
     db_session.add_all(
         [
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=1, station_id=s_other.id, departure_time="20:00:00"),
-            TrainStopObservation(snapshot_id=1, train_id=t1.id, stop_sequence=2, station_id=s_ndls.id, arrival_time="23:20:00"),
-            TrainStopObservation(snapshot_id=1, train_id=t2.id, stop_sequence=1, station_id=s_ndls.id, departure_time="01:40:00"),
-            TrainStopObservation(snapshot_id=1, train_id=t2.id, stop_sequence=2, station_id=s_other.id, arrival_time="05:00:00"),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=1,
+                station_id=s_other.id,
+                departure_time="20:00:00",
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t1.id,
+                stop_sequence=2,
+                station_id=s_ndls.id,
+                arrival_time="23:20:00",
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t2.id,
+                stop_sequence=1,
+                station_id=s_ndls.id,
+                departure_time="01:40:00",
+            ),
+            TrainStopObservation(
+                snapshot_id=1,
+                train_id=t2.id,
+                stop_sequence=2,
+                station_id=s_other.id,
+                arrival_time="05:00:00",
+            ),
         ]
     )
     db_session.commit()
@@ -54,9 +78,9 @@ def test_service_network_paired_services_success(db_session: Session) -> None:
     result = calculate_station_paired_services(db_session, 1, "NDLS")
     assert result[0] == "NDLS"
     assert result[1] == "New Delhi"
-    assert result[2] == 1 # count
-    assert result[3] == 140.0 # avg
-    
+    assert result[2] == 1  # count
+    assert result[3] == 140.0  # avg
+
     pairs = result[4]
     assert len(pairs) == 1
     assert pairs[0]["arriving_train_number"] == "12486"
@@ -64,6 +88,7 @@ def test_service_network_paired_services_success(db_session: Session) -> None:
     assert pairs[0]["arrival_time"] == "23:20:00"
     assert pairs[0]["departure_time"] == "01:40:00"
     assert pairs[0]["clock_gap_minutes"] == 140
+
 
 def test_service_network_paired_services_invalid_station(db_session: Session) -> None:
     setup_data(db_session)
