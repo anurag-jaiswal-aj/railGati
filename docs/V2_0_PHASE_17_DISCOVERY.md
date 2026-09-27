@@ -1,108 +1,125 @@
 # V2.0 PHASE 17 DISCOVERY: Network O-D Travel Time Analytics
 
-## 1. Phase Objective
-The objective of V2.0 Phase 17 is to extract and aggregate the continuous scheduled travel duration (travel time) between any two arbitrary, non-adjacent stations (Origin-Destination pairs) directly connected by continuous train services.
+## 1. Title
+V2.0 PHASE 17 DISCOVERY: Network O-D Travel Time Analytics
 
 ## 2. Status
-Discovery Only. No implementation, tests, or APIs have been created.
+Discovery Only. No implementation, migrations, tests, or APIs have been created. Phase 18 is not started.
 
-## 3. V2.0 Context & Existing Capability Map
+## 3. Objective
+The objective of V2.0 Phase 17 is to extract and aggregate the continuous scheduled travel duration (travel time) between any two arbitrary, non-adjacent stations (Origin-Destination pairs) directly connected by continuous train services.
+
+## 4. Existing V2.0 Context
 The RailGati V2.0 analytics suite currently provides several structural and topological dimensions, but heavily relies on occurrence counts, set similarities, and path definitions.
-
-**Existing Dimensions:**
 - **Phases 2-5**: Network Path reachability, bounding, and attribution (hop-counts).
 - **Phase 6**: Corridors (topological groups).
-- **Phases 7, 8, 10**: Centrality, edge volume, O-D flow volumes (train count volumes).
+- **Phases 7, 8, 10**: Centrality, edge volume, O-D flow volumes. Phase 8 measures historical network-edge service occurrence volume. Phase 10 measures O-D train count volumes.
 - **Phase 9**: Terminus roles.
 - **Phase 11**: Station Dwell Analytics (wait times at a single node).
-- **Phase 12, 13**: Route complexity and Temporal concentration (peak hours at a single node).
+- **Phases 12, 13**: Route complexity and Temporal concentration (peak hours at a single node).
 - **Phase 14**: Edge Flow Asymmetry.
 - **Phases 15, 16**: Train/Station Route Set Similarity (Jaccard overlaps).
 
-**Missing Dimension**: None of the above capabilities measure the *temporal span of a continuous path*. Phase 10 calculates the *volume* of trains between an O-D pair, and Phase 8 handles the *velocity/duration* strictly for immediate edges (adjacent nodes). Phase 17 bridges this gap by calculating transit durations across multi-hop continuous services.
+## 5. Candidate Directions
+1. **Network O-D Travel Time Analytics**: Calculating travel duration across all continuous services connecting an origin and destination.
+2. **Train Journey Duration Analytics**: Total end-to-end scheduled transit duration of a train from first origin to final terminus.
+3. **Bounded Temporal Reachability (Isochrone)**: Finding all stations reachable within a strictly bounded duration.
+4. **Train Stopping Pattern Alignment (Sequence Similarity)**: The longest common continuous sequence of stops between two trains.
 
-## 4. Candidate Directions Considered
-Four candidates were identified exploring genuinely new analytical dimensions:
-1. **Network O-D Travel Time Analytics**: Calculating the minimum, maximum, and average travel duration across all continuous services connecting an origin and destination.
-2. **Train Journey Duration Analytics**: Calculating the total end-to-end scheduled transit duration of a train from its first origin to its final terminus.
-3. **Bounded Temporal Reachability (Isochrone)**: Finding all stations reachable from an origin station within a strictly bounded duration (e.g. 120 minutes).
-4. **Train Stopping Pattern Alignment (Sequence Similarity)**: Calculating the longest common continuous sequence of stops between two trains (in contrast to Phase 15's unordered set overlap).
+## 6. Candidate Comparison
+Candidate 1 adds a highly useful temporal dimension missing from the existing suite. Candidate 3 was rejected due to exponential performance risks without a Graph DB. Candidate 4 overlaps conceptually with Phase 15 but uses ordering. Candidate 2 is useful but narrower in scope than Candidate 1.
 
-## 5. Candidate Comparison & Selection Rationale
-**Selected Candidate**: **Network O-D Travel Time Analytics**
+## 7. Selected Direction
+**Network O-D Travel Time Analytics (Station Pair Duration Analytics)**
 
-**Rationale**:
-- **Novelty**: Adds a critical missing temporal dimension (journey duration) across multi-hop services.
+## 8. Selection Rationale
+- **Novelty**: Answers "How long does it take?" across multi-hop services, adding a missing continuous temporal duration dimension.
 - **Semantic Precision**: Resolves day-crossing arithmetic robustly using `source_day` without needing a complex pathing engine.
-- **Usefulness**: Answering "How long does it take to travel from A to B?" is fundamentally more useful to end users than raw flow volumes (Phase 10) or Jaccard similarities (Phases 15/16).
-- **Performance**: As proven in exploration, calculating exact durations from direct relational self-joins takes `<15ms` in PostgreSQL utilizing existing indexes, keeping it well within the ₹0 budget and latency limits.
-- Bounded Temporal Reachability (Isochrone) was discarded because recursive time accumulation in CTEs risks exponential explosion and performance degradation without a dedicated Graph DB.
+- **Implementation & Performance**: Operates safely and quickly within PostgreSQL (`< 15ms` local benchmarks) natively.
+- **Data Support**: Fully supported by historical timetable properties.
 
-## 6. Scope & Non-Goals
-**Scope**:
-- Calculate travel time (min, max, avg) between a specified origin station and destination station for all continuous train services in the active timetable snapshot.
+## 9. Scope
+- Calculate travel time (min, max, avg) and valid O-D occurrence counts between a specified origin station and destination station for all continuous train services in the active timetable snapshot.
 - Handle day crossings natively using `source_day`.
-- Exclude missing data points (NULL timings).
 
-**Non-Goals**:
+## 10. Non-Goals
 - Do not implement transfer-inclusive journeys (multi-train trips). This strictly measures continuous service (one train).
-- Do not predict real-world delays or live operation speeds.
-- Do not attempt to calculate geographic distance or train speed (KM/H), as geospatial segment metrics are unavailable in the current dataset.
+- Do not predict real-world delays, live operation speeds, or passenger demand.
+- Do not calculate geographic distances or train speed (KM/H).
+- Do not mix snapshots.
 
-## 7. Data Sources & Tables
+## 11. Data Sources/Tables
 - `train_stop_observations`: Contains the ordered `stop_sequence`, `arrival_time`, `departure_time`, and `source_day` per `train_id`.
 - `stations`: To resolve station codes to internal IDs.
 - `station_observations`: To retrieve canonical station names for the active snapshot.
 
-## 8. Snapshot Semantics
-- The query must strictly isolate to the active `timetable_snapshot_id`.
-- Temporal attributes (`arrival_time`, `departure_time`, `source_day`) must only be extracted from observations belonging to the active snapshot.
+## 12. Snapshot Semantics
+- Every train-stop lookup MUST use the same active timetable snapshot.
+- Origin observation, destination observation, train identity, aggregation, and station metadata are strictly snapshot-consistent.
 
-## 9. Exact Metric Definitions
-- **Duration (Minutes)**: Evaluated per valid train connecting the Origin (O) and Destination (D) where O's stop sequence < D's stop sequence.
-  - Formula: `((D.source_day - O.source_day) * 1440) + (EXTRACT(EPOCH FROM D.arrival_time::time)/60) - (EXTRACT(EPOCH FROM O.departure_time::time)/60)`.
-- **Minimum Duration**: The lowest calculated duration among valid trains.
-- **Maximum Duration**: The highest calculated duration among valid trains.
-- **Average Duration**: The arithmetic mean of all calculated durations, rounded to 1 decimal place.
-- **Fastest Train Count**: Number of trains achieving exactly the minimum duration.
+## 13. Exact Unit of Analysis
+The unit of analysis is a **qualifying origin-destination occurrence pair**.
+This means:
+- Origin station O
+- Destination station D
+- Same train
+- `origin.stop_sequence < destination.stop_sequence`
 
-## 10. Graph-Build Dependency
-- **Zero Graph Dependency**: This capability operates entirely through relational bounds on the `train_stop_observations` table. It does not require `RailwayNetworkEdge`, `RailwayServiceEdge`, or recursive graphing logic.
+Every pair meeting these criteria constitutes one valid O-D observation segment.
 
-## 11. Repeated-Occurrence & Directionality Semantics
-- **Directionality**: Directed. O-D metrics from `NDLS` -> `CNB` only look at trains where `NDLS.stop_sequence < CNB.stop_sequence`.
-- **Repeated Occurrences**: If a train loops and visits a station multiple times, the query relies on the earliest valid departure from O and the earliest valid arrival at D, or evaluates all valid pairs. For simplicity, filtering on `tso1.stop_sequence < tso2.stop_sequence` evaluates all valid sequential pairings of a looping train.
+## 14. Exact Duration Formula
+`((destination.source_day - origin.source_day) * 1440) + (EXTRACT(EPOCH FROM destination.arrival_time::time)/60) - (EXTRACT(EPOCH FROM origin.departure_time::time)/60)`
 
-## 12. Time & Missing-Data Semantics
-- Exclude pairs where `tso1.departure_time` is NULL or `tso2.arrival_time` is NULL, as accurate duration cannot be computed.
+## 15. Repeated Occurrence Semantics
+If a train visits the origin or destination multiple times (e.g., A → B → A → C), **every** valid occurrence pair where `origin.stop_sequence < destination.stop_sequence` is selected and contributes as an independent analytical unit.
+- They are not collapsed to one train.
+- They count separately.
+- E.g., if a train loops MTD → DNA → MTD → DNA, there could be 3 valid MTD → DNA occurrence pairs (seq 1->2, 1->4, 3->4). All valid pairs are aggregated.
 
-## 13. Query Design
-**Expected SQL/CTE Stages**:
-1. **Target Identification**: Resolve Origin and Destination station codes to their primary IDs.
-2. **Intersection Join**: `JOIN train_stop_observations tso1` with `tso2` on `train_id`, filtered by `snapshot_id = :snapshot_id`.
-3. **Sequence Bound**: Filter where `tso1.station_id = O`, `tso2.station_id = D`, and `tso1.stop_sequence < tso2.stop_sequence`.
-4. **Time Bound**: Filter where `tso1.departure_time IS NOT NULL` and `tso2.arrival_time IS NOT NULL`.
-5. **Aggregation**: `COUNT(DISTINCT train_id)`, `MIN(duration)`, `MAX(duration)`, `AVG(duration)`.
+## 16. Directionality
+- O → D is independent from D → O.
+- Reverse-direction observations are not merged. The query explicitly preserves direction via the `<` sequence constraint.
 
-## 14. Performance Investigation & EXPLAIN Findings
-Exploratory benchmarking on active local snapshot 2 (`~8,989` stations, `~5,207` trains) for O-D pair `NDLS` (ID 8534) to `CNB` (ID 1779) yielded:
-- **Planning Time**: 1.615 ms
-- **Execution Time**: 9.052 ms
+## 17. Return-Train Semantics
+`return_train_number` is metadata only. It does not merge reverse directions, alter duration, alter counts, or deduplicate services.
 
-**Plan Insights**:
-- **Index Usage**: Explicitly uses `ix_train_stops_snapshot_station` to instantly isolate valid observations for both NDLS and CNB.
-- **Join Strategy**: Employs an efficient `Merge Join` over the resulting subsets ordered by `train_id`.
-- **Sequential Scans**: Zero full-table sequential scans. The query remains extremely bound to the indexed subsets.
-- **Scalability**: The Cartesian product risk is neutralized because the self-join is scoped entirely to a strict intersection of `train_id` on two pre-filtered station index scans.
+## 18. Missing-Data Semantics
+- `origin departure_time NULL`: Exclude the observation pair.
+- `destination arrival_time NULL`: Exclude the observation pair.
+- `origin source_day NULL` or `destination source_day NULL`: Exclude.
+- Invalid clock values / Negative computed duration: Exclude.
+- Zero duration: Retain.
+- Overnight/day-crossing: Safely computed via `source_day` arithmetic.
 
-## 15. API Proposal
-**GET /api/v1/network/stations/{from_station_code}/travel-time/{to_station_code}**
+## 19. Query Design
+The query is a direct CTE performing a self-join bounded heavily by index constraints.
+- Joins `train_stop_observations` to itself.
+- Filters by active `snapshot_id`, origin station, destination station, and sequence constraint.
+- Aggregates the resulting intersection natively.
 
-**Request Parameters**:
-- `from_station_code` (str): Origin station code.
-- `to_station_code` (str): Destination station code.
+## 20. Cardinality Considerations
+Expected cardinality:
+- Origin observation rows: Typically `100-500` rows.
+- Destination observation rows: Typically `100-500` rows.
+- Joined train pairs: Because the self-join is constrained by `train_id`, `snapshot_id`, and `stop_sequence`, the intersection typically yields `<100` valid duration observations.
+- Final aggregation: 1 row.
+The query cannot accidentally create a huge Cartesian product because it is explicitly bound by train identity and exact station bounds on both sides of the self-join.
 
-**Response Schema**:
+## 21. SQL/CTE Stages
+1. **Target Identification**: Resolve Origin and Destination codes.
+2. **Intersection CTE (`od_trains`)**: Join `tso1` and `tso2` on `train_id` where `snapshot_id` matches, `tso1.station_id = O`, `tso2.station_id = D`, `tso1.stop_sequence < tso2.stop_sequence`, and times are `IS NOT NULL`.
+3. **Aggregation**: `COUNT(train_id)`, `COUNT(DISTINCT train_id)`, `MIN(duration)`, `MAX(duration)`, `AVG(duration)`.
+
+## 22. API Proposal
+`GET /api/v1/network/stations/{from_station_code}/travel-time/{to_station_code}`
+Returns exactly one aggregate object for the ordered O-D pair.
+
+## 23. Request Parameters
+- Path: `from_station_code` (str), `to_station_code` (str).
+- Optional: None.
+- Limit: Not applicable (single aggregate).
+
+## 24. Response Schema
 ```json
 {
   "timetable_snapshot_id": 2,
@@ -110,46 +127,81 @@ Exploratory benchmarking on active local snapshot 2 (`~8,989` stations, `~5,207`
   "from_station_name": "New Delhi",
   "to_station_code": "CNB",
   "to_station_name": "Kanpur Central",
-  "total_continuous_trains": 38,
+  "qualifying_occurrence_count": 38,
+  "distinct_train_count": 38,
   "min_duration_minutes": 274,
   "max_duration_minutes": 435,
   "avg_duration_minutes": 340.3
 }
 ```
 
-**HTTP Error Semantics**:
+## 25. Error Semantics
 - `404 Not Found`: Either `from_station_code` or `to_station_code` does not exist in the active snapshot.
-- `400 Bad Request`: `from_station_code` equals `to_station_code` (self-loop duration is meaningless).
+- `400 Bad Request`: `from_station_code` equals `to_station_code` (self-loop duration is mathematically invalid here).
+- Empty Result: If the stations exist but share zero qualifying trains, returns HTTP 200 with counts = 0 and durations = `null`.
 
-## 16. Real-Data Validation
-**Local testing using actual Snapshot 2 data**:
-- **O-D Pair**: `NDLS` to `CNB`
-- **Total Trains**: 38 continuous services.
-- **Min Duration**: 274 minutes (4h 34m).
-- **Max Duration**: 435 minutes (7h 15m).
-- **Avg Duration**: ~340.3 minutes.
+## 26. Graph Dependency
+Zero graph dependency. This operates purely on `train_stop_observations`. `RailwayGraphBuild`, `RailwayNetworkEdge`, and `RailwayServiceEdge` are completely unnecessary.
 
-## 17. Testing Strategy
-- **Normal Case**: Verify duration arithmetic exactly matches expected outputs for known NDLS->CNB schedules.
-- **Missing Data**: Ensure trains lacking `arrival_time` or `departure_time` do not crash the aggregation or yield negative numbers.
-- **Day Crossings**: Ensure a train arriving the next day correctly factors in the `1440` minute multiplier from `source_day`.
-- **Reverse Direction**: Validate `from_station=CNB` to `to_station=NDLS` accurately segregates trains going the opposite way.
-- **Self-Loop Exclusion**: Assert `400 Bad Request` if origin and destination codes are identical.
-- **Zero Trains**: Verify a valid 200 OK response with `null` metrics if the stations exist but share no continuous trains.
+## 27. Performance Investigation
+Current local benchmark executing the O-D intersection CTE shows extremely favorable characteristics utilizing `ix_train_stops_snapshot_station`.
 
-## 18. Historical/Static Disclaimer
-**MANDATORY**: This capability computes scheduled temporal travel duration derived exclusively from historical static timetable constraints. It explicitly does NOT reflect live train speed, geographic distance, delays, real-time rerouting, or real-world passenger operational reliability.
+## 28. EXPLAIN Findings
+For `NDLS` → `CNB` on active snapshot 2:
+- **Planning Time**: 1.615 ms
+- **Execution Time**: 9.052 ms
+- **Actual Rows**: 38 resulting from a `Merge Join` bounded by two `Index Scans`.
+- **Scan Methods**: `Index Scan` on `ix_train_stops_snapshot_station` (filtering `arrival_time`/`departure_time IS NOT NULL`).
+- **Sequential Scans**: None.
+- **Join Methods**: `Merge Join`.
+- **Aggregate Methods**: Standard SQL scalar aggregates.
+- **Sort Methods**: `quicksort` (Memory: ~40kB).
 
-## 19. ₹0 Compliance
-This metric adheres to the strict ₹0 constraint. No external distance APIs (like Google Maps) or paid geospatial mapping services are queried; all mathematical extraction occurs within PostgreSQL using relative epoch timestamps.
+## 29. Real-Data Validation
+Snapshot 2 calculations explicitly verified via PostgreSQL:
+- **NDLS → CNB**: 38 qualifying occurrences, 38 distinct trains. Min 274 min, Max 435 min, Avg 340.3 min.
+- **CNB → NDLS** (Reverse): 39 qualifying occurrences, 39 distinct trains. Min 288 min, Max 660 min, Avg 363.2 min.
+- **MTD → DNA** (Repeated station example): 25 qualifying occurrences, 23 distinct trains. Min 29 min, Max 60 min, Avg 38.2 min.
+- **NDLS → DNA** (No valid journey): 0 occurrences.
 
-## 20. Implementation Sequencing
+## 30. Testing Strategy
+- **Normal O-D pair**: Verify min, max, avg arithmetic.
+- **Reverse O-D pair**: Ensure counts and durations differ from the forward direction.
+- **Same station**: Ensure 400 Bad Request.
+- **No qualifying train**: Ensure 200 OK with `null` durations and 0 counts.
+- **One qualifying train**: Ensure min == max == avg.
+- **Multiple trains**: Validate floating point average rounding.
+- **Repeated origin/destination station**: Ensure multiple valid pairs per train aggregate correctly (e.g., MTD -> DNA).
+- **Loop route**: Ensure deterministic parsing of sequence permutations.
+- **Missing arrival/departure/source_day**: Verify exclusion.
+- **Overnight/day crossing**: Ensure `(source_day * 1440)` arithmetic computes properly.
+- **Invalid/negative duration**: Verify exclusion.
+- **Snapshot isolation**: Ensure only active snapshot data is evaluated.
+- **Return_train_number**: Ensure it is ignored gracefully.
+
+## 31. Historical/Static Disclaimer
+**MANDATORY**: This metric calculates scheduled temporal duration characteristics derived strictly from the historical timetable static dataset. It does **NOT** represent live journey duration, actual operating time, delay, reliability, passenger travel time, traffic/congestion, geographic distance, current service, current timetable, guaranteed itinerary, or calendar/day-specific operation.
+
+## 32. ₹0 Compliance
+No paid APIs, maps, or external routing engines are required. Operates completely natively within the local PostgreSQL instance.
+
+## 33. Implementation Sequencing
 1. Implement Pydantic request/response schemas.
 2. Implement service logic containing the CTE/Aggregation in `services/network.py`.
 3. Wire the endpoint in `api/v1/network.py`.
-4. Create localized unit and service boundary tests.
-5. Execute API integration tests and perform final real-data profiling.
-6. Verify non-regression against Phases 1-16.
+4. Create focused tests per the Test Strategy.
+5. Execute API tests.
+6. Real-data validation and EXPLAIN verification.
+7. Full regression suite run.
+8. Quality checks.
 
-## 21. Deferred/Future Possibilities
-- **Transfer Isochrones**: Factoring multi-hop, multi-train transfers into travel time aggregation is deferred due to unbounded combinatorial explosion risks.
+## 34. Deferred/Future Work
+- Multi-train transfer duration analytics (finding total trip time across multiple connections).
+
+---
+*Phase 17 vs Existing Analytics Overlap Assessment*:
+Phase 17 calculates scheduled temporal duration characteristics for an ordered O-D station pair. It differs fundamentally from:
+- **Phase 5**: Path attribution focuses on verifying graph completeness for a single train, not temporal aggregation across all trains.
+- **Phase 8**: Edge volume strictly measures train count volume on adjacent nodes, not travel duration across arbitrary non-adjacent nodes.
+- **Phase 10**: O-D Flow volume measures the *count of trains* connecting an origin and destination, lacking any duration analytics.
+- **Phase 11**: Station dwell calculates wait time at a single station node, not travel time between two nodes.
