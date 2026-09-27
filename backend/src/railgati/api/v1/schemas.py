@@ -335,3 +335,19 @@ class HubCentralityResponse(BaseModel):
         ..., description="The ID of the dataset snapshot providing the active timetable data"
     )
     hubs: list[HubCentralityItem] = Field(..., description="List of stations ranked by centrality")
+
+class EdgeVolumeItem(BaseModel):
+    from_station_code: str = Field(..., description="Canonical source station code")
+    from_station_name: str = Field(..., description="Canonical source station name")
+    to_station_code: str = Field(..., description="Canonical destination station code")
+    to_station_name: str = Field(..., description="Canonical destination station name")
+    service_occurrence_volume: int = Field(
+        ..., description="Aggregate historical train occurrences on this segment"
+    )
+
+
+class EdgeVolumeResponse(BaseModel):
+    timetable_snapshot_id: int = Field(
+        ..., description="The ID of the dataset snapshot providing the active timetable data"
+    )
+    edges: list[EdgeVolumeItem] = Field(..., description="List of segments ranked by volume")

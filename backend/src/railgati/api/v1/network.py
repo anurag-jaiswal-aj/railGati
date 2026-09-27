@@ -22,7 +22,11 @@ from railgati.api.v1.snapshots import (
 )
 from railgati.db import get_db
 from railgati.models.station import Station, StationObservation
-from railgati.services.network import find_network_paths, find_reachable_stations
+from railgati.services.network import (
+    calculate_edge_volume,
+    find_network_paths,
+    find_reachable_stations,
+)
 
 router = APIRouter(prefix="/network", tags=["Network"])
 
@@ -681,3 +685,42 @@ def get_network_hubs(
         if "unavailable" in msg.lower() or "not found" in msg.lower():
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+
+
+@router.get(
+    "/edges/volume",
+    response_model=schemas.EdgeVolumeResponse,
+    summary="Topological Edge Volume Analytics",
+)
+def get_edge_volume(
+    limit: int = Query(50, ge=1, le=500, description="Number of edges to return"),
+    db: Session = Depends(get_db),
+) -> schemas.EdgeVolumeResponse:
+    """Compute topological edge volume (Segment Centrality).
+
+    Returns the historically most frequently traversed direct physical segments
+    (adjacent station pairs) in the active network snapshot.
+    """
+    snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        items = calculate_edge_volume(
+            db=db,
+            timetable_snapshot_id=snapshot_id,
+            limit=limit,
+        )
+    except ValueError as e:
+        if "ACTIVE RailwayGraphBuild" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(e),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
+
+    return schemas.EdgeVolumeResponse(
+        timetable_snapshot_id=snapshot_id,
+        edges=items,
+    )

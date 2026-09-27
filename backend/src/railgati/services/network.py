@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from railgati.api.v1.schemas import HubCentralityItem
+from railgati.api.v1.schemas import EdgeVolumeItem, HubCentralityItem
 from railgati.models.graph import RailwayGraphBuild
 from railgati.models.provenance import DatasetSnapshot
 
@@ -918,3 +918,84 @@ def calculate_hub_centrality(
         raise ValueError(f"Invalid sort_by value: {sort_by}")
 
     return items[:limit]
+
+def calculate_edge_volume(
+    db: Session, timetable_snapshot_id: int, limit: int = 50
+) -> list[EdgeVolumeItem]:
+    """Calculate edge volume directly from historical RailwayNetworkEdge occurrences.
+
+    Args:
+        db: Database session.
+        timetable_snapshot_id: Active timetable snapshot ID.
+        limit: Number of edges to return.
+
+    Returns:
+        List of EdgeVolumeItem.
+
+    Raises:
+        ValueError: If graph build is not ACTIVE or snapshot is invalid.
+    """
+    build = db.scalar(
+        select(RailwayGraphBuild).filter(
+            RailwayGraphBuild.timetable_snapshot_id == timetable_snapshot_id,
+            RailwayGraphBuild.status == "ACTIVE",
+        )
+    )
+    if not build:
+        raise ValueError(
+            f"No ACTIVE RailwayGraphBuild found for timetable snapshot {timetable_snapshot_id}"
+        )
+
+    station_snapshot_id = db.scalar(
+        select(DatasetSnapshot.id)
+        .filter(DatasetSnapshot.status == "ACTIVE")
+        .filter(DatasetSnapshot.id.in_(
+            select(text("station_observations.snapshot_id FROM station_observations"))
+        ))
+        .order_by(DatasetSnapshot.retrieved_at.desc())
+        .limit(1)
+    )
+    if not station_snapshot_id:
+        # Fallback if the subquery text strategy fails in dialect:
+        res = db.execute(text("SELECT snapshot_id FROM station_observations LIMIT 1")).scalar()
+        if res:
+             station_snapshot_id = res
+
+    query = text("""
+        SELECT 
+            fs.code as from_station_code,
+            fso.name as from_station_name,
+            ts.code as to_station_code,
+            tso.name as to_station_name,
+            CAST(e.train_count AS INTEGER) as service_occurrence_volume
+        FROM railway_network_edges e
+        JOIN stations fs ON e.from_station_id = fs.id
+        JOIN stations ts ON e.to_station_id = ts.id
+        JOIN station_observations fso ON fso.station_id = fs.id
+        JOIN station_observations tso ON tso.station_id = ts.id
+        WHERE e.timetable_snapshot_id = :timetable_snapshot_id
+          AND fso.snapshot_id = :station_snapshot_id
+          AND tso.snapshot_id = :station_snapshot_id
+        ORDER BY e.train_count DESC, fs.code ASC, ts.code ASC
+        LIMIT :limit
+    """)
+
+    results = db.execute(
+        query,
+        {
+            "timetable_snapshot_id": timetable_snapshot_id,
+            "station_snapshot_id": station_snapshot_id,
+            "limit": limit,
+        },
+    ).fetchall()
+
+    return [
+        EdgeVolumeItem(
+            from_station_code=row.from_station_code,
+            from_station_name=row.from_station_name,
+            to_station_code=row.to_station_code,
+            to_station_name=row.to_station_name,
+            service_occurrence_volume=row.service_occurrence_volume,
+        )
+        for row in results
+    ]
