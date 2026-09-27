@@ -10,6 +10,7 @@ from railgati.api.v1 import schemas
 from railgati.api.v1.schemas import (
     ComplexityResponse,
     DwellResponse,
+    EdgeAsymmetryResponse,
     FlowResponse,
     NetworkPathAttributionResponse,
     NetworkPathItem,
@@ -30,6 +31,7 @@ from railgati.models.station import Station, StationObservation
 from railgati.services.network import (
     calculate_edge_volume,
     calculate_network_complexities,
+    calculate_network_edge_asymmetry,
     calculate_network_temporal_concentration,
     find_network_paths,
     find_reachable_stations,
@@ -939,4 +941,39 @@ def get_network_temporal_concentration(
         "limit": limit,
         "min_service_count": min_service_count,
         "items": concentrations,
+    }
+
+
+@router.get("/edge-asymmetry", response_model=EdgeAsymmetryResponse)
+def get_network_edge_asymmetry(
+    limit: int = Query(50, ge=1, le=500, description="Max results"),
+    min_total_volume: int = Query(
+        15, ge=0, description="Minimum combined total volume for the edge pair to qualify"
+    ),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Calculate Network Directional Edge Asymmetry Analytics.
+
+    Identifies track segments scheduled as one-way loops vs symmetrical corridors.
+    """
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+    station_snapshot_id = get_active_station_snapshot_id(db)
+
+    try:
+        items = calculate_network_edge_asymmetry(
+            db,
+            timetable_snapshot_id,
+            station_snapshot_id,
+            limit=limit,
+            min_total_volume=min_total_volume
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    return {
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "limit": limit,
+        "min_total_volume": min_total_volume,
+        "items": items,
     }

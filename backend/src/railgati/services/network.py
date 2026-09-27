@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from railgati.api.v1.schemas import (
     ComplexityItem,
     DwellItem,
+    EdgeAsymmetryItem,
     EdgeVolumeItem,
     FlowItem,
     HubCentralityItem,
@@ -1492,6 +1493,108 @@ def calculate_network_temporal_concentration(
             peak_hour_volume=row.peak_hour_volume,
             total_volume=row.total_volume,
             concentration_pct=row.concentration_pct,
+        )
+        for row in results
+    ]
+
+
+def calculate_network_edge_asymmetry(
+    db: Session,
+    timetable_snapshot_id: int,
+    station_snapshot_id: int,
+    limit: int = 50,
+    min_total_volume: int = 15,
+) -> list[EdgeAsymmetryItem]:
+    """
+    Calculate Network Directional Edge Asymmetry (Flow Imbalance).
+
+    Identifies track segments scheduled primarily as one-way loops vs symmetrical corridors.
+    """
+    graph_build = (
+        db.query(RailwayGraphBuild)
+        .filter(
+            RailwayGraphBuild.timetable_snapshot_id == timetable_snapshot_id,
+            RailwayGraphBuild.status == "ACTIVE",
+        )
+        .first()
+    )
+
+    if not graph_build:
+        raise ValueError(f"No ACTIVE graph build found for snapshot {timetable_snapshot_id}")
+
+    is_sqlite = db.bind and db.bind.dialect.name == "sqlite"
+    least_func = "MIN" if is_sqlite else "LEAST"
+    greatest_func = "MAX" if is_sqlite else "GREATEST"
+
+    query = text(f"""
+        WITH paired AS (
+            SELECT
+                {least_func}(from_station_id, to_station_id) as node_a,
+                {greatest_func}(from_station_id, to_station_id) as node_b,
+                SUM(CASE WHEN from_station_id = {least_func}(from_station_id, to_station_id) THEN train_count ELSE 0 END) as vol_ab,
+                SUM(CASE WHEN from_station_id = {greatest_func}(from_station_id, to_station_id) THEN train_count ELSE 0 END) as vol_ba
+            FROM railway_network_edges
+            WHERE timetable_snapshot_id = :timetable_snapshot_id
+            GROUP BY {least_func}(from_station_id, to_station_id), {greatest_func}(from_station_id, to_station_id)
+        ),
+        asymmetry AS (
+            SELECT
+                node_a,
+                node_b,
+                vol_ab,
+                vol_ba,
+                (vol_ab + vol_ba) as total_vol,
+                CASE
+                    WHEN (vol_ab + vol_ba) = 0 THEN 0
+                    ELSE ROUND(CAST(ABS(vol_ab - vol_ba) AS FLOAT) / CAST(vol_ab + vol_ba AS FLOAT) * 100.0, 1)
+                END as asymmetry_pct
+            FROM paired
+            WHERE (vol_ab + vol_ba) >= :min_total_volume
+        )
+        SELECT
+            CASE WHEN s1.code < s2.code THEN s1.code ELSE s2.code END as station_a_code,
+            CASE WHEN s1.code < s2.code THEN so1.name ELSE so2.name END as station_a_name,
+            CASE WHEN s1.code < s2.code THEN s2.code ELSE s1.code END as station_b_code,
+            CASE WHEN s1.code < s2.code THEN so2.name ELSE so1.name END as station_b_name,
+            CAST(CASE WHEN s1.code < s2.code THEN a.vol_ab ELSE a.vol_ba END AS INTEGER) as forward_volume,
+            CAST(CASE WHEN s1.code < s2.code THEN a.vol_ba ELSE a.vol_ab END AS INTEGER) as reverse_volume,
+            CAST(a.total_vol AS INTEGER) as total_volume,
+            CAST(a.asymmetry_pct AS FLOAT) as asymmetry_pct
+        FROM asymmetry a
+        JOIN stations s1 ON a.node_a = s1.id
+        JOIN stations s2 ON a.node_b = s2.id
+        JOIN station_observations so1 ON so1.station_id = s1.id
+        JOIN station_observations so2 ON so2.station_id = s2.id
+        WHERE so1.snapshot_id = :station_snapshot_id
+          AND so2.snapshot_id = :station_snapshot_id
+        ORDER BY
+            a.asymmetry_pct DESC,
+            a.total_vol DESC,
+            station_a_code ASC,
+            station_b_code ASC
+        LIMIT :limit
+    """)
+
+    results = db.execute(
+        query,
+        {
+            "timetable_snapshot_id": timetable_snapshot_id,
+            "station_snapshot_id": station_snapshot_id,
+            "min_total_volume": min_total_volume,
+            "limit": limit,
+        },
+    ).fetchall()
+
+    return [
+        EdgeAsymmetryItem(
+            station_a_code=row.station_a_code,
+            station_a_name=row.station_a_name,
+            station_b_code=row.station_b_code,
+            station_b_name=row.station_b_name,
+            forward_volume=row.forward_volume,
+            reverse_volume=row.reverse_volume,
+            total_volume=row.total_volume,
+            asymmetry_pct=row.asymmetry_pct,
         )
         for row in results
     ]

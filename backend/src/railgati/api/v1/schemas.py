@@ -442,3 +442,25 @@ class TemporalConcentrationResponse(BaseModel):
     limit: int
     min_service_count: int
     items: list[TemporalConcentrationItem]
+
+
+class EdgeAsymmetryItem(BaseModel):
+    """Historical scheduled directional edge flow imbalance for a station pair."""
+
+    station_a_code: str
+    station_a_name: str
+    station_b_code: str
+    station_b_name: str
+    forward_volume: int
+    reverse_volume: int
+    total_volume: int
+    asymmetry_pct: float
+
+
+class EdgeAsymmetryResponse(BaseModel):
+    """Network directional edge asymmetry analytics for the active graph build."""
+
+    timetable_snapshot_id: int
+    limit: int
+    min_total_volume: int
+    items: list[EdgeAsymmetryItem]
