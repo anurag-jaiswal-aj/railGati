@@ -3128,8 +3128,6 @@ def calculate_train_structural_halts(
           AND tso.train_id = :train_id
           AND tso.arrival_time IS NOT NULL 
           AND tso.departure_time IS NOT NULL
-          AND tso.arrival_time != 'None'
-          AND tso.departure_time != 'None'
           AND tso.stop_sequence > tb.min_seq
           AND tso.stop_sequence < tb.max_seq
         ORDER BY dwell_minutes DESC, s.code ASC

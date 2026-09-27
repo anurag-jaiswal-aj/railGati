@@ -1420,8 +1420,8 @@ def get_network_train_structural_halts(
 ) -> dict[str, typing.Any]:
     """
     Calculate Network Train Structural Halt Analytics.
-    This endpoint reports scheduled timetable dwell at intermediate stops.
-    It does not establish why a train dwells there and does not represent live/current operational halts.
+    This endpoint reports scheduled timetable dwell at strictly intermediate train stops.
+    It does not establish the operational reason for a dwell and does not represent live/current railway operations.
     """
     from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
     from railgati.services.network import calculate_train_structural_halts

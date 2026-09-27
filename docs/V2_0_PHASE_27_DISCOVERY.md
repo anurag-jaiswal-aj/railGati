@@ -12,16 +12,16 @@ Discover and define a new, genuinely distinct historical timetable analytics cap
 
 ### Candidate A: Network Train Structural Halt Analytics (Selected)
 - **Concept**: Analyzes a single train's scheduled route to identify and rank the intermediate stations where the train has the longest scheduled dwell times.
-- **Usefulness**: Structurally isolates operational intervention nodes (crew change, rake sharing wait, locomotive reversal, or major timetable padding) for a specific train route.
+- **Usefulness**: Structurally isolates scheduled structural/timetable dwell nodes for a specific train route.
 - **Unit**: Train.
 
 ### Candidate B: Network Train Scheduled Day-Boundary Analytics (Rejected)
-- **Concept**: Groups a train's progression by `source_day` to find the exact first and last station reached per scheduled operational day.
-- **Reason for Rejection**: Real Snapshot 2 validation reveals that intermediate non-passenger/technical observations frequently omit `source_day` (e.g. `source_day IS NULL` for 102 stops on Vivek Express 15905). This breaks contiguous day-boundary aggregations, making the metric unreliable without heavy data imputation, which violates strict historical dataset rules.
+- **Concept**: Groups a train's progression by `source_day` to find the exact first and last station reached per scheduled day.
+- **Reason for Rejection**: Real Snapshot 2 validation reveals that intermediate non-passenger/non-passenger observations frequently omit `source_day` (e.g. `source_day IS NULL` for 102 stops on Vivek Express 15905). This breaks contiguous day-boundary aggregations, making the metric unreliable without heavy data imputation, which violates strict historical dataset rules.
 
 ### Candidate C: Network Train Topological Convergence Analytics (Rejected)
 - **Concept**: Finds the exact sequence of overlapping stations (first shared, last shared) between two specific train services.
-- **Reason for Rejection**: Conceptually overlaps with Phase 15 (Route Similarity), which already measures topological intersection via the Jaccard index. Furthermore, querying exact topological sub-paths is fragile against minor technical-stop deviations.
+- **Reason for Rejection**: Conceptually overlaps with Phase 15 (Route Similarity), which already measures topological intersection via the Jaccard index. Furthermore, querying exact topological sub-paths is fragile against minor non-passenger-stop deviations.
 
 ### Candidate D: Station Express Bypass Analytics (Rejected)
 - **Concept**: Identifies trains that travel from station A to station C without stopping at an intermediate station B (where B is topologically between A and C on other services).
@@ -42,7 +42,7 @@ Discover and define a new, genuinely distinct historical timetable analytics cap
 ### 4.2 Semantic Guardrails
 - **DO NOT** claim these are guaranteed physical stops on the current live railway.
 - **DO NOT** claim these are locations where passengers board/alight.
-- **DO NOT** infer specific operational reasons (e.g., claiming a 20-min halt is definitively a crew change). It is simply a "structural timetable halt".
+- **DO NOT** claim any operational reason for a dwell. It is simply a "scheduled structural/timetable dwell".
 
 ### 4.3 Real Snapshot 2 Validation
 Querying the raw Snapshot 2 dataset for long-distance trains proves the capability:
@@ -52,7 +52,7 @@ Querying the raw Snapshot 2 dataset for long-distance trains proves the capabili
 - Vijayawada (BZA): 20 mins
 - New Jalpaiguri (NJP): 15 mins
 - Guwahati (GHY): 15 mins
-These perfectly mirror major structural interventions on this 4-day route.
+These perfectly map the scheduled structural halts on this 4-day route.
 
 **Shatabdi Express (12004)**:
 - Kanpur (CNB): 5 mins
