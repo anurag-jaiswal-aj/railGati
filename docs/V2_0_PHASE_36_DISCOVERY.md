@@ -1,7 +1,7 @@
 # V2.0 Phase 36 Discovery: Network Station Transfer-Free Reachability (TFR) Analytics
 
 ## 1. Phase Objective
-The objective of Phase 36 is to implement a robust, bounded structural network capability that measures a station's "direct connectivity envelope." Specifically, we will measure the **Station Transfer-Free Outbound Reach (TFOR)**, quantifying how many distinct destinations in the entire railway network can be reached from a given station without requiring a transfer (i.e., on a 1-seat ride).
+The objective of Phase 36 is to implement a robust, bounded structural network capability. Transfer-Free Outbound Reach (TFOR) measures the number of distinct downstream stations that are visited by at least one timetable train occurrence that also visits the selected station, without requiring a train change.
 
 ## 2. Candidate Capabilities Investigated
 During discovery, several genuinely distinct capability categories were evaluated to ensure compliance with the "no cosmetic aggregation" and "no renamed depths" constraints:
@@ -12,17 +12,21 @@ During discovery, several genuinely distinct capability categories were evaluate
 
 ## 3. Selected Capability
 **Network Station Transfer-Free Reachability (TFR) Analytics**
-This capability projects the topological edge graph into a hypergraph (where trains form continuous edges) to compute the true passenger-accessible connectivity size of a node, independently of its physical adjacency.
+This capability projects the topological edge graph into a hypergraph (where trains form continuous edges) to compute the timetable-derived structural reachability size of a node, independently of its immediate timetable neighbors.
 
 ## 4. Problem / Question Answered
-*“How many uniquely distinct stations can a passenger reach from this station without ever changing trains, and how does this compare to the station's immediate local connectivity?”*
+*“How many distinct downstream stations are visited by at least one timetable train occurrence that also visits the selected station, without requiring a train change, and how does this compare to the station's immediate outbound timetable neighbors?”*
 
 ## 5. Explicit Overlap Audit (Phases 1–35)
 - **vs Phase 1/2 (Reachability/Bounded Paths):** Phase 1 uses topological edge adjacency recursively (multi-hop). TFR uses strict `train_id` bounds.
-- **vs Phase 3 (Continuous Services):** Phase 3 answers "Is there a direct train from $O$ to specific $D$?" TFR answers "What is the total count of all unique $D$s accessible from $O$?" (Macro-level accessibility sizing).
+- **vs Phase 3 (Continuous Services):** Phase 3 evaluates whether there is a direct train from $O$ to a specific $D$. TFR evaluates the total count of all unique $D$s reachable on continuous train occurrences from $O$.
 - **vs Phase 5 (Hub Centrality):** Hub Centrality counts raw topological degree ($N_1$) and train volume. TFR counts unique stations globally reachable on the same train.
 - **vs Phase 18 (Outbound Transit):** Phase 18 computes service to immediate 1-hop neighbors only.
-- **vs Phase 20 (Station O-D Bridges):** Phase 20 counts the absolute endpoints (origin and destination) of trains passing through $S$. TFR counts *all* intermediate downstream stations, not just endpoints.
+- **vs Phase 20 (Station O-D Bridges):** 
+  Phase 20 extracts terminal origin/destination structure for services traversing the station, while Phase 36 counts the complete set of distinct downstream timetable stations reachable on those same continuous train occurrences.
+  For a timetable service: A → S → B → C → D
+  Phase 20 O-D bridge representation for S: A → D
+  Phase 36 TFOR downstream stations for S: B, C, D
 - **vs Phase 35 (2-Hop Reachability):** Phase 35 expands exactly two topological hops. TFR expands unbounded topologically, but is strictly bounded by train route length.
 
 ## 6. Why the Selected Capability is Distinct
@@ -30,7 +34,7 @@ TFR provides a completely new spatial dimension to station analytics. A station 
 
 ## 7. Exact Semantics
 For a target station $S$:
-1. **$N_1$ (Topological Outbound Degree):** The count of distinct stations $X$ where there is an active timetable edge $S \rightarrow X$.
+1. **$N_1$ (Topological Outbound Degree):** The number of distinct immediate outbound timetable neighbors of the selected station.
 2. **TFOR (Transfer-Free Outbound Reach):** The count of distinct stations $Z$ (where $Z \neq S$) such that there exists a train where $S$ precedes $Z$ in the stop sequence.
 3. **Reachability Span Ratio (TFOR / $N_1$):** Measures the average network penetration per outbound corridor.
 
@@ -38,11 +42,11 @@ For a target station $S$:
 Let $T$ be the set of all active trains in the timetable graph.
 Let $seq(t, S)$ be the stop sequence of train $t$ at station $S$.
 
-$$N_1(S) = |\{ X \mid \exists t \in T : seq(t, X) = seq(t, S) + 1 \}|$$
+TFOR(S) = number of distinct stations T such that at least one train occurrence visits S and later visits T in the same timetable service, with no transfer.
 
-$$TFOR(S) = |\{ Z \mid Z \neq S, \exists t \in T : seq(t, Z) > seq(t, S) \}|$$
+Reachability Span Ratio = TFOR(S) / |N1(S)|
 
-$$Ratio = \frac{TFOR(S)}{N_1(S)} \quad \text{(Undefined if } N_1(S) = 0 \text{)}$$
+The ratio is undefined when |N1(S)| = 0.
 
 ## 9. Data Dependencies
 - `DatasetSnapshot` (Status = ACTIVE).
@@ -131,8 +135,15 @@ The query was executed against the verified active Snapshot 2 dataset:
 - **Absolute Terminus ($N_1 = 0$):** No departing trains. API will raise a 400 Bad Request to protect the ratio calculation.
 
 ## 20. Non-Goals
-- Does not measure passenger demand or ticketing data.
-- Does not identify the physical railway tracks.
+This is a historical/static, timetable-derived structural metric.
+It does NOT measure:
+- passenger accessibility;
+- passenger demand;
+- actual passenger journeys;
+- physical railway connectivity;
+- operational continuity;
+- real-world travel feasibility.
+
 - Does not compute "1-transfer" or "2-transfer" reachability (this requires computationally expensive combinatorial joins).
 
 ## 21. ₹0 Constraints
