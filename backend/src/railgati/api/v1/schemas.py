@@ -705,3 +705,14 @@ class EdgePairedSymmetryResponse(BaseModel):
     total_forward_trains: int
     symmetrical_return_trains: int
     symmetry_ratio: float
+
+
+class StationNeighborhoodSymmetryResponse(BaseModel):
+    station_code: str
+    station_name: str
+    timetable_snapshot_id: int
+    outbound_destinations_count: int
+    inbound_origins_count: int
+    symmetric_neighbors_count: int
+    total_neighborhood_size: int
+    symmetry_ratio: float

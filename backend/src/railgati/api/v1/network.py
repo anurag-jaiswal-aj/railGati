@@ -23,6 +23,7 @@ from railgati.api.v1.schemas import (
     NetworkServiceAttributionResponse,
     RelativeEdgeSlownessResponse,
     RelativeStationDwellResponse,
+    StationNeighborhoodSymmetryResponse,
     StationOutboundDominanceResponse,
     StationSimilarityResponse,
     StructuralHaltResponse,
@@ -1556,6 +1557,34 @@ def get_edge_paired_symmetry(
 
     try:
         return calculate_edge_paired_route_symmetry(db, from_station, to_station)
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        if "no active timetable snapshot" in str(e).lower():
+            raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get(
+    "/stations/{station_code}/neighborhood-symmetry",
+    response_model=StationNeighborhoodSymmetryResponse,
+    summary="Calculate distinct neighborhood directional symmetry",
+    description=(
+        "Measures the Jaccard similarity between the queried station's distinct "
+        "adjacent scheduled outbound destinations and distinct adjacent scheduled inbound origins. "
+        "Evaluates pure graph topology; ignores edge volumes, return trains, and operational metrics."
+    ),
+)
+def get_station_neighborhood_symmetry(
+    station_code: str,
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    from railgati.services.network import calculate_station_neighborhood_symmetry
+
+    station_code = station_code.upper()
+
+    try:
+        return calculate_station_neighborhood_symmetry(db, station_code)
     except ValueError as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))

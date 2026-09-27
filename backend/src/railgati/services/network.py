@@ -3393,8 +3393,7 @@ def calculate_train_relative_station_dwell(
 def calculate_station_outbound_dominance(
     db: Session, timetable_snapshot_id: int, station_code: str
 ) -> dict[str, typing.Any]:
-    from sqlalchemy import text
-    from sqlalchemy import select
+    from sqlalchemy import select, text
 
     from railgati.api.v1.snapshots import get_active_station_snapshot_id
     from railgati.models.station import Station, StationObservation
@@ -3489,6 +3488,7 @@ def calculate_edge_paired_route_symmetry(
     actual operations, or operational continuity.
     """
     from sqlalchemy import text
+
     from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
     from railgati.models.station import Station
 
@@ -3498,19 +3498,11 @@ def calculate_edge_paired_route_symmetry(
     if not timetable_snapshot_id:
         raise ValueError("No active timetable snapshot available.")
 
-    from_station = (
-        db.query(Station)
-        .filter(Station.code == from_station_code.upper())
-        .first()
-    )
+    from_station = db.query(Station).filter(Station.code == from_station_code.upper()).first()
     if not from_station:
         raise ValueError(f"Station {from_station_code.upper()} not found.")
 
-    to_station = (
-        db.query(Station)
-        .filter(Station.code == to_station_code.upper())
-        .first()
-    )
+    to_station = db.query(Station).filter(Station.code == to_station_code.upper()).first()
     if not to_station:
         raise ValueError(f"Station {to_station_code.upper()} not found.")
 
@@ -3573,4 +3565,83 @@ def calculate_edge_paired_route_symmetry(
         "total_forward_trains": total_forward,
         "symmetrical_return_trains": symmetrical,
         "symmetry_ratio": float(symmetrical) / total_forward if total_forward > 0 else 0.0,
+    }
+
+
+def calculate_station_neighborhood_symmetry(
+    db: Session, station_code: str
+) -> dict[str, typing.Any]:
+    from sqlalchemy import select, text
+
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.models.station import Station, StationObservation
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+    if not timetable_snapshot_id:
+        raise ValueError("No active timetable snapshot available.")
+
+    station = db.scalar(select(Station).filter(Station.code == station_code.upper()))
+    if not station:
+        raise ValueError(f"Station {station_code.upper()} not found.")
+
+    obs = db.scalar(
+        select(StationObservation).filter(
+            StationObservation.station_id == station.id,
+            StationObservation.snapshot_id == timetable_snapshot_id,
+        )
+    )
+    station_name = obs.name if obs else f"{station.code} (Unknown)"
+
+    query = text("""
+        WITH outbound AS (
+            SELECT DISTINCT tso2.station_id
+            FROM train_stop_observations tso1
+            JOIN train_stop_observations tso2 
+              ON tso1.train_id = tso2.train_id 
+              AND tso1.snapshot_id = tso2.snapshot_id 
+              AND tso1.stop_sequence + 1 = tso2.stop_sequence
+            WHERE tso1.snapshot_id = :snapshot_id AND tso1.station_id = :station_id
+        ),
+        inbound AS (
+            SELECT DISTINCT tso1.station_id
+            FROM train_stop_observations tso1
+            JOIN train_stop_observations tso2 
+              ON tso1.train_id = tso2.train_id 
+              AND tso1.snapshot_id = tso2.snapshot_id 
+              AND tso1.stop_sequence + 1 = tso2.stop_sequence
+            WHERE tso2.snapshot_id = :snapshot_id AND tso2.station_id = :station_id
+        )
+        SELECT 
+            (SELECT COUNT(*) FROM outbound) AS out_count,
+            (SELECT COUNT(*) FROM inbound) AS in_count,
+            (SELECT COUNT(*) FROM outbound o JOIN inbound i ON o.station_id = i.station_id) AS intersection_count,
+            (SELECT COUNT(DISTINCT station_id) FROM (SELECT station_id FROM outbound UNION SELECT station_id FROM inbound) u) AS union_count
+    """)
+
+    result = db.execute(
+        query, {"snapshot_id": timetable_snapshot_id, "station_id": station.id}
+    ).fetchone()
+    if not result:
+        # Fallback theoretically impossible due to CTE counts, but to be safe
+        raise ValueError(f"No qualifying analytical data for {station_code.upper()}")
+
+    out_count = int(result[0] or 0)
+    in_count = int(result[1] or 0)
+    intersection_count = int(result[2] or 0)
+    union_count = int(result[3] or 0)
+
+    if union_count == 0:
+        raise ValueError(
+            f"Station {station_code.upper()} has no adjacent scheduled timetable occurrences."
+        )
+
+    return {
+        "station_code": station.code,
+        "station_name": station_name,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "outbound_destinations_count": out_count,
+        "inbound_origins_count": in_count,
+        "symmetric_neighbors_count": intersection_count,
+        "total_neighborhood_size": union_count,
+        "symmetry_ratio": float(intersection_count) / float(union_count),
     }
