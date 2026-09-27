@@ -1,4 +1,5 @@
 from sqlalchemy import text
+
 from railgati.db import get_session_factory
 
 db = get_session_factory()()
@@ -76,4 +77,3 @@ print("--- 12004 ---")
 query2 = text(query.text.replace("'15905'", "'12004'"))
 for r in db.execute(query2).fetchall():
     print(r._mapping)
-

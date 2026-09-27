@@ -21,6 +21,7 @@ from railgati.api.v1.schemas import (
     NetworkReachabilityResponse,
     NetworkServiceAttributionResponse,
     RelativeEdgeSlownessResponse,
+    RelativeStationDwellResponse,
     StationSimilarityResponse,
     StructuralHaltResponse,
     TemporalConcentrationResponse,
@@ -1465,6 +1466,36 @@ def get_network_train_relative_edge_slowness(
 
     try:
         return calculate_train_relative_edge_slowness(
+            db, timetable_snapshot_id, train_number, limit=limit
+        )
+    except ValueError as e:
+        if "not found" in str(e):
+            raise HTTPException(status_code=404, detail="Train not found")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get(
+    "/trains/{train_number}/relative-station-dwell",
+    response_model=RelativeStationDwellResponse,
+)
+def get_network_train_relative_station_dwell(
+    train_number: str,
+    limit: int = Query(10, ge=1, le=50, description="Max stations to return"),
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    """
+    Calculate Network Train Relative Station Dwell Analytics.
+    This metric compares scheduled timetable dwell for a train's intermediate occurrences
+    against the timetable-average scheduled dwell for the identical station.
+    It does not measure physical actual wait times, capacity, passenger demand, or operational causes.
+    """
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.services.network import calculate_train_relative_station_dwell
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return calculate_train_relative_station_dwell(
             db, timetable_snapshot_id, train_number, limit=limit
         )
     except ValueError as e:

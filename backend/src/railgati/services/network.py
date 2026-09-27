@@ -3283,3 +3283,108 @@ def calculate_train_relative_edge_slowness(
         "timetable_snapshot_id": snapshot_id,
         "slow_edges": slow_edges,
     }
+
+
+def calculate_train_relative_station_dwell(
+    db: Session, snapshot_id: int, train_number: str, limit: int = 10
+) -> dict[str, typing.Any]:
+    from railgati.models.train import Train
+
+    train = db.query(Train).filter(Train.number == train_number).first()
+    if not train:
+        raise ValueError(f"Train {train_number} not found")
+
+    bind = db.get_bind()
+    is_sqlite = bind.dialect.name == "sqlite" if bind else False
+
+    if is_sqlite:
+        time_diff_expr = """
+            (strftime("%s", "1970-01-01 " || tso.departure_time) - strftime("%s", "1970-01-01 " || tso.arrival_time)) +
+            CASE WHEN strftime("%s", "1970-01-01 " || tso.departure_time) < strftime("%s", "1970-01-01 " || tso.arrival_time)
+                 THEN 86400 ELSE 0 END
+        """
+    else:
+        time_diff_expr = """
+            (EXTRACT(EPOCH FROM tso.departure_time::time) - EXTRACT(EPOCH FROM tso.arrival_time::time)) +
+            CASE WHEN EXTRACT(EPOCH FROM tso.departure_time::time) < EXTRACT(EPOCH FROM tso.arrival_time::time)
+                 THEN 86400 ELSE 0 END
+        """
+
+    query = text(f"""
+        WITH target_dwells AS (
+            SELECT 
+                tso.stop_sequence as target_seq,
+                tso.station_id as station_id,
+                s.code as station_code,
+                CAST(({time_diff_expr}) / 60.0 AS FLOAT) as target_dwell
+            FROM train_stop_observations tso
+            JOIN stations s ON s.id = tso.station_id
+            WHERE tso.snapshot_id = :snapshot_id
+              AND tso.train_id = :train_id
+              AND tso.arrival_time IS NOT NULL
+              AND tso.departure_time IS NOT NULL
+        ),
+        target_station_ids AS (
+            SELECT DISTINCT station_id FROM target_dwells
+        ),
+        network_dwells AS (
+            SELECT 
+                tso.station_id,
+                CAST(({time_diff_expr}) / 60.0 AS FLOAT) as dwell
+            FROM train_stop_observations tso
+            JOIN target_station_ids tid ON tid.station_id = tso.station_id
+            WHERE tso.snapshot_id = :snapshot_id
+              AND tso.arrival_time IS NOT NULL
+              AND tso.departure_time IS NOT NULL
+        ),
+        network_stats AS (
+            SELECT 
+                station_id,
+                AVG(dwell) as avg_dwell,
+                COUNT(*) as occurrence_count
+            FROM network_dwells
+            GROUP BY station_id
+        )
+        SELECT 
+            td.target_seq,
+            td.station_code,
+            td.target_dwell,
+            ns.avg_dwell,
+            ns.occurrence_count,
+            td.target_dwell / NULLIF(ns.avg_dwell, 0) as slowness_ratio
+        FROM target_dwells td
+        JOIN network_stats ns ON ns.station_id = td.station_id
+        WHERE (td.target_dwell / NULLIF(ns.avg_dwell, 0)) > 1.0
+        ORDER BY slowness_ratio DESC, td.target_seq ASC
+        LIMIT :limit
+    """)
+
+    results = db.execute(
+        query, {"snapshot_id": snapshot_id, "train_id": train.id, "limit": limit}
+    ).fetchall()
+
+    relative_dwells = []
+    for r in results:
+        row = dict(r._mapping)
+        relative_dwells.append(
+            {
+                "target_stop_sequence": row["target_seq"],
+                "station_code": row["station_code"],
+                "target_dwell_minutes": float(row["target_dwell"])
+                if row["target_dwell"] is not None
+                else 0.0,
+                "network_average_minutes": float(row["avg_dwell"])
+                if row["avg_dwell"] is not None
+                else 0.0,
+                "network_occurrence_count": row["occurrence_count"],
+                "slowness_ratio": float(row["slowness_ratio"])
+                if row["slowness_ratio"] is not None
+                else 0.0,
+            }
+        )
+
+    return {
+        "train_number": train_number,
+        "timetable_snapshot_id": snapshot_id,
+        "relative_dwells": relative_dwells,
+    }

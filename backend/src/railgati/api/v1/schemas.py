@@ -671,3 +671,18 @@ class RelativeEdgeSlownessResponse(BaseModel):
     train_number: str
     timetable_snapshot_id: int
     slow_edges: list[RelativeEdgeSlownessItem]
+
+
+class RelativeStationDwellItem(BaseModel):
+    target_stop_sequence: int
+    station_code: str
+    target_dwell_minutes: float
+    network_average_minutes: float
+    network_occurrence_count: int
+    slowness_ratio: float
+
+
+class RelativeStationDwellResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    relative_dwells: list[RelativeStationDwellItem]
