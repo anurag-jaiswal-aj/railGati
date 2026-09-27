@@ -422,3 +422,23 @@ class ComplexityResponse(BaseModel):
     limit: int
     min_service_count: int
     items: list[ComplexityItem]
+
+
+class TemporalConcentrationItem(BaseModel):
+    """Historical scheduled calendar-hour occurrence concentration for a station."""
+
+    station_code: str
+    station_name: str
+    peak_hour_val: int
+    peak_hour_volume: int
+    total_volume: int
+    concentration_pct: float
+
+
+class TemporalConcentrationResponse(BaseModel):
+    """Network station temporal concentration analytics for the active timetable snapshot."""
+
+    timetable_snapshot_id: int
+    limit: int
+    min_service_count: int
+    items: list[TemporalConcentrationItem]

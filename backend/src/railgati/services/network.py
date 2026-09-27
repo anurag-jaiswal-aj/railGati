@@ -10,6 +10,7 @@ from railgati.api.v1.schemas import (
     EdgeVolumeItem,
     FlowItem,
     HubCentralityItem,
+    TemporalConcentrationItem,
     TerminusItem,
 )
 from railgati.models.graph import RailwayGraphBuild
@@ -1397,6 +1398,100 @@ def calculate_network_complexities(
             station_name=row.station_name,
             avg_route_stops=row.avg_route_stops,
             service_count=row.service_count,
+        )
+        for row in results
+    ]
+
+
+def calculate_network_temporal_concentration(
+    db: Session,
+    timetable_snapshot_id: int,
+    station_snapshot_id: int,
+    limit: int = 50,
+    min_service_count: int = 15,
+) -> list[TemporalConcentrationItem]:
+    """
+    Calculate the historical station temporal concentration (calendar-hour peak).
+
+    This derives the maximum occurrences in any fixed calendar hour as a percentage
+    of total occurrences for stations in the active snapshot.
+    """
+    is_sqlite = db.bind and db.bind.dialect.name == "sqlite"
+    hour_extract = (
+        "CAST(strftime('%H', COALESCE(departure_time, arrival_time)) AS INTEGER)"
+        if is_sqlite
+        else "CAST(EXTRACT(HOUR FROM CAST(COALESCE(departure_time, arrival_time) AS time)) AS INTEGER)"
+    )
+
+    query = text(f"""
+        WITH station_events AS (
+            SELECT
+                station_id,
+                {hour_extract} as event_hour
+            FROM train_stop_observations
+            WHERE snapshot_id = :timetable_snapshot_id
+              AND (departure_time IS NOT NULL OR arrival_time IS NOT NULL)
+        ),
+        station_peak AS (
+            SELECT
+                station_id,
+                event_hour,
+                COUNT(*) as hour_volume
+            FROM station_events
+            GROUP BY station_id, event_hour
+        ),
+        station_max AS (
+            SELECT
+                station_id,
+                MAX(hour_volume) as peak_hour_volume,
+                SUM(hour_volume) as total_volume
+            FROM station_peak
+            GROUP BY station_id
+            HAVING SUM(hour_volume) >= :min_service_count
+        )
+        SELECT
+            s.code as station_code,
+            so.name as station_name,
+            CAST(sm.peak_hour_volume AS INTEGER) as peak_hour_volume,
+            CAST(sm.total_volume AS INTEGER) as total_volume,
+            CAST(ROUND(sm.peak_hour_volume * 100.0 / sm.total_volume, 1) AS FLOAT) as concentration_pct,
+            (
+                SELECT sp.event_hour
+                FROM station_peak sp
+                WHERE sp.station_id = sm.station_id
+                  AND sp.hour_volume = sm.peak_hour_volume
+                ORDER BY sp.event_hour ASC
+                LIMIT 1
+            ) as peak_hour_val
+        FROM station_max sm
+        JOIN stations s ON sm.station_id = s.id
+        JOIN station_observations so ON so.station_id = s.id
+        WHERE so.snapshot_id = :station_snapshot_id
+        ORDER BY
+            concentration_pct DESC,
+            sm.total_volume DESC,
+            s.code ASC
+        LIMIT :limit
+    """)
+
+    results = db.execute(
+        query,
+        {
+            "timetable_snapshot_id": timetable_snapshot_id,
+            "station_snapshot_id": station_snapshot_id,
+            "limit": limit,
+            "min_service_count": min_service_count,
+        },
+    ).fetchall()
+
+    return [
+        TemporalConcentrationItem(
+            station_code=row.station_code,
+            station_name=row.station_name,
+            peak_hour_val=row.peak_hour_val,
+            peak_hour_volume=row.peak_hour_volume,
+            total_volume=row.total_volume,
+            concentration_pct=row.concentration_pct,
         )
         for row in results
     ]

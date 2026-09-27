@@ -18,6 +18,7 @@ from railgati.api.v1.schemas import (
     NetworkReachabilityItem,
     NetworkReachabilityResponse,
     NetworkServiceAttributionResponse,
+    TemporalConcentrationResponse,
     TerminusResponse,
 )
 from railgati.api.v1.snapshots import (
@@ -29,6 +30,7 @@ from railgati.models.station import Station, StationObservation
 from railgati.services.network import (
     calculate_edge_volume,
     calculate_network_complexities,
+    calculate_network_temporal_concentration,
     find_network_paths,
     find_reachable_stations,
 )
@@ -904,4 +906,37 @@ def get_network_complexities(
         "limit": limit,
         "min_service_count": min_service_count,
         "items": complexities,
+    }
+
+
+@router.get("/temporal-concentration", response_model=TemporalConcentrationResponse)
+def get_network_temporal_concentration(
+    limit: int = Query(50, ge=1, le=500, description="Max results"),
+    min_service_count: int = Query(
+        15, ge=1, le=1000, description="Minimum total occurrences to qualify"
+    ),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Calculate Network Station Temporal Concentration.
+
+    Returns the scheduled time-of-day concentration (calendar-hour peak)
+    for stations within the active timetable snapshot.
+    """
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+    station_snapshot_id = get_active_station_snapshot_id(db)
+
+    concentrations = calculate_network_temporal_concentration(
+        db,
+        timetable_snapshot_id,
+        station_snapshot_id,
+        limit=limit,
+        min_service_count=min_service_count,
+    )
+
+    return {
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "limit": limit,
+        "min_service_count": min_service_count,
+        "items": concentrations,
     }
