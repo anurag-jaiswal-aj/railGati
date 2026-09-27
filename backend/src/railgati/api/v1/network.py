@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from railgati.api.v1 import schemas
 from railgati.api.v1.schemas import (
+    FlowResponse,
     NetworkPathAttributionResponse,
     NetworkPathItem,
     NetworkPathResponse,
@@ -768,4 +769,48 @@ def get_network_termini(
     return TerminusResponse(
         timetable_snapshot_id=timetable_snapshot_id,
         termini=termini_data,
+    )
+
+
+@router.get(
+    "/flows",
+    response_model=FlowResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get Network O-D Flow Analytics",
+    description="Retrieve origin-destination pairs ranked by historical flow volume.",
+)
+def get_network_flows(
+    limit: Annotated[
+        int,
+        Query(
+            description="Maximum number of flows to return",
+            ge=1,
+            le=500,
+        ),
+    ] = 50,
+    db: Session = Depends(get_db),  # noqa: B008
+) -> FlowResponse:
+    """Discover the highest-volume historical timetable flow pairs."""
+    try:
+        timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+
+    from railgati.services.network import calculate_network_flows
+
+    try:
+        flows_data = calculate_network_flows(
+            db=db,
+            timetable_snapshot_id=timetable_snapshot_id,
+            limit=limit,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        )
+
+    return FlowResponse(
+        timetable_snapshot_id=timetable_snapshot_id,
+        flows=flows_data,
     )

@@ -365,3 +365,18 @@ class TerminusResponse(BaseModel):
     """Network terminus analytics for the active timetable snapshot."""
     timetable_snapshot_id: int
     termini: list[TerminusItem]
+
+
+class FlowItem(BaseModel):
+    """Historical Origin-Destination timetable flow boundaries."""
+    origin_station_code: str
+    origin_station_name: str
+    destination_station_code: str
+    destination_station_name: str
+    flow_volume: int
+
+
+class FlowResponse(BaseModel):
+    """Network O-D flow analytics for the active timetable snapshot."""
+    timetable_snapshot_id: int
+    flows: list[FlowItem]

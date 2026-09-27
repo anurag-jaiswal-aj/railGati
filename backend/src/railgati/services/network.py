@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from railgati.api.v1.schemas import EdgeVolumeItem, HubCentralityItem, TerminusItem
+from railgati.api.v1.schemas import EdgeVolumeItem, FlowItem, HubCentralityItem, TerminusItem
 from railgati.models.graph import RailwayGraphBuild
 from railgati.models.provenance import DatasetSnapshot
 
@@ -1088,6 +1088,102 @@ def calculate_network_termini(db: Session, timetable_snapshot_id: int, limit: in
             originating_count=row.originating_count,
             terminating_count=row.terminating_count,
             total_terminus_volume=row.total_terminus_volume,
+        )
+        for row in results
+    ]
+
+def calculate_network_flows(db: Session, timetable_snapshot_id: int, limit: int = 50) -> list[FlowItem]:
+    """
+    Computes global Origin-Destination flow density.
+    Identifies the strongest structural flows between absolute timetable occurrence boundaries.
+    
+    Args:
+        db: SQLAlchemy session.
+        timetable_snapshot_id: The ID of the active timetable snapshot.
+        limit: Max number of pairs to return (default 50).
+        
+    Returns:
+        List of FlowItem.
+        
+    Raises:
+        ValueError: If snapshot is invalid or active station snapshot missing.
+    """
+    station_snapshot_id = db.scalar(
+        select(DatasetSnapshot.id)
+        .filter(DatasetSnapshot.status == "ACTIVE")
+        .filter(DatasetSnapshot.id.in_(
+            select(text("station_observations.snapshot_id FROM station_observations"))
+        ))
+        .order_by(DatasetSnapshot.retrieved_at.desc())
+        .limit(1)
+    )
+    if not station_snapshot_id:
+        res = db.execute(text("SELECT snapshot_id FROM station_observations LIMIT 1")).scalar()
+        if res:
+             station_snapshot_id = res
+
+    query = text("""
+        WITH train_bounds AS (
+            SELECT 
+                train_id,
+                MIN(stop_sequence) as start_seq,
+                MAX(stop_sequence) as end_seq
+            FROM train_stop_observations
+            WHERE snapshot_id = :timetable_snapshot_id
+            GROUP BY train_id
+        ),
+        od_pairs AS (
+            SELECT
+                t_start.station_id as origin_id,
+                t_end.station_id as dest_id,
+                COUNT(tb.train_id) as flow_volume
+            FROM train_bounds tb
+            JOIN train_stop_observations t_start 
+              ON tb.train_id = t_start.train_id 
+             AND tb.start_seq = t_start.stop_sequence
+             AND t_start.snapshot_id = :timetable_snapshot_id
+            JOIN train_stop_observations t_end 
+              ON tb.train_id = t_end.train_id 
+             AND tb.end_seq = t_end.stop_sequence
+             AND t_end.snapshot_id = :timetable_snapshot_id
+            GROUP BY t_start.station_id, t_end.station_id
+        )
+        SELECT 
+            s_org.code as origin_station_code,
+            so_org.name as origin_station_name,
+            s_dest.code as destination_station_code,
+            so_dest.name as destination_station_name,
+            CAST(od.flow_volume AS INTEGER) as flow_volume
+        FROM od_pairs od
+        JOIN stations s_org ON od.origin_id = s_org.id
+        JOIN station_observations so_org ON so_org.station_id = s_org.id
+        JOIN stations s_dest ON od.dest_id = s_dest.id
+        JOIN station_observations so_dest ON so_dest.station_id = s_dest.id
+        WHERE so_org.snapshot_id = :station_snapshot_id
+          AND so_dest.snapshot_id = :station_snapshot_id
+        ORDER BY 
+            od.flow_volume DESC, 
+            s_org.code ASC, 
+            s_dest.code ASC
+        LIMIT :limit
+    """)
+
+    results = db.execute(
+        query,
+        {
+            "timetable_snapshot_id": timetable_snapshot_id,
+            "station_snapshot_id": station_snapshot_id,
+            "limit": limit,
+        },
+    ).fetchall()
+
+    return [
+        FlowItem(
+            origin_station_code=row.origin_station_code,
+            origin_station_name=row.origin_station_name,
+            destination_station_code=row.destination_station_code,
+            destination_station_name=row.destination_station_name,
+            flow_volume=row.flow_volume,
         )
         for row in results
     ]
