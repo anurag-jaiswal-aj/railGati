@@ -3166,7 +3166,7 @@ def calculate_train_relative_edge_slowness(
     db: Session, snapshot_id: int, train_number: str, limit: int = 10
 ) -> dict[str, typing.Any]:
     from railgati.models.train import Train
-    
+
     train = db.query(Train).filter(Train.number == train_number).first()
     if not train:
         raise ValueError(f"Train {train_number} not found")
@@ -3208,6 +3208,10 @@ def calculate_train_relative_edge_slowness(
               AND tso1.departure_time IS NOT NULL
               AND tso2.arrival_time IS NOT NULL
         ),
+        target_edge_pairs AS (
+            SELECT DISTINCT src_station_id, dst_station_id
+            FROM target_edges
+        ),
         network_edges AS (
             SELECT 
                 tso1.station_id as src_station_id,
@@ -3218,8 +3222,8 @@ def calculate_train_relative_edge_slowness(
               ON tso1.snapshot_id = tso2.snapshot_id 
              AND tso1.train_id = tso2.train_id 
              AND tso1.stop_sequence + 1 = tso2.stop_sequence
-            JOIN target_edges te 
-              ON te.src_station_id = tso1.station_id AND te.dst_station_id = tso2.station_id
+            JOIN target_edge_pairs tep 
+              ON tep.src_station_id = tso1.station_id AND tep.dst_station_id = tso2.station_id
             WHERE tso1.snapshot_id = :snapshot_id
               AND tso1.departure_time IS NOT NULL
               AND tso2.arrival_time IS NOT NULL
@@ -3261,14 +3265,14 @@ def calculate_train_relative_edge_slowness(
                 "target_stop_sequence": row["target_seq"],
                 "source_station_code": row["src"],
                 "destination_station_code": row["dst"],
-                "target_duration_minutes": round(row["target_duration"], 2)
+                "target_duration_minutes": float(row["target_duration"])
                 if row["target_duration"] is not None
                 else 0.0,
-                "network_average_minutes": round(row["avg_duration"], 2)
+                "network_average_minutes": float(row["avg_duration"])
                 if row["avg_duration"] is not None
                 else 0.0,
                 "network_occurrence_count": row["occurrence_count"],
-                "slowness_ratio": round(row["slowness_ratio"], 2)
+                "slowness_ratio": float(row["slowness_ratio"])
                 if row["slowness_ratio"] is not None
                 else 0.0,
             }
