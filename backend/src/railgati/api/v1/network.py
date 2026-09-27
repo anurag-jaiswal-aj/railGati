@@ -24,6 +24,7 @@ from railgati.api.v1.schemas import (
     RelativeEdgeSlownessResponse,
     RelativeStationDwellResponse,
     StationNeighborhoodSymmetryResponse,
+    StationNeighborhoodTriadicClosureResponse,
     StationOutboundDominanceResponse,
     StationSimilarityResponse,
     StructuralHaltResponse,
@@ -1585,6 +1586,34 @@ def get_station_neighborhood_symmetry(
 
     try:
         return calculate_station_neighborhood_symmetry(db, station_code)
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        if "no active timetable snapshot" in str(e).lower():
+            raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get(
+    "/stations/{station_code}/neighborhood-triadic-closure",
+    response_model=StationNeighborhoodTriadicClosureResponse,
+    summary="Calculate distinct neighborhood triadic closure",
+    description=(
+        "Measures the triadic closure ratio among a station's distinct adjacent scheduled "
+        "outbound neighbors. Evaluates purely static timetable topology. Returns HTTP 400 "
+        "if the outbound degree is less than 2 (ratio undefined)."
+    ),
+)
+def get_station_neighborhood_triadic_closure(
+    station_code: str,
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    from railgati.services.network import calculate_station_neighborhood_triadic_closure
+
+    station_code = station_code.upper()
+
+    try:
+        return calculate_station_neighborhood_triadic_closure(db, station_code)
     except ValueError as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))

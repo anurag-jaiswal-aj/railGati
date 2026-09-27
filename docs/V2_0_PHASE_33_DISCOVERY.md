@@ -133,7 +133,7 @@ Tested for MGS on Snapshot 2.
 ## 19. Real Snapshot 2 Validation
 The SQL was validated against actual Snapshot 2 data:
 - **MGS (Mughal Sarai Junction):** Outbound degree 8. Possible unique pairs 28. Actual closed pairs 6. Ratio: 6/28 $\approx 0.214$.
-- **BYS (Barsali):** Outbound degree 3. Possible unique pairs 3. Actual closed pairs 0. Ratio: 0.0. (Valid station, zero closure, HTTP 200).
+- **BYS (Barsali):** Outbound degree 3. Possible unique pairs 3. Actual closed pairs 1. Ratio: 1/3 $\approx 0.333$. (Valid station, partial closure, HTTP 200).
 - **XX-BECE (Bhilai East Cabin):** Outbound degree 1. Ratio undefined. (Triggers HTTP 400).
 
 ## 20. Independent Validation
@@ -146,7 +146,7 @@ An independent Python script successfully reproduced the exact metric for MGS.
 
 ## 21. Edge Cases
 - **Degree 0 or 1:** The denominator is zero. Triggers HTTP 400.
-- **Valid Degree $\ge 2$ with Zero Closure:** e.g., BYS (degree 3). Ratio safely returns 0.0 with HTTP 200.
+- **Valid Degree $\ge 2$:** e.g., BYS (degree 3). Ratio safely returns 0.333 with HTTP 200.
 - **Symmetric Edges:** A bidirectional pair $(A \rightarrow B$ and $B \rightarrow A)$ closes the unordered pair exactly once.
 - **Unknown Station Code:** Returns HTTP 404.
 - **Station S as an Endpoint:** By definition, an edge between two members of $N_{out}(S)$ cannot involve $S$ unless $S$ is itself a member of its own $N_{out}(S)$ (a self-loop), which is exceptionally rare in the timetable. Even if it did, canonicalization handles it securely.

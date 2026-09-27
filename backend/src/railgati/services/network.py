@@ -3645,3 +3645,90 @@ def calculate_station_neighborhood_symmetry(
         "total_neighborhood_size": union_count,
         "symmetry_ratio": float(intersection_count) / float(union_count),
     }
+
+def calculate_station_neighborhood_triadic_closure(db: Session, station_code: str) -> dict:
+    """Phase 33: Calculates Network Station Neighborhood Triadic Closure Analytics."""
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id, get_active_station_snapshot_id
+    from railgati.models.station import Station, StationObservation
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+    if not timetable_snapshot_id:
+        raise ValueError("No active timetable snapshot available.")
+
+    station = db.scalar(select(Station).filter(Station.code == station_code.upper()))
+    if not station:
+        raise ValueError(f"Station {station_code.upper()} not found.")
+
+    station_snapshot_id = get_active_station_snapshot_id(db)
+    if not station_snapshot_id:
+        raise ValueError("No active station snapshot available.")
+
+    obs = db.scalar(
+        select(StationObservation).filter(
+            StationObservation.station_id == station.id,
+            StationObservation.snapshot_id == station_snapshot_id,
+        )
+    )
+    if not obs:
+        raise ValueError(f"Station {station_code.upper()} not found in active station snapshot.")
+    station_name = obs.name
+
+    query = text("""
+        WITH outbound_neighbors AS (
+            SELECT DISTINCT tso2.station_id
+            FROM train_stop_observations tso1
+            JOIN train_stop_observations tso2 
+              ON tso1.train_id = tso2.train_id 
+              AND tso1.snapshot_id = tso2.snapshot_id 
+              AND tso1.stop_sequence + 1 = tso2.stop_sequence
+            WHERE tso1.snapshot_id = :snapshot_id AND tso1.station_id = :station_id
+        ),
+        possible_pairs AS (
+            SELECT a.station_id AS n1, b.station_id AS n2
+            FROM outbound_neighbors a
+            JOIN outbound_neighbors b ON a.station_id < b.station_id
+        ),
+        actual_edges AS (
+            SELECT DISTINCT 
+                CASE WHEN tso1.station_id < tso2.station_id THEN tso1.station_id ELSE tso2.station_id END AS n1,
+                CASE WHEN tso1.station_id > tso2.station_id THEN tso1.station_id ELSE tso2.station_id END AS n2
+            FROM train_stop_observations tso1
+            JOIN train_stop_observations tso2 
+              ON tso1.train_id = tso2.train_id 
+              AND tso1.snapshot_id = tso2.snapshot_id 
+              AND tso1.stop_sequence + 1 = tso2.stop_sequence
+            WHERE tso1.snapshot_id = :snapshot_id 
+              AND tso1.station_id IN (SELECT station_id FROM outbound_neighbors)
+              AND tso2.station_id IN (SELECT station_id FROM outbound_neighbors)
+              AND tso1.station_id != tso2.station_id
+        )
+        SELECT 
+            (SELECT COUNT(*) FROM outbound_neighbors) AS outbound_degree,
+            (SELECT COUNT(*) FROM possible_pairs) AS possible_count,
+            (SELECT COUNT(*) FROM actual_edges) AS actual_count
+    """)
+
+    result = db.execute(
+        query, {"snapshot_id": timetable_snapshot_id, "station_id": station.id}
+    ).fetchone()
+
+    if not result:
+        raise ValueError(f"No qualifying analytical data for {station_code.upper()}")
+
+    out_degree = int(result[0] or 0)
+    possible_count = int(result[1] or 0)
+    actual_count = int(result[2] or 0)
+
+    if out_degree < 2:
+        raise ValueError(f"Station {station_code.upper()} has outbound_degree < 2. Triadic closure is mathematically undefined.")
+
+    return {
+        "station_code": station.code,
+        "station_name": station_name,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "outbound_degree": out_degree,
+        "possible_neighbor_pairs": possible_count,
+        "closed_neighbor_pairs": actual_count,
+        "triadic_closure_ratio": float(actual_count) / float(possible_count),
+    }
+

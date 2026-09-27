@@ -716,3 +716,13 @@ class StationNeighborhoodSymmetryResponse(BaseModel):
     symmetric_neighbors_count: int
     total_neighborhood_size: int
     symmetry_ratio: float
+
+
+class StationNeighborhoodTriadicClosureResponse(BaseModel):
+    station_code: str
+    station_name: str
+    timetable_snapshot_id: int
+    outbound_degree: int
+    possible_neighbor_pairs: int
+    closed_neighbor_pairs: int
+    triadic_closure_ratio: float
