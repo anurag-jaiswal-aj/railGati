@@ -1102,7 +1102,7 @@ def get_network_travel_time(
         )
     except ValueError as e:
         msg = str(e)
-        if "not found" in msg.lower():
+        if "not found" in msg.lower() or "no qualifying adjacent" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
@@ -1143,7 +1143,7 @@ def get_network_station_paired_services(
         )
     except ValueError as e:
         msg = str(e)
-        if "not found" in msg.lower():
+        if "not found" in msg.lower() or "no qualifying adjacent" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
@@ -1180,7 +1180,7 @@ def get_network_station_reversals(
         )
     except ValueError as e:
         msg = str(e)
-        if "not found" in msg.lower():
+        if "not found" in msg.lower() or "no qualifying adjacent" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
@@ -1216,7 +1216,7 @@ def get_network_station_outbound_transit(
         )
     except ValueError as e:
         msg = str(e)
-        if "not found" in msg.lower():
+        if "not found" in msg.lower() or "no qualifying adjacent" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
@@ -1277,7 +1277,7 @@ def get_network_station_od_bridges(
         result = calculate_station_od_bridges(db, timetable_snapshot_id, station_code)
     except ValueError as e:
         msg = str(e)
-        if "not found" in msg.lower():
+        if "not found" in msg.lower() or "no qualifying adjacent" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
@@ -1306,6 +1306,37 @@ def get_network_station_temporal_gaps(
     except ValueError as e:
         msg = str(e)
         if "not found" in msg.lower() or "no qualifying departures" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+
+    return result
+
+
+from railgati.api.v1.schemas import EdgeTemporalBunchingResponse
+
+
+@router.get(
+    "/edges/{origin_code}/{destination_code}/temporal-bunching",
+    response_model=EdgeTemporalBunchingResponse,
+)
+def get_network_edge_temporal_bunching(
+    origin_code: str,
+    destination_code: str,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Calculate Network Edge Temporal Bunching Analytics."""
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        from railgati.services.network import calculate_edge_temporal_bunching
+
+        result = calculate_edge_temporal_bunching(
+            db, timetable_snapshot_id, origin_code, destination_code
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower() or "no qualifying adjacent" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 

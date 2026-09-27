@@ -2778,3 +2778,93 @@ def calculate_station_temporal_gaps(
         "average_departure_gap_minutes": avg_gap,
         "max_departure_gap_minutes": max_gap,
     }
+
+
+def calculate_edge_temporal_bunching(
+    db: Session,
+    timetable_snapshot_id: int,
+    origin_code: str,
+    destination_code: str,
+) -> dict:
+    """Calculate Network Edge Temporal Bunching Analytics."""
+    from sqlalchemy import text
+
+    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.station import Station
+
+    origin_code_upper = origin_code.strip().upper()
+    destination_code_upper = destination_code.strip().upper()
+
+    if origin_code_upper == destination_code_upper:
+        raise ValueError("Origin and destination cannot be the same station")
+
+    origin = db.scalar(select(Station).filter(Station.code == origin_code_upper))
+    if not origin:
+        raise ValueError(f"Station '{origin_code_upper}' not found")
+
+    destination = db.scalar(select(Station).filter(Station.code == destination_code_upper))
+    if not destination:
+        raise ValueError(f"Station '{destination_code_upper}' not found")
+
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    is_sqlite = db.bind is not None and db.bind.dialect.name == "sqlite"
+
+    if is_sqlite:
+        dep_mins_calc = "CAST(strftime('%s', tso1.departure_time) AS INTEGER) / 60"
+    else:
+        dep_mins_calc = "EXTRACT(EPOCH FROM tso1.departure_time::time)/60"
+
+    query = text(f"""
+        WITH edge_trains AS (
+            SELECT {dep_mins_calc} as dep_mins
+            FROM train_stop_observations tso1
+            JOIN train_stop_observations tso2
+              ON tso2.snapshot_id = tso1.snapshot_id
+             AND tso2.train_id = tso1.train_id
+             AND tso2.stop_sequence = tso1.stop_sequence + 1
+            WHERE tso1.snapshot_id = :snapshot_id
+              AND tso1.station_id = :origin_id
+              AND tso2.station_id = :destination_id
+              AND tso1.departure_time IS NOT NULL
+        ),
+        expanded_trains AS (
+            SELECT dep_mins FROM edge_trains
+            UNION ALL
+            SELECT dep_mins + 1440 FROM edge_trains
+        )
+        SELECT
+            (SELECT COUNT(*) FROM edge_trains) as total_volume,
+            MAX(window_count) as peak_60min_trains
+        FROM (
+            SELECT e1.dep_mins,
+                   (SELECT COUNT(*) FROM expanded_trains e2
+                    WHERE e2.dep_mins >= e1.dep_mins
+                      AND e2.dep_mins < e1.dep_mins + 60) as window_count
+            FROM edge_trains e1
+        ) w;
+    """)
+
+    result = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "origin_id": origin.id,
+            "destination_id": destination.id,
+        },
+    ).fetchone()
+
+    if not result or result[0] == 0:
+        raise ValueError("No qualifying adjacent timetable edge found")
+
+    return {
+        "origin_station_code": origin_code_upper,
+        "destination_station_code": destination_code_upper,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "total_edge_volume": result[0],
+        "peak_60min_trains": result[1],
+    }

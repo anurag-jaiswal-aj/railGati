@@ -613,3 +613,11 @@ class TemporalGapsResponse(BaseModel):
     total_departures: int
     average_departure_gap_minutes: float
     max_departure_gap_minutes: float
+
+
+class EdgeTemporalBunchingResponse(BaseModel):
+    origin_station_code: str
+    destination_station_code: str
+    timetable_snapshot_id: int
+    total_edge_volume: int
+    peak_60min_trains: int
