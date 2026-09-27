@@ -513,6 +513,7 @@ class StationSimilarityResponse(BaseModel):
     min_overlap_trains: int
     items: list[StationSimilarityItem]
 
+
 class TravelTimeResponse(BaseModel):
     """Network O-D travel time analytics for the active timetable snapshot."""
 
@@ -543,3 +544,18 @@ class PairedServiceResponse(BaseModel):
     paired_service_count: int
     avg_clock_gap_minutes: float | None
     paired_services: list[PairedServiceItem]
+
+
+class ReversingTrainItem(BaseModel):
+    train_number: str
+    adjoining_station_code: str
+    arrival_time: str | None
+    departure_time: str | None
+
+
+class ReversalResponse(BaseModel):
+    station_code: str
+    station_name: str | None
+    timetable_snapshot_id: int
+    reversal_count: int
+    reversing_trains: list[ReversingTrainItem]

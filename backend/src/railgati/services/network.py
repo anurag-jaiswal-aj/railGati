@@ -2217,3 +2217,90 @@ def calculate_station_paired_services(
     )
 
     return (station_code_upper, station_name, count, avg, paired_services)
+
+
+
+def calculate_station_reversals(
+    db: Session,
+    timetable_snapshot_id: int,
+    station_code: str,
+) -> tuple[str, str | None, int, list[dict]]:
+    """Calculate Network Station Directional Reversal Analytics."""
+    from railgati.models.station import Station, StationObservation
+    from railgati.models.provenance import DatasetSnapshot
+    from railgati.api.v1.snapshots import get_active_station_snapshot_id
+    from sqlalchemy import text
+
+    station_code_upper = station_code.strip().upper()
+
+    # 1. Resolve Station
+    station = db.scalar(
+        select(Station).filter(Station.code == station_code_upper)
+    )
+    if not station:
+        raise ValueError(f"Station '{station_code_upper}' not found")
+
+    station_snapshot_id = get_active_station_snapshot_id(db)
+    station_obs = db.scalar(
+        select(StationObservation).filter(
+            StationObservation.station_id == station.id,
+            StationObservation.snapshot_id == station_snapshot_id,
+        )
+    )
+    station_name = station_obs.name if station_obs else None
+
+    # Verify snapshot
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    query = text("""
+        WITH target_trains AS (
+            SELECT train_id
+            FROM train_stop_observations
+            WHERE snapshot_id = :snapshot_id AND station_id = :station_id
+        ),
+        stops AS (
+            SELECT tso.train_id, tso.stop_sequence, tso.station_id, tso.arrival_time, tso.departure_time,
+                   LAG(tso.station_id) OVER (PARTITION BY tso.train_id ORDER BY tso.stop_sequence) as prev_station_id,
+                   LEAD(tso.station_id) OVER (PARTITION BY tso.train_id ORDER BY tso.stop_sequence) as next_station_id
+            FROM train_stop_observations tso
+            JOIN target_trains tt ON tso.train_id = tt.train_id
+            WHERE tso.snapshot_id = :snapshot_id
+        )
+        SELECT tr.number as train_number, s_adj.code as adjoining_station, stops.arrival_time, stops.departure_time
+        FROM stops
+        JOIN trains tr ON tr.id = stops.train_id
+        JOIN stations s_tgt ON s_tgt.id = stops.station_id
+        JOIN stations s_adj ON s_adj.id = stops.prev_station_id
+        WHERE stops.prev_station_id = stops.next_station_id
+          AND s_tgt.id = :station_id
+        ORDER BY tr.number
+    """)
+
+    results = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "station_id": station.id,
+        },
+    ).fetchall()
+
+    reversing_trains = [
+        {
+            "train_number": row[0],
+            "adjoining_station_code": row[1],
+            "arrival_time": row[2],
+            "departure_time": row[3],
+        }
+        for row in results
+    ]
+
+    return (
+        station_code_upper,
+        station_name,
+        len(reversing_trains),
+        reversing_trains
+    )

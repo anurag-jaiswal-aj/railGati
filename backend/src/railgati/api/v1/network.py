@@ -1088,10 +1088,15 @@ def get_network_travel_time(
         from railgati.services.network import calculate_network_od_travel_time
 
         (
-            from_code, origin_name,
-            to_code, dest_name,
-            qual_count, distinct_trains,
-            min_dur, max_dur, avg_dur
+            from_code,
+            origin_name,
+            to_code,
+            dest_name,
+            qual_count,
+            distinct_trains,
+            min_dur,
+            max_dur,
+            avg_dur,
         ) = calculate_network_od_travel_time(
             db, timetable_snapshot_id, from_station_code, to_station_code
         )
@@ -1115,8 +1120,6 @@ def get_network_travel_time(
     }
 
 
-
-
 from railgati.api.v1.schemas import PairedServiceResponse
 
 
@@ -1135,9 +1138,7 @@ def get_network_station_paired_services(
     try:
         from railgati.services.network import calculate_station_paired_services
 
-        (
-            code, name, count, avg, pairs
-        ) = calculate_station_paired_services(
+        (code, name, count, avg, pairs) = calculate_station_paired_services(
             db, timetable_snapshot_id, station_code
         )
     except ValueError as e:
@@ -1153,4 +1154,40 @@ def get_network_station_paired_services(
         "paired_service_count": count,
         "avg_clock_gap_minutes": avg,
         "paired_services": pairs,
+    }
+
+
+from railgati.api.v1.schemas import ReversalResponse
+
+
+@router.get(
+    "/stations/{station_code}/reversals",
+    response_model=ReversalResponse,
+)
+def get_network_station_reversals(
+    station_code: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Calculate Network Station Directional Reversal Analytics."""
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        from railgati.services.network import calculate_station_reversals
+
+        (code, name, count, trains) = calculate_station_reversals(
+            db, timetable_snapshot_id, station_code
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+
+    return {
+        "station_code": code,
+        "station_name": name,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "reversal_count": count,
+        "reversing_trains": trains,
     }
