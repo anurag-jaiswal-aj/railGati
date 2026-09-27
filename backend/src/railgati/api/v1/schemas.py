@@ -336,6 +336,7 @@ class HubCentralityResponse(BaseModel):
     )
     hubs: list[HubCentralityItem] = Field(..., description="List of stations ranked by centrality")
 
+
 class EdgeVolumeItem(BaseModel):
     from_station_code: str = Field(..., description="Canonical source station code")
     from_station_name: str = Field(..., description="Canonical source station name")
@@ -352,8 +353,10 @@ class EdgeVolumeResponse(BaseModel):
     )
     edges: list[EdgeVolumeItem] = Field(..., description="List of segments ranked by volume")
 
+
 class TerminusItem(BaseModel):
     """Historical timetable occurrence boundaries for a terminus station."""
+
     station_code: str
     station_name: str
     originating_count: int
@@ -363,12 +366,14 @@ class TerminusItem(BaseModel):
 
 class TerminusResponse(BaseModel):
     """Network terminus analytics for the active timetable snapshot."""
+
     timetable_snapshot_id: int
     termini: list[TerminusItem]
 
 
 class FlowItem(BaseModel):
     """Historical Origin-Destination timetable flow boundaries."""
+
     origin_station_code: str
     origin_station_name: str
     destination_station_code: str
@@ -378,5 +383,24 @@ class FlowItem(BaseModel):
 
 class FlowResponse(BaseModel):
     """Network O-D flow analytics for the active timetable snapshot."""
+
     timetable_snapshot_id: int
     flows: list[FlowItem]
+
+
+class DwellItem(BaseModel):
+    """Historical scheduled station transit dwell duration."""
+
+    station_code: str
+    station_name: str
+    avg_dwell_minutes: float
+    transit_count: int
+
+
+class DwellResponse(BaseModel):
+    """Network station dwell analytics for the active timetable snapshot."""
+
+    timetable_snapshot_id: int
+    limit: int
+    min_transit_count: int
+    items: list[DwellItem]

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from railgati.api.v1 import schemas
 from railgati.api.v1.schemas import (
+    DwellResponse,
     FlowResponse,
     NetworkPathAttributionResponse,
     NetworkPathItem,
@@ -813,4 +814,59 @@ def get_network_flows(
     return FlowResponse(
         timetable_snapshot_id=timetable_snapshot_id,
         flows=flows_data,
+    )
+
+
+@router.get(
+    "/dwells",
+    response_model=DwellResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get Network Station Dwell Analytics",
+    description="Retrieve stations ranked by historical scheduled dwell duration for transit occurrences.",
+)
+def get_network_dwells(
+    limit: Annotated[
+        int,
+        Query(
+            description="Maximum number of stations to return",
+            ge=1,
+            le=500,
+        ),
+    ] = 50,
+    min_transit_count: Annotated[
+        int,
+        Query(
+            description="Minimum number of transit occurrences required to be included",
+            ge=1,
+            le=1000,
+        ),
+    ] = 10,
+    db: Session = Depends(get_db),  # noqa: B008
+) -> DwellResponse:
+    """Discover stations with the longest historical scheduled wait times."""
+    try:
+        timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+
+    from railgati.services.network import calculate_network_dwells
+
+    try:
+        dwell_data = calculate_network_dwells(
+            db=db,
+            timetable_snapshot_id=timetable_snapshot_id,
+            limit=limit,
+            min_transit_count=min_transit_count,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        )
+
+    return DwellResponse(
+        timetable_snapshot_id=timetable_snapshot_id,
+        limit=limit,
+        min_transit_count=min_transit_count,
+        items=dwell_data,
     )
