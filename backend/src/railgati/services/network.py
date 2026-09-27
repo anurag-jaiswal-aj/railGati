@@ -3477,3 +3477,100 @@ def calculate_station_outbound_dominance(
         if row["dominance_ratio"] is not None
         else 0.0,
     }
+
+
+def calculate_edge_paired_route_symmetry(
+    db: Session, from_station_code: str, to_station_code: str
+) -> dict[str, typing.Any]:
+    """
+    Calculate paired-service timetable edge reciprocity for an adjacent timetable edge.
+    This purely tests whether a dataset-linked paired return service contains the
+    reciprocal adjacent timetable edge. It does not measure physical routing, passenger flow,
+    actual operations, or operational continuity.
+    """
+    from sqlalchemy import text
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.models.station import Station
+
+    # Resolving only timetable_snapshot_id for edge queries as is standard in Phase 28/30
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    if not timetable_snapshot_id:
+        raise ValueError("No active timetable snapshot available.")
+
+    from_station = (
+        db.query(Station)
+        .filter(Station.code == from_station_code.upper())
+        .first()
+    )
+    if not from_station:
+        raise ValueError(f"Station {from_station_code.upper()} not found.")
+
+    to_station = (
+        db.query(Station)
+        .filter(Station.code == to_station_code.upper())
+        .first()
+    )
+    if not to_station:
+        raise ValueError(f"Station {to_station_code.upper()} not found.")
+
+    query = text("""
+        WITH forward_trains AS (
+            SELECT DISTINCT
+                tso1.train_id AS fwd_train_id,
+                to_obs.return_train_number
+            FROM train_stop_observations tso1
+            JOIN train_stop_observations tso2 
+              ON tso1.train_id = tso2.train_id 
+              AND tso1.snapshot_id = tso2.snapshot_id 
+              AND tso1.stop_sequence + 1 = tso2.stop_sequence
+            JOIN train_observations to_obs 
+              ON to_obs.train_id = tso1.train_id 
+              AND to_obs.snapshot_id = :snapshot_id
+            WHERE tso1.snapshot_id = :snapshot_id
+              AND tso1.station_id = :from_id
+              AND tso2.station_id = :to_id
+        ),
+        successful_returns AS (
+            SELECT DISTINCT
+                fwd.fwd_train_id
+            FROM forward_trains fwd
+            JOIN trains rt ON rt.number = fwd.return_train_number
+            JOIN train_stop_observations rtso1 ON rtso1.train_id = rt.id AND rtso1.snapshot_id = :snapshot_id
+            JOIN train_stop_observations rtso2 ON rtso2.train_id = rt.id AND rtso2.snapshot_id = :snapshot_id
+            WHERE rtso1.station_id = :to_id
+              AND rtso2.station_id = :from_id
+              AND rtso1.stop_sequence + 1 = rtso2.stop_sequence
+        )
+        SELECT 
+            COUNT(*) AS total_forward_trains,
+            COUNT(sr.fwd_train_id) AS symmetrical_return_trains
+        FROM forward_trains f
+        LEFT JOIN successful_returns sr ON sr.fwd_train_id = f.fwd_train_id
+    """)
+
+    result = db.execute(
+        query,
+        {"snapshot_id": timetable_snapshot_id, "from_id": from_station.id, "to_id": to_station.id},
+    ).first()
+
+    if not result:
+        total_forward = 0
+        symmetrical = 0
+    else:
+        total_forward = int(result[0] or 0)
+        symmetrical = int(result[1] or 0)
+
+    if total_forward == 0:
+        raise ValueError(
+            f"No qualifying forward A -> B timetable train identities for {from_station_code.upper()} -> {to_station_code.upper()}"
+        )
+
+    return {
+        "from_station_code": from_station.code,
+        "to_station_code": to_station.code,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "total_forward_trains": total_forward,
+        "symmetrical_return_trains": symmetrical,
+        "symmetry_ratio": float(symmetrical) / total_forward if total_forward > 0 else 0.0,
+    }

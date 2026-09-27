@@ -696,3 +696,12 @@ class StationOutboundDominanceResponse(BaseModel):
     max_outbound_occurrences: int
     dominant_destination_station_code: str | None
     dominance_ratio: float
+
+
+class EdgePairedSymmetryResponse(BaseModel):
+    from_station_code: str
+    to_station_code: str
+    timetable_snapshot_id: int
+    total_forward_trains: int
+    symmetrical_return_trains: int
+    symmetry_ratio: float

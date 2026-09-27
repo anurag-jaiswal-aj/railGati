@@ -12,6 +12,7 @@ from railgati.api.v1.schemas import (
     ComplexityResponse,
     DwellResponse,
     EdgeAsymmetryResponse,
+    EdgePairedSymmetryResponse,
     FlowResponse,
     NetworkPathAttributionResponse,
     NetworkPathItem,
@@ -1529,4 +1530,35 @@ def get_network_station_outbound_dominance(
     except ValueError as e:
         if "not found" in str(e):
             raise HTTPException(status_code=404, detail="Station not found")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get(
+    "/edges/{from_station}/{to_station}/paired-symmetry",
+    response_model=EdgePairedSymmetryResponse,
+    summary="Get network edge paired-service route symmetry",
+    description=(
+        "Calculates the proportion of forward timetable train identities whose dataset-linked "
+        "paired service also contains the reciprocal adjacent timetable edge in the same "
+        "timetable snapshot. This does not represent physical topology, operational symmetry, "
+        "passenger demand, or actual operations."
+    ),
+)
+def get_edge_paired_symmetry(
+    from_station: str,
+    to_station: str,
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    from railgati.services.network import calculate_edge_paired_route_symmetry
+
+    from_station = from_station.upper()
+    to_station = to_station.upper()
+
+    try:
+        return calculate_edge_paired_route_symmetry(db, from_station, to_station)
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        if "no active timetable snapshot" in str(e).lower():
+            raise HTTPException(status_code=503, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
