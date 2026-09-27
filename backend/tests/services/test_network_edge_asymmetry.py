@@ -8,7 +8,9 @@ from railgati.services.network import calculate_network_edge_asymmetry
 
 
 def setup_data(db_session: Session) -> tuple[Station, Station, Station]:
-    source = DataSource(name="test_source_asym", url="http://test", publisher="test", license="test")
+    source = DataSource(
+        name="test_source_asym", url="http://test", publisher="test", license="test"
+    )
     db_session.add(source)
     db_session.flush()
 
@@ -28,35 +30,75 @@ def setup_data(db_session: Session) -> tuple[Station, Station, Station]:
     db_session.add_all([s1, s2, s3, s4])
     db_session.flush()
 
-    db_session.add_all([
-        StationObservation(snapshot_id=snap.id, station_id=s1.id, name="Station A"),
-        StationObservation(snapshot_id=snap.id, station_id=s2.id, name="Station B"),
-        StationObservation(snapshot_id=snap.id, station_id=s3.id, name="Station C"),
-        StationObservation(snapshot_id=snap.id, station_id=s4.id, name="Station D"),
-    ])
+    db_session.add_all(
+        [
+            StationObservation(snapshot_id=snap.id, station_id=s1.id, name="Station A"),
+            StationObservation(snapshot_id=snap.id, station_id=s2.id, name="Station B"),
+            StationObservation(snapshot_id=snap.id, station_id=s3.id, name="Station C"),
+            StationObservation(snapshot_id=snap.id, station_id=s4.id, name="Station D"),
+        ]
+    )
 
     # 1. Balanced pair (A <-> B)
-    db_session.add_all([
-        RailwayNetworkEdge(timetable_snapshot_id=snap.id, from_station_id=s1.id, to_station_id=s2.id, train_count=10),
-        RailwayNetworkEdge(timetable_snapshot_id=snap.id, from_station_id=s2.id, to_station_id=s1.id, train_count=10),
-    ])
+    db_session.add_all(
+        [
+            RailwayNetworkEdge(
+                timetable_snapshot_id=snap.id,
+                from_station_id=s1.id,
+                to_station_id=s2.id,
+                train_count=10,
+            ),
+            RailwayNetworkEdge(
+                timetable_snapshot_id=snap.id,
+                from_station_id=s2.id,
+                to_station_id=s1.id,
+                train_count=10,
+            ),
+        ]
+    )
 
     # 2. Completely asymmetric pair (B -> C)
-    db_session.add_all([
-        RailwayNetworkEdge(timetable_snapshot_id=snap.id, from_station_id=s2.id, to_station_id=s3.id, train_count=46),
-        # Missing C -> B
-    ])
+    db_session.add_all(
+        [
+            RailwayNetworkEdge(
+                timetable_snapshot_id=snap.id,
+                from_station_id=s2.id,
+                to_station_id=s3.id,
+                train_count=46,
+            ),
+            # Missing C -> B
+        ]
+    )
 
     # 3. Reverse-only pair (D -> A). A < D, so forward is A->D (0) and reverse is D->A (30)
-    db_session.add_all([
-        RailwayNetworkEdge(timetable_snapshot_id=snap.id, from_station_id=s4.id, to_station_id=s1.id, train_count=30),
-    ])
+    db_session.add_all(
+        [
+            RailwayNetworkEdge(
+                timetable_snapshot_id=snap.id,
+                from_station_id=s4.id,
+                to_station_id=s1.id,
+                train_count=30,
+            ),
+        ]
+    )
 
     # 4. Partial imbalance (C <-> D)
-    db_session.add_all([
-        RailwayNetworkEdge(timetable_snapshot_id=snap.id, from_station_id=s3.id, to_station_id=s4.id, train_count=30),
-        RailwayNetworkEdge(timetable_snapshot_id=snap.id, from_station_id=s4.id, to_station_id=s3.id, train_count=10),
-    ])
+    db_session.add_all(
+        [
+            RailwayNetworkEdge(
+                timetable_snapshot_id=snap.id,
+                from_station_id=s3.id,
+                to_station_id=s4.id,
+                train_count=30,
+            ),
+            RailwayNetworkEdge(
+                timetable_snapshot_id=snap.id,
+                from_station_id=s4.id,
+                to_station_id=s3.id,
+                train_count=10,
+            ),
+        ]
+    )
 
     db_session.commit()
     return s1, s2, s3, s4

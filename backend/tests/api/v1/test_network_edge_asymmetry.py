@@ -26,16 +26,22 @@ def setup_data(db_session: Session) -> None:
     db_session.add_all([s1, s2, t1])
     db_session.flush()
 
-    db_session.add_all([
-        StationObservation(snapshot_id=2, station_id=s1.id, name="Stn AAA"),
-        StationObservation(snapshot_id=2, station_id=s2.id, name="Stn BBB"),
-        TrainObservation(snapshot_id=1, train_id=t1.id, name="Test Train"),
-    ])
+    db_session.add_all(
+        [
+            StationObservation(snapshot_id=2, station_id=s1.id, name="Stn AAA"),
+            StationObservation(snapshot_id=2, station_id=s2.id, name="Stn BBB"),
+            TrainObservation(snapshot_id=1, train_id=t1.id, name="Test Train"),
+        ]
+    )
 
     # 30 vs 0 -> 100% asymmetry
-    db_session.add_all([
-        RailwayNetworkEdge(timetable_snapshot_id=1, from_station_id=s1.id, to_station_id=s2.id, train_count=30),
-    ])
+    db_session.add_all(
+        [
+            RailwayNetworkEdge(
+                timetable_snapshot_id=1, from_station_id=s1.id, to_station_id=s2.id, train_count=30
+            ),
+        ]
+    )
     db_session.commit()
 
 
@@ -72,10 +78,12 @@ def test_get_edge_asymmetry_empty(client: TestClient, db_session: Session) -> No
     db_session.add_all([t1, s1])
     db_session.flush()
 
-    db_session.add_all([
-        TrainObservation(snapshot_id=1, train_id=t1.id, name="Test"),
-        StationObservation(snapshot_id=2, station_id=s1.id, name="Stn"),
-    ])
+    db_session.add_all(
+        [
+            TrainObservation(snapshot_id=1, train_id=t1.id, name="Test"),
+            StationObservation(snapshot_id=2, station_id=s1.id, name="Stn"),
+        ]
+    )
 
     gb = RailwayGraphBuild(id=1, timetable_snapshot_id=snap.id, status="ACTIVE")
     db_session.add(gb)
@@ -100,10 +108,12 @@ def test_get_edge_asymmetry_no_graph(client: TestClient, db_session: Session) ->
     db_session.add_all([t1, s1])
     db_session.flush()
 
-    db_session.add_all([
-        TrainObservation(snapshot_id=1, train_id=t1.id, name="Test"),
-        StationObservation(snapshot_id=2, station_id=s1.id, name="Stn"),
-    ])
+    db_session.add_all(
+        [
+            TrainObservation(snapshot_id=1, train_id=t1.id, name="Test"),
+            StationObservation(snapshot_id=2, station_id=s1.id, name="Stn"),
+        ]
+    )
     db_session.commit()
 
     response = client.get("/api/v1/network/edge-asymmetry")

@@ -21,6 +21,7 @@ from railgati.api.v1.schemas import (
     NetworkServiceAttributionResponse,
     TemporalConcentrationResponse,
     TerminusResponse,
+    TrainSimilarityResponse,
 )
 from railgati.api.v1.snapshots import (
     get_active_station_snapshot_id,
@@ -966,7 +967,7 @@ def get_network_edge_asymmetry(
             timetable_snapshot_id,
             station_snapshot_id,
             limit=limit,
-            min_total_volume=min_total_volume
+            min_total_volume=min_total_volume,
         )
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -977,3 +978,45 @@ def get_network_edge_asymmetry(
         "min_total_volume": min_total_volume,
         "items": items,
     }
+
+
+@router.get(
+    "/trains/{train_number}/similar",
+    response_model=TrainSimilarityResponse,
+)
+def get_train_similarity(
+    train_number: str,
+    db: Session = Depends(get_db),  # noqa: B008
+    limit: Annotated[int, Query(ge=1, le=50, description="Max similar trains to return")] = 10,
+    min_overlap_stations: Annotated[
+        int, Query(ge=1, description="Minimum shared distinct stations")
+    ] = 1,
+) -> TrainSimilarityResponse:
+    """Return historical timetable route-set similarity for a target train."""
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        from railgati.services.network import calculate_train_similarity
+
+        target_count, resolved_num, target_name, items = calculate_train_similarity(
+            db=db,
+            timetable_snapshot_id=timetable_snapshot_id,
+            target_train_number=train_number,
+            limit=limit,
+            min_overlap_stations=min_overlap_stations,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+
+    return TrainSimilarityResponse(
+        timetable_snapshot_id=timetable_snapshot_id,
+        target_train_number=resolved_num,
+        target_train_name=target_name,
+        target_station_count=target_count,
+        limit=limit,
+        min_overlap_stations=min_overlap_stations,
+        items=items,
+    )

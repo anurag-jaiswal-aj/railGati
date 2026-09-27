@@ -464,3 +464,28 @@ class EdgeAsymmetryResponse(BaseModel):
     limit: int
     min_total_volume: int
     items: list[EdgeAsymmetryItem]
+
+
+class TrainSimilarityItem(BaseModel):
+    """Historical timetable route-set similarity for a compared train."""
+
+    train_number: str
+    train_name: str
+    train_type: str | None = None
+    return_train_number: str | None = None
+    overlap_station_count: int
+    compared_station_count: int
+    union_station_count: int
+    similarity_pct: float
+
+
+class TrainSimilarityResponse(BaseModel):
+    """Network train route similarity analytics for the active timetable snapshot."""
+
+    timetable_snapshot_id: int
+    target_train_number: str
+    target_train_name: str
+    target_station_count: int
+    limit: int
+    min_overlap_stations: int
+    items: list[TrainSimilarityItem]

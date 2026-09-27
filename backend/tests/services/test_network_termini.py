@@ -125,7 +125,7 @@ def test_calculate_network_termini_snapshot_isolation(db_session: Session) -> No
     db_session.add(DatasetSnapshot(id=2, source_id=source.id, status="ACTIVE"))
     db_session.flush()
 
-    s1, s2, s3 = setup_stations(db_session)
+    s1, s2, _ = setup_stations(db_session)
     t1 = Train(number="101")
     db_session.add(t1)
     db_session.flush()
@@ -154,7 +154,7 @@ def test_calculate_network_termini_incomplete_data(db_session: Session) -> None:
     db_session.add(DatasetSnapshot(id=1, source_id=source.id, status="ACTIVE"))
     db_session.flush()
 
-    s1, s2, s3 = setup_stations(db_session)
+    _, _, _ = setup_stations(db_session)
     t1 = Train(number="101")
     db_session.add(t1)
     db_session.flush()
