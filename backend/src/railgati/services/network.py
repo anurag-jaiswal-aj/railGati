@@ -3646,6 +3646,7 @@ def calculate_station_neighborhood_symmetry(
         "symmetry_ratio": float(intersection_count) / float(union_count),
     }
 
+
 def calculate_station_neighborhood_triadic_closure(db: Session, station_code: str) -> dict:
     """Phase 33: Calculates Network Station Neighborhood Triadic Closure Analytics."""
     from railgati.api.v1.snapshots import (
@@ -3723,7 +3724,9 @@ def calculate_station_neighborhood_triadic_closure(db: Session, station_code: st
     actual_count = int(result[2] or 0)
 
     if out_degree < 2:
-        raise ValueError(f"Station {station_code.upper()} has outbound_degree < 2. Triadic closure is mathematically undefined.")
+        raise ValueError(
+            f"Station {station_code.upper()} has outbound_degree < 2. Triadic closure is mathematically undefined."
+        )
 
     return {
         "station_code": station.code,
@@ -3859,7 +3862,9 @@ def calculate_station_transit_articulation(db: Session, station_code: str) -> di
     articulation_pairs_count = int(result[3] or 0)
 
     if transit_pairs_count == 0:
-        raise ValueError(f"Station {station_code.upper()} has transit_pairs_count == 0. Transit articulation is mathematically undefined.")
+        raise ValueError(
+            f"Station {station_code.upper()} has transit_pairs_count == 0. Transit articulation is mathematically undefined."
+        )
 
     return {
         "station_code": station.code,
@@ -3872,3 +3877,82 @@ def calculate_station_transit_articulation(db: Session, station_code: str) -> di
         "articulation_ratio": float(articulation_pairs_count) / float(transit_pairs_count),
     }
 
+
+def calculate_station_reachability_expansion(
+    db: Session, timetable_snapshot_id: int, station_code: str
+) -> dict[str, typing.Any]:
+    """Calculate Network Station 2-Hop Reachability Expansion Analytics."""
+    from sqlalchemy import select, text
+
+    from railgati.api.v1.snapshots import get_active_station_snapshot_id
+    from railgati.models.station import Station, StationObservation
+
+    station_snapshot_id = get_active_station_snapshot_id(db)
+
+    station = db.scalar(select(Station).filter(Station.code == station_code.upper()))
+    if not station:
+        raise ValueError(f"Station '{station_code}' not found")
+
+    obs = db.scalar(
+        select(StationObservation).filter(
+            StationObservation.station_id == station.id,
+            StationObservation.snapshot_id == station_snapshot_id,
+        )
+    )
+    station_name = obs.name if obs else station.code
+
+    query = text("""
+        WITH target AS (
+            SELECT :station_id as id
+        ),
+        n1 AS (
+            SELECT DISTINCT t2.station_id as id
+            FROM train_stop_observations t1
+            JOIN train_stop_observations t2 
+              ON t1.train_id = t2.train_id 
+              AND t1.snapshot_id = t2.snapshot_id 
+              AND t1.stop_sequence + 1 = t2.stop_sequence
+            WHERE t1.snapshot_id = :snapshot_id 
+              AND t1.station_id = (SELECT id FROM target)
+        ),
+        n2 AS (
+            SELECT DISTINCT t3.station_id as id
+            FROM train_stop_observations t2
+            JOIN train_stop_observations t3 
+              ON t2.train_id = t3.train_id 
+              AND t2.snapshot_id = t3.snapshot_id 
+              AND t2.stop_sequence + 1 = t3.stop_sequence
+            WHERE t2.snapshot_id = :snapshot_id 
+              AND t2.station_id IN (SELECT id FROM n1)
+              AND t3.station_id != (SELECT id FROM target)
+              AND t3.station_id NOT IN (SELECT id FROM n1)
+        )
+        SELECT 
+            (SELECT COUNT(*) FROM n1) as n1_count,
+            (SELECT COUNT(*) FROM n2) as n2_count
+    """)
+
+    result = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "station_id": station.id,
+        },
+    ).fetchone()
+
+    n1_count = int(result[0] or 0)
+    n2_count = int(result[1] or 0)
+
+    if n1_count == 0:
+        raise ValueError(
+            f"Station {station_code.upper()} has n1_count == 0. Reachability expansion is mathematically undefined."
+        )
+
+    return {
+        "station_code": station.code,
+        "station_name": station_name,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "n1_count": n1_count,
+        "n2_count": n2_count,
+        "expansion_ratio": float(n2_count) / float(n1_count),
+    }

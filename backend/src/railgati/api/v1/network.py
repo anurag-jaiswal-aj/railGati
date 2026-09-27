@@ -26,6 +26,7 @@ from railgati.api.v1.schemas import (
     StationNeighborhoodSymmetryResponse,
     StationNeighborhoodTriadicClosureResponse,
     StationOutboundDominanceResponse,
+    StationReachabilityExpansionResponse,
     StationSimilarityResponse,
     StationTransitArticulationResponse,
     StructuralHaltResponse,
@@ -1622,6 +1623,7 @@ def get_station_neighborhood_triadic_closure(
             raise HTTPException(status_code=503, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
 
+
 @router.get(
     "/stations/{station_code}/transit-articulation",
     response_model=StationTransitArticulationResponse,
@@ -1639,6 +1641,33 @@ def get_station_transit_articulation(
 
     try:
         return calculate_station_transit_articulation(db, station_code)
+    except ValueError as e:
+        if "not found" in str(e):
+            raise HTTPException(status_code=404, detail=str(e))
+        if "No active" in str(e):
+            raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get(
+    "/stations/{station_code}/2-hop-expansion",
+    response_model=StationReachabilityExpansionResponse,
+    summary="Calculate network station 2-hop reachability expansion analytics",
+    description=(
+        "Measures the timetable-derived expansion from the target station's immediate outbound frontier "
+        "to the new stations reachable one additional adjacent scheduled edge away. "
+        "Returns HTTP 400 for mathematically undefined constraints (e.g. n1=0)."
+    ),
+)
+def get_station_reachability_expansion(
+    station_code: str, db: Session = Depends(get_db)
+) -> dict[str, typing.Any]:
+    from railgati.services.network import calculate_station_reachability_expansion
+
+    try:
+        return calculate_station_reachability_expansion(
+            db, get_active_timetable_snapshot_id(db), station_code
+        )
     except ValueError as e:
         if "not found" in str(e):
             raise HTTPException(status_code=404, detail=str(e))
