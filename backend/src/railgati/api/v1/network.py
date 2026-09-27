@@ -23,6 +23,7 @@ from railgati.api.v1.schemas import (
     TemporalConcentrationResponse,
     TerminusResponse,
     TrainSimilarityResponse,
+    TravelTimeResponse,
 )
 from railgati.api.v1.snapshots import (
     get_active_station_snapshot_id,
@@ -1063,3 +1064,53 @@ def get_station_similarity(
         min_overlap_trains=min_overlap_trains,
         items=items,
     )
+
+
+@router.get(
+    "/stations/{from_station_code}/travel-time/{to_station_code}",
+    response_model=TravelTimeResponse,
+)
+def get_network_travel_time(
+    from_station_code: str,
+    to_station_code: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Calculate Network O-D Travel Time Analytics."""
+    if from_station_code.lower() == to_station_code.lower():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Origin and destination stations must be different",
+        )
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        from railgati.services.network import calculate_network_od_travel_time
+
+        (
+            from_code, origin_name,
+            to_code, dest_name,
+            qual_count, distinct_trains,
+            min_dur, max_dur, avg_dur
+        ) = calculate_network_od_travel_time(
+            db, timetable_snapshot_id, from_station_code, to_station_code
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+
+    return {
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "from_station_code": from_code,
+        "from_station_name": origin_name,
+        "to_station_code": to_code,
+        "to_station_name": dest_name,
+        "qualifying_occurrence_count": qual_count,
+        "distinct_train_count": distinct_trains,
+        "min_duration_minutes": min_dur,
+        "max_duration_minutes": max_dur,
+        "avg_duration_minutes": avg_dur,
+    }
+

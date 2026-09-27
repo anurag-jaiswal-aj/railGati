@@ -512,3 +512,17 @@ class StationSimilarityResponse(BaseModel):
     limit: int
     min_overlap_trains: int
     items: list[StationSimilarityItem]
+
+class TravelTimeResponse(BaseModel):
+    """Network O-D travel time analytics for the active timetable snapshot."""
+
+    timetable_snapshot_id: int
+    from_station_code: str
+    from_station_name: str | None = None
+    to_station_code: str
+    to_station_name: str | None = None
+    qualifying_occurrence_count: int
+    distinct_train_count: int
+    min_duration_minutes: int | None = None
+    max_duration_minutes: int | None = None
+    avg_duration_minutes: float | None = None

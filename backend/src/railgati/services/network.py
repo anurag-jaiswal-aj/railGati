@@ -1843,3 +1843,197 @@ def calculate_station_similarity(
         target_train_count = count or 0
 
     return target_train_count, target_station_code_resolved, target_station_name, items
+
+
+def calculate_network_od_travel_time(
+    db: Session,
+    timetable_snapshot_id: int,
+    from_station_code: str,
+    to_station_code: str,
+) -> tuple[str, str | None, str, str | None, int, int, int | None, int | None, float | None]:
+    """Calculate Network O-D Travel Time Analytics."""
+    from railgati.models.station import Station, StationObservation
+
+    # Find stations
+    from_code_upper = from_station_code.strip().upper()
+    to_code_upper = to_station_code.strip().upper()
+
+    if from_code_upper == to_code_upper:
+        raise ValueError("Origin and destination stations must be different")
+
+    # 1. Resolve Origin Station
+    origin_station = db.scalar(
+        select(Station).filter(Station.code == from_code_upper)
+    )
+    if not origin_station:
+        raise ValueError(f"Origin station '{from_code_upper}' not found")
+
+    origin_obs = db.scalar(
+        select(StationObservation).filter(
+            StationObservation.station_id == origin_station.id,
+            StationObservation.snapshot_id == timetable_snapshot_id,
+        )
+    )
+    origin_name = origin_obs.name if origin_obs else None
+
+    # 2. Resolve Destination Station
+    dest_station = db.scalar(
+        select(Station).filter(Station.code == to_code_upper)
+    )
+    if not dest_station:
+        raise ValueError(f"Destination station '{to_code_upper}' not found")
+
+    dest_obs = db.scalar(
+        select(StationObservation).filter(
+            StationObservation.station_id == dest_station.id,
+            StationObservation.snapshot_id == timetable_snapshot_id,
+        )
+    )
+    dest_name = dest_obs.name if dest_obs else None
+
+    # Verify snapshot
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    is_sqlite = db.bind is not None and db.bind.dialect.name == "sqlite"
+
+    if is_sqlite:
+        query = text("""
+            WITH od_trains AS (
+                SELECT
+                    tso1.train_id,
+                    tso1.departure_time as dep_time,
+                    tso1.source_day as dep_day,
+                    tso2.arrival_time as arr_time,
+                    tso2.source_day as arr_day
+                FROM train_stop_observations tso1
+                JOIN train_stop_observations tso2
+                  ON tso1.train_id = tso2.train_id
+                 AND tso1.snapshot_id = tso2.snapshot_id
+                WHERE tso1.snapshot_id = :snapshot_id
+                  AND tso1.station_id = :origin_id
+                  AND tso2.station_id = :dest_id
+                  AND tso1.stop_sequence < tso2.stop_sequence
+                  AND tso1.departure_time IS NOT NULL
+                  AND tso2.arrival_time IS NOT NULL
+                  AND tso1.source_day IS NOT NULL
+                  AND tso2.source_day IS NOT NULL
+            )
+            SELECT
+                train_id, dep_time, dep_day, arr_time, arr_day
+            FROM od_trains
+        """)
+        results = db.execute(
+            query,
+            {
+                "snapshot_id": timetable_snapshot_id,
+                "origin_id": origin_station.id,
+                "dest_id": dest_station.id,
+            },
+        ).fetchall()
+
+        qual_count = 0
+        trains = set()
+        durations = []
+        for row in results:
+            train_id, dep, dep_day, arr, arr_day = row
+            try:
+                # Handle SQLite time parsing
+                dep_h, dep_m, _ = map(int, str(dep).split(":"))
+                arr_h, arr_m, _ = map(int, str(arr).split(":"))
+                dep_mins = (int(str(dep_day)) * 1440) + dep_h * 60 + dep_m
+                arr_mins = (int(str(arr_day)) * 1440) + arr_h * 60 + arr_m
+                dur = arr_mins - dep_mins
+                if dur >= 0:
+                    durations.append(dur)
+                    trains.add(train_id)
+                    qual_count += 1
+            except Exception:
+                pass
+
+        min_dur = min(durations) if durations else None
+        max_dur = max(durations) if durations else None
+        avg_dur = round(sum(durations) / len(durations), 1) if durations else None
+
+        return (
+            from_code_upper, origin_name,
+            to_code_upper, dest_name,
+            qual_count,
+            len(trains),
+            min_dur,
+            max_dur,
+            avg_dur
+        )
+
+    # Postgres Query
+    query = text("""
+        WITH od_trains AS (
+            SELECT
+                tso1.train_id,
+                tso1.departure_time as dep_time,
+                tso1.source_day as dep_day,
+                tso2.arrival_time as arr_time,
+                tso2.source_day as arr_day,
+                (
+                    ((tso2.source_day - tso1.source_day) * 1440) +
+                    (EXTRACT(EPOCH FROM tso2.arrival_time::time)/60) -
+                    (EXTRACT(EPOCH FROM tso1.departure_time::time)/60)
+                ) as duration
+            FROM train_stop_observations tso1
+            JOIN train_stop_observations tso2
+              ON tso1.train_id = tso2.train_id
+             AND tso1.snapshot_id = tso2.snapshot_id
+            WHERE tso1.snapshot_id = :snapshot_id
+              AND tso1.station_id = :origin_id
+              AND tso2.station_id = :dest_id
+              AND tso1.stop_sequence < tso2.stop_sequence
+              AND tso1.departure_time IS NOT NULL
+              AND tso2.arrival_time IS NOT NULL
+              AND tso1.source_day IS NOT NULL
+              AND tso2.source_day IS NOT NULL
+        )
+        SELECT
+            COUNT(train_id) as qualifying_occurrence_count,
+            COUNT(DISTINCT train_id) as distinct_train_count,
+            CAST(MIN(duration) AS integer) as min_duration_minutes,
+            CAST(MAX(duration) AS integer) as max_duration_minutes,
+            CAST(ROUND(CAST(AVG(duration) AS numeric), 1) AS double precision) as avg_duration_minutes
+        FROM od_trains
+        WHERE duration >= 0
+    """)
+
+    res = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "origin_id": origin_station.id,
+            "dest_id": dest_station.id,
+        },
+    ).fetchone()
+
+    qualifying_occurrence_count = res[0] if res else 0
+    distinct_train_count = res[1] if res else 0
+    min_duration = res[2] if res else None
+    max_duration = res[3] if res else None
+    avg_duration = res[4] if res else None
+
+    # SQLite / Null results returns (0, 0, None, None, None)
+    if qualifying_occurrence_count == 0:
+        min_duration = None
+        max_duration = None
+        avg_duration = None
+
+    return (
+        from_code_upper,
+        origin_name,
+        to_code_upper,
+        dest_name,
+        qualifying_occurrence_count,
+        distinct_train_count,
+        min_duration,
+        max_duration,
+        avg_duration
+    )
