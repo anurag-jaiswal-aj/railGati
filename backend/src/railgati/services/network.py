@@ -2678,3 +2678,103 @@ def calculate_station_od_bridges(
         "unique_od_pairs_count": unique_pairs,
         "top_od_pairs": pairs,
     }
+
+
+def calculate_station_temporal_gaps(
+    db: Session,
+    timetable_snapshot_id: int,
+    station_code: str,
+) -> dict:
+    """Calculate Network Station Temporal Gap Analytics."""
+    from sqlalchemy import text
+
+    from railgati.api.v1.snapshots import get_active_station_snapshot_id
+    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.station import Station, StationObservation
+
+    station_code_upper = station_code.strip().upper()
+
+    station = db.scalar(select(Station).filter(Station.code == station_code_upper))
+    if not station:
+        raise ValueError(f"Station '{station_code_upper}' not found")
+
+    station_snapshot_id = get_active_station_snapshot_id(db)
+    station_obs = db.scalar(
+        select(StationObservation).filter(
+            StationObservation.station_id == station.id,
+            StationObservation.snapshot_id == station_snapshot_id,
+        )
+    )
+    station_name = station_obs.name if station_obs else None
+
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    is_sqlite = db.bind is not None and db.bind.dialect.name == "sqlite"
+
+    if is_sqlite:
+        dep_mins_calc = "CAST(strftime('%s', departure_time) AS INTEGER) / 60"
+    else:
+        dep_mins_calc = "EXTRACT(EPOCH FROM departure_time::time)/60"
+
+    query = text(f"""
+        WITH departures AS (
+            SELECT {dep_mins_calc} as dep_mins
+            FROM train_stop_observations
+            WHERE snapshot_id = :snapshot_id
+              AND station_id = :station_id
+              AND departure_time IS NOT NULL
+        ),
+        sorted_deps AS (
+            SELECT dep_mins,
+                   LEAD(dep_mins) OVER (ORDER BY dep_mins ASC) as next_dep_mins
+            FROM departures
+        ),
+        gaps AS (
+            SELECT next_dep_mins - dep_mins as gap
+            FROM sorted_deps
+            WHERE next_dep_mins IS NOT NULL
+            UNION ALL
+            SELECT (MIN(dep_mins) + 1440) - MAX(dep_mins) as gap
+            FROM sorted_deps
+            WHERE (SELECT COUNT(*) FROM sorted_deps) > 0
+        )
+        SELECT
+            MAX(gap) as max_gap,
+            (SELECT COUNT(*) FROM departures) as total_deps,
+            ROUND(SUM(gap) / NULLIF(COUNT(gap), 0), 1) as avg_gap
+        FROM gaps;
+    """)
+
+    result = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "station_id": station.id,
+        },
+    ).fetchone()
+
+    total_deps = 0
+    max_gap = 0.0
+    avg_gap = 0.0
+
+    if result and result[1] and result[1] > 0:
+        max_gap = float(result[0])
+        total_deps = result[1]
+        avg_gap = float(result[2])
+    else:
+        raise ValueError(
+            f"No qualifying departures for station '{station_code_upper}' in snapshot {timetable_snapshot_id}"
+        )
+
+    return {
+        "station_code": station_code_upper,
+        "station_name": station_name,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "total_departures": total_deps,
+        "average_departure_gap_minutes": avg_gap,
+        "max_departure_gap_minutes": max_gap,
+    }

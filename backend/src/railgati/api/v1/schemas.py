@@ -604,3 +604,12 @@ class ODBridgesResponse(BaseModel):
     unique_destinations_count: int
     unique_od_pairs_count: int
     top_od_pairs: list[ODBridgePairItem]
+
+
+class TemporalGapsResponse(BaseModel):
+    station_code: str
+    station_name: str | None
+    timetable_snapshot_id: int
+    total_departures: int
+    average_departure_gap_minutes: float
+    max_departure_gap_minutes: float

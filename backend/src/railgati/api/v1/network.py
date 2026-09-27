@@ -1,6 +1,6 @@
 """Network reachability API endpoint."""
 
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -1278,6 +1278,34 @@ def get_network_station_od_bridges(
     except ValueError as e:
         msg = str(e)
         if "not found" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+
+    return result
+
+
+from railgati.api.v1.schemas import TemporalGapsResponse
+
+
+@router.get(
+    "/stations/{station_code}/temporal-gaps",
+    response_model=TemporalGapsResponse,
+)
+def get_network_station_temporal_gaps(
+    station_code: str,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Calculate Network Station Temporal Gap Analytics."""
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        from railgati.services.network import calculate_station_temporal_gaps
+
+        result = calculate_station_temporal_gaps(db, timetable_snapshot_id, station_code)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower() or "no qualifying departures" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
