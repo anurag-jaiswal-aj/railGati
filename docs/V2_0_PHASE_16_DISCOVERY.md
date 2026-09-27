@@ -54,15 +54,21 @@ During discovery, three Phase 16 candidates were evaluated against the historica
 Provide a network endpoint that, given a target railway station code, calculates the historical timetable train-set similarity (Jaccard Index) against all other scheduled stations in the active timetable snapshot.
 
 ## 7. Why This Direction Was Selected
-- **Symmetry**: It perfectly mirrors Phase 15 (Train Similarity), completing the bipartite analytical model (Stations -> Trains -> Stations).
+- **Symmetry (Phase 15 Overlap Audit)**: This is mathematically dual to Phase 15 but analytically distinct. Phase 15 compares train route station sets. Phase 16 compares station service train sets. It perfectly mirrors Phase 15, completing the bipartite analytical model (Stations -> Trains -> Stations), without being merely a renamed endpoint.
 - **Novel Dimension**: Identifies topologically adjacent or paired stations (e.g., twin city stations) purely through schedule structures rather than geographic coordinates.
 - **₹0 Feasibility**: Operates entirely within PostgreSQL using elegant set theory, strictly honoring the ₹0 budget.
 - **Historical Semantics**: It elegantly sidesteps live operational claims by evaluating pure mathematical overlap of historical scheduled occurrences.
 
-## 8. Exact Metric Definitions
+## 8. Exact Mathematical Semantics
 The metric computes the topological train-set overlap between a target station $S_t$ and a compared station $S_c$:
+
+**Trains(S)** = DISTINCT train identities having at least one `TrainStopObservation` for station S in the active timetable snapshot.
+
 $$ Jaccard = \frac{| Trains(S_t) \cap Trains(S_c) |}{| Trains(S_t) \cup Trains(S_c) |} \times 100 $$
-Expressed strictly as a percentage rounded to one decimal place.
+
+- Stations with empty service sets cannot accidentally create a division-by-zero case, as they are excluded by the default `min_overlap_trains=1` filter and SQL coalescing rules.
+- The union is derived mathematically: `|Trains(S_t)| + |Trains(S_c)| - |Trains(S_t) \cap Trains(S_c)|`.
+- No train occurrence count is substituted for distinct train identity; `COUNT(DISTINCT train_id)` is rigorously enforced.
 
 ## 9. Explicit Non-Goals
 This is strictly a TOPOLOGICAL TRAIN-SET similarity metric. It intentionally ignores:
@@ -78,35 +84,44 @@ High similarity scores merely identify mathematically overlapping scheduled serv
 - `stations` (Code resolution)
 - `station_observations` (Name resolution)
 
-## 11. Snapshot Semantics
-- **Timetable Bound**: The query strictly resolves and enforces the active timetable snapshot ID exactly once.
+## 11. Snapshot Isolation Semantics
+- **Timetable Bound**: EVERY CTE/query stage is rigorously constrained to the same active timetable snapshot.
+- **Cross-Snapshot Mixing**: There is no possible cross-snapshot mixing between the target station train set, candidate station train sets, intersection calculation, union calculation, or final metadata.
+- **Station Snapshot ID**: The API implicitly requires the active timetable `snapshot_id`, which natively applies to both `train_stop_observations` and `station_observations` joining semantics.
 - **Graph-Build Dependency**: **None.** This metric evaluates set overlap directly via `TrainStopObservation`. It does not require an active `RailwayGraphBuild`.
 
 ## 12. Entity and Occurrence Semantics
-- **Repeated Occurrences**: If a train visits the same station multiple times (e.g., a looping journey), these visits must mathematically collapse into a single distinct `train_id`. Jaccard similarity measures the distinct set of scheduled trains.
-- **Directionality / Order**: Ignored. Whether a train travels A->B or B->A, it is equally part of both stations' train sets.
-- **Return Train Semantics**: Not explicitly weighted. Reverse services are distinct trains and will naturally factor into the overlap if they serve both stations.
+- **Repeated Occurrences**: If a train visits the same station multiple times (e.g., A -> B -> A, or a looping A -> A), these visits collapse into a single distinct `train_id`. The train contributes exactly once to that station's service set.
+- **Directionality / Order**: Intentionally ignored. Whether a train travels A->B or B->A, reverse train routes do not receive special treatment. The metric is explicitly NOT directional.
+- **Return Train Semantics**: `return_train_number` is not used in the similarity calculation, does not increase similarity, does not exclude candidates, and holds zero mathematical role. It is strictly optional descriptive metadata if included in the response.
 - **Missing Data**: If the `station_code` does not exist in the active timetable snapshot, the API must return an HTTP 404 Not Found.
 - **Self-Match**: Excluded. The target station must NOT be compared against itself (`target_station_id != compared_station_id`).
 
 ## 13. Query Design
-Set-based PostgreSQL CTE approach avoiding Cartesian N+1 bounds:
-1. `target_trains`: Select `DISTINCT train_id` for the target station ID.
-2. `target_count`: Aggregate `COUNT(*)` of `target_trains`.
-3. `other_stations`: Select `station_id`, `COUNT(DISTINCT train_id)` for all other stations.
-4. `intersection`: Join `train_stop_observations` against `target_trains` and aggregate `COUNT(DISTINCT tso.train_id)` as `overlap_count`.
-5. Calculate `union_count`: `(target_count + compared_count - overlap_count)`.
-6. Calculate `similarity_pct`: `ROUND((overlap_count * 100.0) / union_count, 1)`.
+Set-based PostgreSQL CTE approach avoiding Cartesian N+1 bounds. The SQL cardinality is inherently bounded to overlapping subsets.
+1. Resolve target station `station_id` from the public `station_code`.
+2. Build target distinct train set (`target_trains`).
+3. Build candidate station/train membership sets (`other_stations`).
+4. Compute intersection counts (`intersection`).
+5. Compute candidate distinct train counts (via `other_stations` group).
+6. Derive union mathematically: `target_count + candidate_count - overlap_count`.
+7. Calculate Jaccard percentage.
+8. Apply minimum overlap filter if present (`WHERE overlap_count >= min_overlap_trains`).
+9. Order deterministically.
+10. Apply LIMIT.
 
 ## 14. Performance Investigation & EXPLAIN Findings
-Exploratory benchmarking on the local dataset (Snapshot 2, target station `NDLS` / ID 1779, 298 distinct trains) yielded:
+Exploratory benchmarking on the current local snapshot 2 dataset (`~8,989`-station / `~5,207`-train dataset), for target station `NDLS` / ID 1779, yielded:
 - **Planning Time**: ~0.349 ms
 - **Execution Time**: ~197.644 ms
 
 **Plan Insights**:
-- Relies heavily on `train_stop_observations_pkey` (snapshot_id, train_id) and `ix_train_stops_snapshot_station` to perform rapid `Index Scan` operations.
-- Avoids full sequential scans of `train_stop_observations`.
-- Utilizes an efficient `GroupAggregate` and `Top-N heapsort` to order and limit the payload purely in the database layer.
+- **Target-set scan**: Handled via `Index Scan` on `ix_train_stops_snapshot_station` (cost=412.71, actual time ~0.106ms).
+- **Candidate-set scan**: Handled via `Index Scan` on `train_stop_observations_pkey`.
+- **Joins**: Uses `Nested Loop` leveraging primary keys, avoiding heavy sequential hash joins.
+- **Aggregates**: Utilizes `HashAggregate` for distinct train mapping and `GroupAggregate` for the overlap counting.
+- **Sort & LIMIT**: `LIMIT` operates over a `Top-N heapsort` (cost=19217.23). The database-side `LIMIT` effectively bounds the rows returned to Python, but candidate aggregation still completely processes all necessary subset candidates before final ranking.
+- **Sequential Scans**: None for the core analytical intersections.
 
 ## 15. Proposed API
 **GET /api/v1/network/stations/{station_code}/similar**
@@ -159,12 +174,27 @@ Strictly deterministic sorting enforced on the database side:
 ## 19. Real-Data Validation Plan
 Test manually against the local database (e.g., target `NDLS`) to confirm intersection and union arithmetic exactly match the theoretical Jaccard formula for the top result.
 
-## 20. Implementation Sequencing
+**Exact Measured Real-Data Findings**:
+- **Target Station**: `NDLS` (ID 1779) in Active Snapshot 2.
+- **Distinct Target Train Count**: `298` trains.
+- **Top Candidate Station**: `NZM` (Hazrat Nizamuddin).
+- **Candidate Distinct Train Count**: `280` trains.
+- **Overlap (Intersection)**: `250` trains.
+- **Union Calculation**: `298 + 280 - 250 = 328` trains.
+- **Calculated Percentage**: `(250 / 328) * 100 = 76.2%`.
+- **Plausibility**: `NZM` and `NDLS` are adjacent major hubs in Delhi. It is mathematically and structurally highly plausible that they share 250 scheduled timetable service occurrences, representing topological timetable-service-set similarity.
+
+## 20. Implementation Boundary
+- **Status**: Discovery Only.
+- **Phase 16 Implementation**: No implementation, migrations, APIs, or services have been started.
+- **Phase 17**: No Phase 17 work has been initiated.
+
+## 21. Implementation Sequencing
 1. Implement schemas in `schemas.py`.
 2. Implement core service function in `services/network.py`.
 3. Implement HTTP endpoint in `api/v1/network.py`.
 4. Add service and API tests.
 5. Verify via `EXPLAIN ANALYZE` and real dataset inspection.
 
-## 21. Deferred/Future Possibilities
+## 22. Deferred/Future Possibilities
 - **Spatial Bounds**: Factoring in geographic bounding boxes to limit candidate stations to the local region. Deferred as geospatial data relies on external APIs (violates ₹0 budget constraint currently).
