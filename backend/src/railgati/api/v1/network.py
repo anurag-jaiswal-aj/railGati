@@ -1,5 +1,6 @@
 """Network reachability API endpoint."""
 
+import typing
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -1252,6 +1253,41 @@ def get_network_train_profile(
         if "not found" in msg.lower() or "no usable observations" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+
+    return result
+
+
+from railgati.api.v1.schemas import TopologicalLoopResponse
+
+
+@router.get(
+    "/trains/{train_number}/topology-loops",
+    response_model=TopologicalLoopResponse,
+)
+def get_network_train_topology_loops(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    """
+    Calculate Network Train Topological Loop Analytics.
+    This metric identifies non-consecutive repeated station visits within a historical timetable.
+    It is a structural timetable-topology signal and does not establish physical track geometry,
+    current operations, passenger movement, or operational continuity.
+    """
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        from railgati.services.network import calculate_train_topology_loops
+
+        result = calculate_train_topology_loops(db, timetable_snapshot_id, train_number)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower() or "not present in snapshot" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+    except RuntimeError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
 
     return result
 

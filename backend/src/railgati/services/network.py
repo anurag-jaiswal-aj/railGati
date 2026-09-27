@@ -2987,3 +2987,86 @@ def calculate_paired_service_symmetry(
         "return_train_duration_minutes": float(r_dur),
         "duration_asymmetry_minutes": float(abs(f_dur - r_dur)),
     }
+
+
+import typing
+
+def calculate_train_topology_loops(
+    db: Session,
+    timetable_snapshot_id: int,
+    train_number: str,
+) -> dict[str, typing.Any]:
+    """Calculate Network Train Topological Loop Analytics."""
+    from sqlalchemy import text
+
+    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.train import Train
+
+    # Verify snapshot
+    snapshot = db.scalar(
+        select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
+    )
+    if not snapshot:
+        raise ValueError("Timetable snapshot not found")
+
+    if snapshot.status == "ARCHIVED":
+        raise RuntimeError("Timetable snapshot is archived and cannot be queried")
+
+    # Verify train
+    train = db.scalar(select(Train).filter(Train.number == train_number))
+    if not train:
+        raise ValueError(f"Train '{train_number}' not found")
+
+    query = text("""
+        SELECT s.code as station_code,
+               COUNT(*) as visit_count,
+               MAX(tso.stop_sequence) - MIN(tso.stop_sequence) as max_sequence_span
+        FROM train_stop_observations tso
+        JOIN stations s ON s.id = tso.station_id
+        WHERE tso.snapshot_id = :snapshot_id
+          AND tso.train_id = :train_id
+        GROUP BY tso.station_id, s.code
+        HAVING COUNT(*) > 1
+           AND MAX(tso.stop_sequence) - MIN(tso.stop_sequence) > 1
+        ORDER BY max_sequence_span DESC, s.code ASC
+    """)
+
+    results = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "train_id": train.id,
+        },
+    ).fetchall()
+
+    # We also need to check if the train exists in the snapshot at all.
+    # If no results, verify if train has any observations in this snapshot.
+    if not results:
+        obs_count = db.execute(
+            text(
+                "SELECT 1 FROM train_stop_observations "
+                "WHERE snapshot_id = :snapshot_id AND train_id = :train_id LIMIT 1"
+            ),
+            {"snapshot_id": timetable_snapshot_id, "train_id": train.id},
+        ).scalar()
+        if not obs_count:
+            raise ValueError(
+                f"Train '{train_number}' not present in snapshot {timetable_snapshot_id}"
+            )
+
+    loops = [
+        {
+            "station_code": row[0],
+            "visit_count": row[1],
+            "max_sequence_span": row[2],
+        }
+        for row in results
+    ]
+
+    return {
+        "train_number": train_number,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "has_loops": len(loops) > 0,
+        "loop_count": len(loops),
+        "loops": loops,
+    }

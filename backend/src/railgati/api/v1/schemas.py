@@ -577,6 +577,20 @@ class OutboundEdgeTransitResponse(BaseModel):
     outbound_edges: list[OutboundEdgeItem]
 
 
+class TopologicalLoopItem(BaseModel):
+    station_code: str
+    visit_count: int
+    max_sequence_span: int
+
+
+class TopologicalLoopResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    has_loops: bool
+    loop_count: int
+    loops: list[TopologicalLoopItem]
+
+
 class TrainRouteProfileResponse(BaseModel):
     train_number: str
     timetable_snapshot_id: int
