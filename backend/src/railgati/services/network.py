@@ -3956,3 +3956,86 @@ def calculate_station_reachability_expansion(
         "n2_count": n2_count,
         "expansion_ratio": float(n2_count) / float(n1_count),
     }
+
+def calculate_station_transfer_free_reach(
+    db: Session, timetable_snapshot_id: int, station_code: str
+) -> dict[str, typing.Any]:
+    """Calculate Network Station Transfer-Free Reachability (TFR) Analytics."""
+    from sqlalchemy import select, text
+
+    from railgati.api.v1.snapshots import get_active_station_snapshot_id
+    from railgati.models.station import Station, StationObservation
+
+    station_snapshot_id = get_active_station_snapshot_id(db)
+
+    station = db.scalar(select(Station).filter(Station.code == station_code.upper()))
+    if not station:
+        raise ValueError(f"Station '{station_code}' not found")
+
+    obs = db.scalar(
+        select(StationObservation).filter(
+            StationObservation.station_id == station.id,
+            StationObservation.snapshot_id == station_snapshot_id,
+        )
+    )
+    station_name = obs.name if obs else station.code
+
+    query = text("""
+        WITH target AS (
+            SELECT :station_id as id
+        ),
+        n1 AS (
+            SELECT DISTINCT t2.station_id
+            FROM train_stop_observations t1
+            JOIN train_stop_observations t2 
+              ON t1.train_id = t2.train_id 
+             AND t1.snapshot_id = t2.snapshot_id 
+             AND t1.stop_sequence + 1 = t2.stop_sequence
+            WHERE t1.snapshot_id = :snapshot_id
+              AND t1.station_id = (SELECT id FROM target)
+        ),
+        tfor AS (
+            SELECT DISTINCT t2.station_id
+            FROM train_stop_observations t1
+            JOIN train_stop_observations t2 
+              ON t1.train_id = t2.train_id 
+             AND t1.snapshot_id = t2.snapshot_id 
+             AND t1.stop_sequence < t2.stop_sequence
+            WHERE t1.snapshot_id = :snapshot_id
+              AND t1.station_id = (SELECT id FROM target)
+              AND t2.station_id != (SELECT id FROM target)
+        )
+        SELECT 
+            (SELECT COUNT(*) FROM n1) as n1_count,
+            (SELECT COUNT(*) FROM tfor) as tfor_count
+    """)
+
+    res = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "station_id": station.id,
+        },
+    ).fetchone()
+
+    if res is None:
+        raise ValueError("Unexpected query failure")
+
+    row = typing.cast(tuple[int, int], res)
+    n1_count = row[0] or 0
+    tfor_count = row[1] or 0
+
+    if n1_count == 0:
+        raise ValueError(
+            f"Station {station_code.upper()} has n1_count == 0. Transfer-free reachability ratio is undefined."
+        )
+
+    expansion_ratio = tfor_count / n1_count
+
+    return {
+        "station_code": station.code,
+        "station_name": station_name,
+        "topological_outbound_degree": n1_count,
+        "transfer_free_outbound_reach": tfor_count,
+        "reachability_span_ratio": round(expansion_ratio, 2),
+    }

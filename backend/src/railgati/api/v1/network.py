@@ -1674,3 +1674,27 @@ def get_station_reachability_expansion(
         if "No active" in str(e):
             raise HTTPException(status_code=503, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.get(
+    "/stations/{station_code}/transfer-free-reach",
+    response_model=schemas.StationTransferFreeReachResponse,
+)
+def get_network_station_transfer_free_reach(
+    station_code: str,
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    """Calculate Network Station Transfer-Free Reachability Analytics."""
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        from railgati.services.network import calculate_station_transfer_free_reach
+
+        result = calculate_station_transfer_free_reach(db, timetable_snapshot_id, station_code)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower() or "no qualifying adjacent" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+
+    return result

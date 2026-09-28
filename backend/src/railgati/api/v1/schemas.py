@@ -746,3 +746,10 @@ class StationReachabilityExpansionResponse(BaseModel):
     n1_count: int
     n2_count: int
     expansion_ratio: float
+
+class StationTransferFreeReachResponse(BaseModel):
+    station_code: str
+    station_name: str | None
+    topological_outbound_degree: int
+    transfer_free_outbound_reach: int
+    reachability_span_ratio: float
