@@ -1,5 +1,4 @@
 from fastapi.testclient import TestClient
-from tests.services.test_network_station_pair_route_diversity import route_diversity_fixtures  # noqa: F401
 
 
 def test_api_station_pair_route_diversity_success(client: TestClient, route_diversity_fixtures: dict) -> None:
@@ -9,8 +8,12 @@ def test_api_station_pair_route_diversity_success(client: TestClient, route_dive
     data = res.json()
     assert data["from_station_code"] == "A"
     assert data["to_station_code"] == "D"
-    assert data["distinct_path_count"] == 8
-    assert len(data["paths"]) == 8
+    assert data["distinct_path_count"] == 4
+    assert len(data["paths"]) == 4
+
+    assert data["paths"][0]["station_sequence"] == ["A", "B", "C", "D"]
+    assert data["paths"][0]["path_length"] == 4
+    assert data["paths"][0]["traversal_count"] == 2
 
 def test_api_station_pair_route_diversity_not_found(client: TestClient, route_diversity_fixtures: dict) -> None:
     res = client.get("/api/v1/network/stations/UNKNOWN/D/route-diversity")
