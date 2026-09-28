@@ -1873,3 +1873,24 @@ def get_train_od_exclusivity(
         if "not found" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+
+@router.get(
+    "/stations/{from_station_code}/{to_station_code}/route-diversity",
+    response_model=schemas.StationPairRouteDiversityResponse,
+    summary="Calculate Station Pair Route Diversity Analytics",
+    description="Identifies all distinct structural routes (ordered station sequences) connecting two stations in the timetable.",
+)
+def get_station_pair_route_diversity(
+    from_station_code: str,
+    to_station_code: str,
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    from railgati.services.network import calculate_station_pair_route_diversity
+
+    try:
+        return calculate_station_pair_route_diversity(db, from_station_code, to_station_code)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e

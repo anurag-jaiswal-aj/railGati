@@ -4769,3 +4769,84 @@ def calculate_train_route_od_exclusivity(db: Session, train_number: str) -> dict
             for r in rows
         ]
     }
+
+
+def calculate_station_pair_route_diversity(db, from_station_code: str, to_station_code: str) -> dict[str, typing.Any]:
+    from sqlalchemy import text
+
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.models.station import Station
+
+    from_station_code = from_station_code.upper()
+    to_station_code = to_station_code.upper()
+
+    from_st = db.query(Station).filter(Station.code == from_station_code).first()
+    if not from_st:
+        raise ValueError(f"Station not found: {from_station_code}")
+    to_st = db.query(Station).filter(Station.code == to_station_code).first()
+    if not to_st:
+        raise ValueError(f"Station not found: {to_station_code}")
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+    if not timetable_snapshot_id:
+        raise ValueError("No active timetable snapshot available.")
+
+    query = text("""
+        WITH target_trains AS (
+            SELECT t1.train_id, t1.stop_sequence as o_seq, t2.stop_sequence as d_seq
+            FROM train_stop_observations t1
+            JOIN train_stop_observations t2 
+              ON t1.train_id = t2.train_id AND t1.snapshot_id = t2.snapshot_id
+            WHERE t1.snapshot_id = :snapshot_id
+              AND t1.station_id = :from_id
+              AND t2.station_id = :to_id
+              AND t1.stop_sequence < t2.stop_sequence
+        )
+        SELECT 
+            tt.train_id,
+            tt.o_seq,
+            tt.d_seq,
+            s.code
+        FROM target_trains tt
+        JOIN train_stop_observations ts 
+          ON ts.train_id = tt.train_id 
+         AND ts.snapshot_id = :snapshot_id
+         AND ts.stop_sequence >= tt.o_seq 
+         AND ts.stop_sequence <= tt.d_seq
+        JOIN stations s ON s.id = ts.station_id
+        ORDER BY tt.train_id, tt.o_seq, tt.d_seq, ts.stop_sequence ASC
+    """)
+
+    rows = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "from_id": from_st.id,
+            "to_id": to_st.id,
+        }
+    ).fetchall()
+
+    import itertools
+    paths_map = {}
+
+    for _, group in itertools.groupby(rows, key=lambda x: (x[0], x[1], x[2])):
+        seq = tuple(row[3] for row in group)
+        paths_map[seq] = paths_map.get(seq, 0) + 1
+
+    paths = []
+    for seq, count in paths_map.items():
+        paths.append({
+            "station_sequence": list(seq),
+            "path_length": len(seq),
+            "traversal_count": count
+        })
+
+    paths.sort(key=lambda x: (-x["traversal_count"], -x["path_length"], x["station_sequence"]))
+
+    return {
+        "from_station_code": from_station_code,
+        "to_station_code": to_station_code,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "distinct_path_count": len(paths),
+        "paths": paths
+    }

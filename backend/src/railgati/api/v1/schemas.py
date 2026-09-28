@@ -823,3 +823,15 @@ class TrainODExclusivityResponse(BaseModel):
     timetable_snapshot_id: int
     exclusive_od_pair_count: int
     exclusive_od_pairs: list[TrainODExclusivityPairItem]
+
+class StationPairRouteDiversityPathItem(BaseModel):
+    station_sequence: list[str] = Field(..., description="The exact ordered sequence of station codes comprising this path.")
+    path_length: int = Field(..., description="The number of stations in this path sequence.")
+    traversal_count: int = Field(..., description="The number of valid traversal instances sharing this exact path.")
+
+class StationPairRouteDiversityResponse(BaseModel):
+    from_station_code: str
+    to_station_code: str
+    timetable_snapshot_id: int
+    distinct_path_count: int
+    paths: list[StationPairRouteDiversityPathItem]
