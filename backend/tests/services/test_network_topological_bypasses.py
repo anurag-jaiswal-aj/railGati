@@ -22,13 +22,13 @@ def bypass_fixtures(db_session: Session) -> dict[str, typing.Any]:
     db_session.commit()
     snap_id = snap.id
 
-    stations = {code: Station(code=code) for code in ["S1", "S2", "S3", "S4", "S5"]}
+    stations = {code: Station(code=code) for code in ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"]}
     for st in stations.values():
         db_session.add(st)
     db_session.commit()
 
     trains_data = [
-        ("NO_BYPASS", ["S1", "S2", "S3"]),
+        ("NO_BYPASS", ["S6", "S7", "S8"]),
         ("SHORT", ["S1", "S2"]),
         ("HAS_BYPASS", ["S1", "S2", "S3", "S4", "S5"]),
         ("BYPASS_PROVIDER", ["S1", "S3", "S5"]),  # Provides bypasses S1->S3, S3->S5

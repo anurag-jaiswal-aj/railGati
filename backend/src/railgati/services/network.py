@@ -4265,3 +4265,123 @@ def calculate_edge_traversal_dispersion(
     }
 
 
+def calculate_train_route_edge_exclusivity(
+    db: Session, timetable_snapshot_id: int, train_number: str
+) -> dict[str, object]:
+    """Calculate historical timetable-derived structural route edge exclusivity analytics."""
+    from railgati.models.train import Train, TrainObservation
+
+    train = (
+        db.query(Train)
+        .join(TrainObservation, TrainObservation.train_id == Train.id)
+        .filter(
+            Train.number == train_number,
+            TrainObservation.snapshot_id == timetable_snapshot_id,
+        )
+        .first()
+    )
+    if not train:
+        raise ValueError(f"Train {train_number} not found in active snapshot")
+
+    query = text(
+        """
+        WITH target_train AS (
+            SELECT :train_id AS id
+        ),
+        target_len AS (
+            SELECT COUNT(*) as clen 
+            FROM train_stop_observations 
+            WHERE snapshot_id = :snapshot_id 
+              AND train_id = (SELECT id FROM target_train)
+        ),
+        target_edges AS (
+            SELECT 
+                t1.station_id as o,
+                t2.station_id as d,
+                t1.stop_sequence
+            FROM train_stop_observations t1
+            JOIN train_stop_observations t2
+              ON t1.train_id = t2.train_id
+             AND t1.snapshot_id = t2.snapshot_id
+             AND t1.stop_sequence + 1 = t2.stop_sequence
+            WHERE t1.snapshot_id = :snapshot_id
+              AND t1.train_id = (SELECT id FROM target_train)
+        ),
+        edge_exclusivity AS (
+            SELECT 
+                te.stop_sequence,
+                te.o,
+                te.d,
+                NOT EXISTS (
+                    SELECT 1
+                    FROM train_stop_observations tso1 
+                    JOIN train_stop_observations tso2 
+                      ON tso2.train_id = tso1.train_id 
+                     AND tso2.station_id = te.d 
+                     AND tso2.snapshot_id = :snapshot_id
+                     AND tso2.stop_sequence = tso1.stop_sequence + 1
+                    WHERE tso1.station_id = te.o 
+                      AND tso1.snapshot_id = :snapshot_id
+                      AND (
+                          (SELECT COUNT(*) FROM train_stop_observations WHERE snapshot_id = :snapshot_id AND train_id = tso1.train_id) != (SELECT clen FROM target_len)
+                          OR EXISTS (
+                              SELECT 1
+                              FROM train_stop_observations targ
+                              JOIN train_stop_observations cand
+                                ON targ.stop_sequence = cand.stop_sequence
+                               AND cand.train_id = tso1.train_id
+                               AND cand.snapshot_id = :snapshot_id
+                              WHERE targ.train_id = (SELECT id FROM target_train)
+                                AND targ.snapshot_id = :snapshot_id
+                                AND targ.station_id != cand.station_id
+                          )
+                      )
+                ) as is_exclusive
+            FROM target_edges te
+        )
+        SELECT 
+            (SELECT COUNT(*) FROM target_edges) as route_edge_count,
+            COUNT(CASE WHEN is_exclusive THEN 1 END) as exclusive_edge_count
+        FROM edge_exclusivity
+        """
+    )
+
+    result = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "train_id": train.id,
+        },
+    ).fetchone()
+
+    route_edge_count = int(result[0]) if result and result[0] is not None else 0
+    exclusive_edge_count = int(result[1]) if result and result[1] is not None else 0
+    route_length = route_edge_count + 1 if route_edge_count > 0 else 0
+    # Wait, if route_edge_count == 0, the train could have 1 stop. Let's just query the stop count if needed,
+    # but route_edge_count + 1 is accurate for connected sequences. If a train has 1 stop, route_edge_count is 0.
+    # Let's get the exact stop count.
+
+    # Actually, we can get stop count properly to be safe:
+    stop_count_query = text(
+        "SELECT COUNT(*) FROM train_stop_observations WHERE snapshot_id = :snapshot_id AND train_id = :train_id"
+    )
+    stop_count = int(db.execute(stop_count_query, {"snapshot_id": timetable_snapshot_id, "train_id": train.id}).scalar() or 0)
+
+    shared_edge_count = route_edge_count - exclusive_edge_count
+
+    exclusivity_ratio = None
+    if route_edge_count > 0:
+        exclusivity_ratio = exclusive_edge_count / route_edge_count
+
+    return {
+        "train_number": train.number,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "route_length": stop_count,
+        "route_edge_count": route_edge_count,
+        "exclusive_edge_count": exclusive_edge_count,
+        "shared_edge_count": shared_edge_count,
+        "exclusivity_ratio": exclusivity_ratio,
+    }
+
+
+
