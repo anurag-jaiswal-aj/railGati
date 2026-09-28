@@ -7,31 +7,31 @@ DISCOVERY — NOT APPROVED
 **Station Pair Route-Boundary Confinement Analytics**
 
 ## Problem / Analytical Question
-For an arbitrary sequence of two stations ($O$ and $D$) historically traversed by multiple trains, how does that specific traversal segment topologically align with the absolute end-to-end boundaries of the trains traversing it? 
-Is the $O \to D$ segment the entire end-to-end journey for those trains (e.g., dedicated short-haul services), or is it embedded as a sub-segment within longer transit routes (e.g., trunk-haul segments)?
+For an arbitrary sequence of two stations ($O$ and $D$) historically traversed by multiple trains, how does that specific traversal segment topologically align with the absolute sequence boundaries of the trains traversing it? 
+Is the $O \to D$ segment the entire recorded historical route for those trains, or is it structurally embedded as a sub-segment within longer transit routes?
 
 ## Formal Definition
 Given an origin station code $O$, a destination station code $D$, and a historical timetable snapshot.
 
-A valid **traversal instance** is defined as a tuple $(t, o\_seq, d\_seq)$ where:
-1. Train $t$ stops at $O$ at sequence $o\_seq$
-2. Train $t$ stops at $D$ at sequence $d\_seq$
+A valid **traversal instance** is formally defined as the mathematically `DISTINCT` tuple $(train\_id, o\_seq, d\_seq)$ where:
+1. Train $train\_id$ stops at $O$ at sequence $o\_seq$
+2. Train $train\_id$ stops at $D$ at sequence $d\_seq$
 3. $o\_seq < d\_seq$
 4. Both observations occur strictly within the same `snapshot_id`.
 
-For each train $t$, its absolute topological boundaries in the dataset are defined as:
-- $t_{min} = \min(stop\_sequence)$ for train $t$
-- $t_{max} = \max(stop\_sequence)$ for train $t$
+For each train $train\_id$, its absolute topological boundaries in the dataset are defined as:
+- $t_{min} = \min(stop\_sequence)$ for train $train\_id$
+- $t_{max} = \max(stop\_sequence)$ for train $train\_id$
 
-Every valid traversal instance $(t, o\_seq, d\_seq)$ is strictly classified into exactly one of four topological boundary states:
+Every `DISTINCT` valid traversal instance $(train\_id, o\_seq, d\_seq)$ is strictly classified into exactly one of four topological boundary states:
 1. **`STRICTLY_BOUNDED`**: $o\_seq = t_{min}$ AND $d\_seq = t_{max}$. 
-   *(The $O \to D$ traversal perfectly bounds the train's entire sequence).*
+   *(The $O \to D$ traversal perfectly bounds the train's entire recorded historical sequence).*
 2. **`ORIGIN_BOUNDED`**: $o\_seq = t_{min}$ AND $d\_seq < t_{max}$. 
    *(The train originates exactly at $O$ but terminates strictly after $D$).*
 3. **`DESTINATION_BOUNDED`**: $o\_seq > t_{min}$ AND $d\_seq = t_{max}$. 
-   *(The train originates strictly before $O$ but terminates exactly at $D$).*
+   *(The train's recorded sequence begins strictly before $O$ but terminates exactly at $D$).*
 4. **`UNBOUNDED_EMBEDDED`**: $o\_seq > t_{min}$ AND $d\_seq < t_{max}$. 
-   *(The $O \to D$ traversal is entirely embedded within a longer train route).*
+   *(The $O \to D$ traversal is entirely embedded within a longer recorded train sequence).*
 
 ## Input / Output
 **Input**: 
@@ -50,10 +50,10 @@ Every valid traversal instance $(t, o\_seq, d\_seq)$ is strictly classified into
 - The evaluation compares local sequence coordinates against the global bounding limits of the train's dataset scope.
 
 ## Repeated-Occurrence Semantics
-If a train loops or visits $O$ or $D$ multiple times, all valid tuples $(o\_seq, d\_seq)$ where $o\_seq < d\_seq$ are extracted as independent traversal instances. Each instance is independently classified against the train's absolute $t_{min}$ and $t_{max}$. 
+If a train structurally loops or visits $O$ or $D$ multiple times, all valid tuples $(o\_seq, d\_seq)$ where $o\_seq < d\_seq$ are generated as `DISTINCT` independent traversal instances. Each instance tuple is independently classified against the train's absolute $t_{min}$ and $t_{max}$. 
 
 ## Snapshot Semantics
-All evaluation, including both local sequence indexing and absolute terminal limits ($t_{min}, t_{max}$), is performed strictly scoped to the exact active `snapshot_id`. Boundaries are not leaked across snapshots.
+All evaluation, including both local sequence indexing and absolute terminal limits ($t_{min}, t_{max}$), is performed strictly scoped to the exact active timetable `snapshot_id`. Boundaries are evaluated solely within that timetable snapshot and are not mixed with station snapshot semantics or leaked across independent timetable datasets.
 
 ## Closest Existing Phases
 1. **Phase 41 (Edge Route Terminal Dispersion)**: Phase 41 queries a 1-hop *Edge* and aggregates the string names of the ultimate terminal stations to measure geographic dispersion. Phase 47 queries an arbitrary *Station Pair* (N-hop) and evaluates the structural *confinement* states (the boolean boundary intersections) locally at $O$ and $D$.
@@ -69,23 +69,23 @@ All evaluation, including both local sequence indexing and absolute terminal lim
 The formal query was successfully validated against Snapshot 2.
 
 **`NDLS` $\to$ `HWH`**
-- `STRICTLY_BOUNDED`: 6 traversals (Sample trains: 466, 529, 530, 532, 540)
+- `STRICTLY_BOUNDED`: 6 (Sample trains: 466, 529, 530, 532, 540)
 - Total Traversals: 6
-*(100% of these services are dedicated end-to-end routes)*
+*(100% of these services exactly match the absolute boundaries)*
 
 **`LTT` $\to$ `PUNE`**
 - `DESTINATION_BOUNDED`: 6
 - `ORIGIN_BOUNDED`: 4
 - `UNBOUNDED_EMBEDDED`: 17 (Sample trains: 11, 12, 14, 18, 19)
 - Total Traversals: 27
-*(Dominated by embedded long-haul transit services)*
+*(Dominated by embedded transit segments)*
 
 **`NDLS` $\to$ `CNB`**
 - `ORIGIN_BOUNDED`: 35 (Sample trains: 286, 463, 466, 494, 502)
 - `STRICTLY_BOUNDED`: 2
 - `UNBOUNDED_EMBEDDED`: 1
 - Total Traversals: 38
-*(Massively dominated by outbound long-haul originations)*
+*(Massively dominated by outbound origin-bounded segments)*
 
 ## Edge Cases
 **`VDR` $\to$ `CDG`** (Unconnected Valid Stations)
