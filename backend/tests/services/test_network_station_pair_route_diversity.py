@@ -40,6 +40,8 @@ def route_diversity_fixtures(db_session: Session) -> typing.Any:
         ("T3", ["A", "X", "Y", "D"]),
         ("T4", ["A", "D"]),
         ("T5", ["A", "B", "A", "D"]),
+        ("T6", ["A", "D", "A", "D"]),
+        ("T7", ["A", "B", "D", "A", "C", "D"]),
     ]
 
     for t_num, seq in paths:
@@ -61,27 +63,39 @@ def test_calculate_station_pair_route_diversity_success(db_session: Session, rou
 
     assert res["from_station_code"] == "A"
     assert res["to_station_code"] == "D"
-    assert res["distinct_path_count"] == 4
+    assert res["distinct_path_count"] == 8
 
     paths = res["paths"]
-    assert len(paths) == 4
-
-    # Should be sorted by traversal_count DESC, path_length DESC
-    assert paths[0]["station_sequence"] == ["A", "B", "C", "D"]
-    assert paths[0]["path_length"] == 4
-    assert paths[0]["traversal_count"] == 2
-
-    # Path 1 is A->D
-    assert paths[1]["station_sequence"] == ["A", "D"]
-    assert paths[1]["path_length"] == 2
+    assert len(paths) == 8
+    
+    assert paths[0]["station_sequence"] == ["A", "D"]
+    assert paths[0]["path_length"] == 2
+    assert paths[0]["traversal_count"] == 4
+    
+    assert paths[1]["station_sequence"] == ["A", "B", "C", "D"]
+    assert paths[1]["path_length"] == 4
     assert paths[1]["traversal_count"] == 2
 
-    # Path 2 is A->B->A->D
-    assert paths[2]["station_sequence"] == ["A", "B", "A", "D"]
-    assert paths[2]["path_length"] == 4
+    assert paths[2]["station_sequence"] == ["A", "B", "D", "A", "C", "D"]
+    assert paths[2]["path_length"] == 6
     assert paths[2]["traversal_count"] == 1
 
-    # Path 3 is A->X->Y->D
-    assert paths[3]["station_sequence"] == ["A", "X", "Y", "D"]
+    assert paths[3]["station_sequence"] == ["A", "B", "A", "D"]
     assert paths[3]["path_length"] == 4
     assert paths[3]["traversal_count"] == 1
+    
+    assert paths[4]["station_sequence"] == ["A", "D", "A", "D"]
+    assert paths[4]["path_length"] == 4
+    assert paths[4]["traversal_count"] == 1
+    
+    assert paths[5]["station_sequence"] == ["A", "X", "Y", "D"]
+    assert paths[5]["path_length"] == 4
+    assert paths[5]["traversal_count"] == 1
+    
+    assert paths[6]["station_sequence"] == ["A", "B", "D"]
+    assert paths[6]["path_length"] == 3
+    assert paths[6]["traversal_count"] == 1
+    
+    assert paths[7]["station_sequence"] == ["A", "C", "D"]
+    assert paths[7]["path_length"] == 3
+    assert paths[7]["traversal_count"] == 1
