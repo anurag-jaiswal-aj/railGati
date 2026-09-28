@@ -788,12 +788,3 @@ class EdgeRouteTerminalDispersionResponse(BaseModel):
     traversing_train_count: int
     distinct_origin_count: int
     distinct_destination_count: int
-
-
-class EdgeRouteTerminalDispersionResponse(BaseModel):
-    from_station_code: str
-    to_station_code: str
-    timetable_snapshot_id: int
-    traversing_train_count: int
-    distinct_origin_count: int
-    distinct_destination_count: int

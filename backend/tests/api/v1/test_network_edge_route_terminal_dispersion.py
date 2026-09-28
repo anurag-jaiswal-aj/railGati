@@ -1,4 +1,5 @@
 import typing
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -42,11 +43,11 @@ def api_terminal_dispersion_fixtures(db_session: Session) -> int:
             )
         )
     db_session.commit()
-    return snap_id
+    return int(snap_id)
 
 
 def test_api_edge_terminal_dispersion_success(
-    client: TestClient, api_terminal_dispersion_fixtures: int, monkeypatch
+    client: TestClient, api_terminal_dispersion_fixtures: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from railgati.api.v1 import snapshots
 
@@ -66,7 +67,7 @@ def test_api_edge_terminal_dispersion_success(
 
 
 def test_api_edge_terminal_dispersion_404_station(
-    client: TestClient, api_terminal_dispersion_fixtures: int, monkeypatch
+    client: TestClient, api_terminal_dispersion_fixtures: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from railgati.api.v1 import snapshots
 
@@ -80,7 +81,7 @@ def test_api_edge_terminal_dispersion_404_station(
 
 
 def test_api_edge_terminal_dispersion_404_edge(
-    client: TestClient, api_terminal_dispersion_fixtures: int, monkeypatch
+    client: TestClient, api_terminal_dispersion_fixtures: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from railgati.api.v1 import snapshots
 

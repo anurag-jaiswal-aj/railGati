@@ -33,6 +33,10 @@ Extensive testing was added using isolated fixtures (`TEST_API_DISP`) to prevent
     - Valid HTTP response logic.
     - Error mapping to 404 for missing stations/edges.
 
+**Phase 41 focused tests: PASS.**
+
+**Full backend suite: NOT GREEN due to a pre-existing Phase 40 endpoint/test mismatch (`test_api_edge_exclusivity_success` fails with 404). Phase 40 was not modified during Phase 41.**
+
 ## 6. Real Snapshot 2 Validation
 The endpoint was successfully validated against Snapshot 2 actuals, exactly matching the required values:
 

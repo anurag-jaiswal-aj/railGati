@@ -3119,7 +3119,7 @@ def calculate_train_structural_halts(
             FROM train_stop_observations
             WHERE snapshot_id = :snapshot_id AND train_id = :train_id
         )
-        SELECT s.code as station_code, 
+        SELECT s.code as station_code,
                CAST(({time_diff_expr}) / 60.0 AS FLOAT) as dwell_minutes
         FROM train_stop_observations tso
         JOIN stations s ON s.id = tso.station_id
@@ -3189,7 +3189,7 @@ def calculate_train_relative_edge_slowness(
 
     query = text(f"""
         WITH target_edges AS (
-            SELECT 
+            SELECT
                 tso1.stop_sequence as target_seq,
                 tso1.station_id as src_station_id,
                 tso2.station_id as dst_station_id,
@@ -3213,7 +3213,7 @@ def calculate_train_relative_edge_slowness(
             FROM target_edges
         ),
         network_edges AS (
-            SELECT 
+            SELECT
                 tso1.station_id as src_station_id,
                 tso2.station_id as dst_station_id,
                 CAST(({time_diff_expr}) / 60.0 AS FLOAT) as duration
@@ -3229,7 +3229,7 @@ def calculate_train_relative_edge_slowness(
               AND tso2.arrival_time IS NOT NULL
         ),
         network_stats AS (
-            SELECT 
+            SELECT
                 src_station_id, 
                 dst_station_id,
                 AVG(duration) as avg_duration,
@@ -3237,7 +3237,7 @@ def calculate_train_relative_edge_slowness(
             FROM network_edges
             GROUP BY src_station_id, dst_station_id
         )
-        SELECT 
+        SELECT
             te.target_seq,
             te.src,
             te.dst,
@@ -3312,7 +3312,7 @@ def calculate_train_relative_station_dwell(
 
     query = text(f"""
         WITH target_dwells AS (
-            SELECT 
+            SELECT
                 tso.stop_sequence as target_seq,
                 tso.station_id as station_id,
                 s.code as station_code,
@@ -3328,7 +3328,7 @@ def calculate_train_relative_station_dwell(
             SELECT DISTINCT station_id FROM target_dwells
         ),
         network_dwells AS (
-            SELECT 
+            SELECT
                 tso.station_id,
                 CAST(({time_diff_expr}) / 60.0 AS FLOAT) as dwell
             FROM train_stop_observations tso
@@ -3338,14 +3338,14 @@ def calculate_train_relative_station_dwell(
               AND tso.departure_time IS NOT NULL
         ),
         network_stats AS (
-            SELECT 
+            SELECT
                 station_id,
                 AVG(dwell) as avg_dwell,
                 COUNT(*) as occurrence_count
             FROM network_dwells
             GROUP BY station_id
         )
-        SELECT 
+        SELECT
             td.target_seq,
             td.station_code,
             td.target_dwell,
@@ -3416,7 +3416,7 @@ def calculate_station_outbound_dominance(
             SELECT :station_id as id
         ),
         outbound_edges AS (
-            SELECT 
+            SELECT
                 tso1.station_id as from_id,
                 tso2.station_id as to_id,
                 COUNT(*) as occurrences
@@ -3430,7 +3430,7 @@ def calculate_station_outbound_dominance(
             GROUP BY tso1.station_id, tso2.station_id
         ),
         ranked_destinations AS (
-            SELECT 
+            SELECT
                 oe.to_id,
                 s.code as dest_code,
                 oe.occurrences,
@@ -3439,14 +3439,14 @@ def calculate_station_outbound_dominance(
             JOIN stations s ON s.id = oe.to_id
         ),
         station_totals AS (
-            SELECT 
+            SELECT
                 from_id,
                 SUM(occurrences) as total_outbound,
                 MAX(occurrences) as max_outbound
             FROM outbound_edges
             GROUP BY from_id
         )
-        SELECT 
+        SELECT
             st.total_outbound,
             st.max_outbound,
             rd.dest_code as dominant_destination,
@@ -3534,7 +3534,7 @@ def calculate_edge_paired_route_symmetry(
               AND rtso2.station_id = :from_id
               AND rtso1.stop_sequence + 1 = rtso2.stop_sequence
         )
-        SELECT 
+        SELECT
             COUNT(*) AS total_forward_trains,
             COUNT(sr.fwd_train_id) AS symmetrical_return_trains
         FROM forward_trains f
@@ -3611,7 +3611,7 @@ def calculate_station_neighborhood_symmetry(
               AND tso1.stop_sequence + 1 = tso2.stop_sequence
             WHERE tso2.snapshot_id = :snapshot_id AND tso2.station_id = :station_id
         )
-        SELECT 
+        SELECT
             (SELECT COUNT(*) FROM outbound) AS out_count,
             (SELECT COUNT(*) FROM inbound) AS in_count,
             (SELECT COUNT(*) FROM outbound o JOIN inbound i ON o.station_id = i.station_id) AS intersection_count,
@@ -3693,7 +3693,7 @@ def calculate_station_neighborhood_triadic_closure(db: Session, station_code: st
             JOIN outbound_neighbors b ON a.station_id < b.station_id
         ),
         actual_edges AS (
-            SELECT DISTINCT 
+            SELECT DISTINCT
                 CASE WHEN tso1.station_id < tso2.station_id THEN tso1.station_id ELSE tso2.station_id END AS n1,
                 CASE WHEN tso1.station_id > tso2.station_id THEN tso1.station_id ELSE tso2.station_id END AS n2
             FROM train_stop_observations tso1
@@ -3706,7 +3706,7 @@ def calculate_station_neighborhood_triadic_closure(db: Session, station_code: st
               AND tso2.station_id IN (SELECT station_id FROM outbound_neighbors)
               AND tso1.station_id != tso2.station_id
         )
-        SELECT 
+        SELECT
             (SELECT COUNT(*) FROM outbound_neighbors) AS outbound_degree,
             (SELECT COUNT(*) FROM possible_pairs) AS possible_count,
             (SELECT COUNT(*) FROM actual_edges) AS actual_count
@@ -3842,7 +3842,7 @@ def calculate_station_transit_articulation(db: Session, station_code: str) -> di
             WHERE NOT EXISTS (SELECT 1 FROM direct_edges d WHERE d.o = p.o AND d.d = p.d)
               AND NOT EXISTS (SELECT 1 FROM alt_paths a WHERE a.o = p.o AND a.d = p.d)
         )
-        SELECT 
+        SELECT
             (SELECT COUNT(*) FROM inbound) as in_deg,
             (SELECT COUNT(*) FROM outbound) as out_deg,
             (SELECT COUNT(*) FROM pairs) as transit_pairs,
@@ -3908,7 +3908,7 @@ def calculate_station_reachability_expansion(
         n1 AS (
             SELECT DISTINCT t2.station_id as id
             FROM train_stop_observations t1
-            JOIN train_stop_observations t2 
+            JOIN train_stop_observations t2
               ON t1.train_id = t2.train_id 
               AND t1.snapshot_id = t2.snapshot_id 
               AND t1.stop_sequence + 1 = t2.stop_sequence
@@ -3927,7 +3927,7 @@ def calculate_station_reachability_expansion(
               AND t3.station_id != (SELECT id FROM target)
               AND t3.station_id NOT IN (SELECT id FROM n1)
         )
-        SELECT 
+        SELECT
             (SELECT COUNT(*) FROM n1) as n1_count,
             (SELECT COUNT(*) FROM n2) as n2_count
     """)
@@ -3988,7 +3988,7 @@ def calculate_station_transfer_free_reach(
         n1 AS (
             SELECT DISTINCT t2.station_id
             FROM train_stop_observations t1
-            JOIN train_stop_observations t2 
+            JOIN train_stop_observations t2
               ON t1.train_id = t2.train_id 
              AND t1.snapshot_id = t2.snapshot_id 
              AND t1.stop_sequence + 1 = t2.stop_sequence
@@ -3998,7 +3998,7 @@ def calculate_station_transfer_free_reach(
         tfor AS (
             SELECT DISTINCT t2.station_id
             FROM train_stop_observations t1
-            JOIN train_stop_observations t2 
+            JOIN train_stop_observations t2
               ON t1.train_id = t2.train_id 
              AND t1.snapshot_id = t2.snapshot_id 
              AND t1.stop_sequence < t2.stop_sequence
@@ -4006,7 +4006,7 @@ def calculate_station_transfer_free_reach(
               AND t1.station_id = (SELECT id FROM target)
               AND t2.station_id != (SELECT id FROM target)
         )
-        SELECT 
+        SELECT
             (SELECT COUNT(*) FROM n1) as n1_count,
             (SELECT COUNT(*) FROM tfor) as tfor_count
     """)
@@ -4056,7 +4056,7 @@ def calculate_train_structural_subsumption(
 
     query = text("""
         WITH target_stops AS (
-            SELECT station_id, 
+            SELECT station_id,
                    ROW_NUMBER() OVER (ORDER BY stop_sequence) as target_rnk
             FROM train_stop_observations
             WHERE snapshot_id = :snapshot_id 
@@ -4078,7 +4078,7 @@ def calculate_train_structural_subsumption(
               AND tso1.train_id != :train_id
         ),
         candidate_stops AS (
-            SELECT tso.train_id, 
+            SELECT tso.train_id,
                    tso.station_id,
                    ROW_NUMBER() OVER (PARTITION BY tso.train_id ORDER BY tso.stop_sequence) as cand_rnk
             FROM train_stop_observations tso
@@ -4127,7 +4127,7 @@ def calculate_train_topological_bypasses(
     query = text(
         """
         WITH target_seq AS (
-            SELECT station_id, 
+            SELECT station_id,
                    ROW_NUMBER() OVER (ORDER BY stop_sequence) as rnk
             FROM train_stop_observations 
             WHERE snapshot_id = :snapshot_id 
@@ -4146,7 +4146,7 @@ def calculate_train_topological_bypasses(
               AND t1.train_id = t2.train_id
               AND t1.stop_sequence + 1 = t2.stop_sequence
         )
-        SELECT 
+        SELECT
             (SELECT COUNT(*) FROM target_seq) as route_length,
             (SELECT COUNT(*) FROM bypasses) as bypass_count
         """
@@ -4189,7 +4189,7 @@ def calculate_edge_traversal_dispersion(
     query = text(
         """
         WITH edge_traversals AS (
-            SELECT 
+            SELECT
                 t1.train_id,
                 t1.station_id as o,
                 t2.station_id as d,
@@ -4204,32 +4204,32 @@ def calculate_edge_traversal_dispersion(
               AND t1.station_id = :from_id
               AND t2.station_id = :to_id
         )
-        SELECT 
+        SELECT
             (SELECT COUNT(*) FROM edge_traversals) as edge_volume,
-            (SELECT COUNT(DISTINCT t_prev.station_id) 
+            (SELECT COUNT(DISTINCT t_prev.station_id)
              FROM edge_traversals et 
              JOIN train_stop_observations t_prev 
                ON t_prev.train_id = et.train_id 
               AND t_prev.snapshot_id = :snapshot_id 
               AND t_prev.stop_sequence = et.seq_o - 1) as convergence_count,
-            (SELECT COUNT(*) 
+            (SELECT COUNT(*)
              FROM edge_traversals et 
              WHERE NOT EXISTS (
-                 SELECT 1 FROM train_stop_observations t_prev 
+                 SELECT 1 FROM train_stop_observations t_prev
                  WHERE t_prev.train_id = et.train_id 
                    AND t_prev.snapshot_id = :snapshot_id 
                    AND t_prev.stop_sequence = et.seq_o - 1
              )) as edge_originating_train_count,
-            (SELECT COUNT(DISTINCT t_next.station_id) 
+            (SELECT COUNT(DISTINCT t_next.station_id)
              FROM edge_traversals et 
              JOIN train_stop_observations t_next 
                ON t_next.train_id = et.train_id 
               AND t_next.snapshot_id = :snapshot_id 
               AND t_next.stop_sequence = et.seq_d + 1) as bifurcation_count,
-            (SELECT COUNT(*) 
+            (SELECT COUNT(*)
              FROM edge_traversals et 
              WHERE NOT EXISTS (
-                 SELECT 1 FROM train_stop_observations t_next 
+                 SELECT 1 FROM train_stop_observations t_next
                  WHERE t_next.train_id = et.train_id 
                    AND t_next.snapshot_id = :snapshot_id 
                    AND t_next.stop_sequence = et.seq_d + 1
@@ -4293,13 +4293,13 @@ def calculate_train_route_edge_exclusivity(
             SELECT :train_id AS id
         ),
         target_len AS (
-            SELECT COUNT(*) as clen 
+            SELECT COUNT(*) as clen
             FROM train_stop_observations 
             WHERE snapshot_id = :snapshot_id 
               AND train_id = (SELECT id FROM target_train)
         ),
         target_edges AS (
-            SELECT 
+            SELECT
                 t1.station_id as o,
                 t2.station_id as d,
                 t1.stop_sequence
@@ -4312,7 +4312,7 @@ def calculate_train_route_edge_exclusivity(
               AND t1.train_id = (SELECT id FROM target_train)
         ),
         edge_exclusivity AS (
-            SELECT 
+            SELECT
                 te.stop_sequence,
                 te.o,
                 te.d,
@@ -4343,7 +4343,7 @@ def calculate_train_route_edge_exclusivity(
                 ) as is_exclusive
             FROM target_edges te
         )
-        SELECT 
+        SELECT
             (SELECT COUNT(*) FROM target_edges) as route_edge_count,
             COUNT(CASE WHEN is_exclusive THEN 1 END) as exclusive_edge_count
         FROM edge_exclusivity
@@ -4420,7 +4420,7 @@ def calculate_edge_route_terminal_dispersion(
             SELECT DISTINCT
                 t1.train_id
             FROM train_stop_observations t1
-            JOIN train_stop_observations t2 
+            JOIN train_stop_observations t2
               ON t1.train_id = t2.train_id
              AND t1.snapshot_id = t2.snapshot_id
              AND t2.stop_sequence = t1.stop_sequence + 1
@@ -4429,7 +4429,7 @@ def calculate_edge_route_terminal_dispersion(
               AND t2.station_id = :to_id
         ),
         train_bounds AS (
-            SELECT 
+            SELECT
                 tso.train_id,
                 MIN(tso.stop_sequence) as min_seq,
                 MAX(tso.stop_sequence) as max_seq
@@ -4439,21 +4439,21 @@ def calculate_edge_route_terminal_dispersion(
             GROUP BY tso.train_id
         ),
         train_terminals AS (
-            SELECT 
+            SELECT
                 tb.train_id,
                 orig_tso.station_id as origin_id,
                 dest_tso.station_id as dest_id
             FROM train_bounds tb
-            JOIN train_stop_observations orig_tso 
-              ON orig_tso.train_id = tb.train_id 
+            JOIN train_stop_observations orig_tso
+              ON orig_tso.train_id = tb.train_id
              AND orig_tso.stop_sequence = tb.min_seq
              AND orig_tso.snapshot_id = :snapshot_id
-            JOIN train_stop_observations dest_tso 
-              ON dest_tso.train_id = tb.train_id 
+            JOIN train_stop_observations dest_tso
+              ON dest_tso.train_id = tb.train_id
              AND dest_tso.stop_sequence = tb.max_seq
              AND dest_tso.snapshot_id = :snapshot_id
         )
-        SELECT 
+        SELECT
             COUNT(train_id) as traversing_train_count,
             COUNT(DISTINCT origin_id) as distinct_origin_count,
             COUNT(DISTINCT dest_id) as distinct_destination_count
