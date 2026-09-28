@@ -4494,7 +4494,6 @@ def calculate_edge_route_co_traversal_affinity(
     timetable_snapshot_id: int,
     from_station_code: str,
     to_station_code: str,
-    limit: int = 50,
 ) -> dict[str, typing.Any]:
     """Calculate historical timetable-derived edge co-traversal affinity."""
 
@@ -4546,8 +4545,7 @@ def calculate_edge_route_co_traversal_affinity(
         FROM other_edges oe
         JOIN stations s1 ON s1.id = oe.o
         JOIN stations s2 ON s2.id = oe.d
-        ORDER BY oe.shared_trains DESC, s1.code ASC, s2.code ASC
-        LIMIT :limit;
+        ORDER BY oe.shared_trains DESC, s1.code ASC, s2.code ASC;
     """)
 
     rows = db.execute(
@@ -4556,7 +4554,6 @@ def calculate_edge_route_co_traversal_affinity(
             "snapshot_id": timetable_snapshot_id,
             "from_id": from_station.id,
             "to_id": to_station.id,
-            "limit": limit,
         }
     ).fetchall()
 

@@ -1812,7 +1812,6 @@ def get_edge_route_terminal_dispersion(
 def get_edge_route_co_traversal_affinity(
     from_station_code: str,
     to_station_code: str,
-    limit: int = Query(50, description="Max edges to return (default 50)"),
     db: Session = Depends(get_db),
 ) -> dict[str, typing.Any]:
     from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
@@ -1822,7 +1821,7 @@ def get_edge_route_co_traversal_affinity(
 
     try:
         return calculate_edge_route_co_traversal_affinity(
-            db, timetable_snapshot_id, from_station_code, to_station_code, limit
+            db, timetable_snapshot_id, from_station_code, to_station_code
         )
     except ValueError as e:
         msg = str(e)

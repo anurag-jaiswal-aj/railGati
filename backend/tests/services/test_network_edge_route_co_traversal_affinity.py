@@ -6,7 +6,7 @@ from railgati.models.train import TrainStopObservation
 from railgati.services.network import calculate_edge_route_co_traversal_affinity
 
 
-def setup_mock_data(db_session: Session, snapshot_id: int):
+def setup_mock_data(db_session: Session, snapshot_id: int) -> None:
     # stations: A, B, C, D
     db_session.execute(
         Station.__table__.insert(),
@@ -124,3 +124,46 @@ def test_service_edge_route_co_traversal_affinity_not_found(db_session: Session)
 
     with pytest.raises(ValueError, match="Directed edge not found"):
         calculate_edge_route_co_traversal_affinity(db_session, 1, "AAA", "CCC")
+
+def test_service_edge_route_co_traversal_affinity_no_limit(db_session: Session) -> None:
+    snapshot_id = 2
+
+    # 62 stations: A, B, and S1..S60
+    stations = [
+        {"id": 1, "code": "AAA", "zone": "NR"},
+        {"id": 2, "code": "BBB", "zone": "NR"},
+    ]
+    for i in range(1, 61):
+        stations.append({"id": i+2, "code": f"S{i:02d}", "zone": "NR"})
+
+    db_session.execute(Station.__table__.insert(), stations)
+
+    station_obs = []
+    for st in stations:
+        station_obs.append({
+            "station_id": st["id"], "snapshot_id": snapshot_id, "name": st["code"],
+            "latitude": 0, "longitude": 0, "state_id": 1
+        })
+    db_session.execute(StationObservation.__table__.insert(), station_obs)
+
+    # Train 200: AAA -> BBB -> S1 -> S2 -> ... -> S60
+    stops = [
+        {"train_id": 200, "snapshot_id": snapshot_id, "station_id": 1, "stop_sequence": 1},
+        {"train_id": 200, "snapshot_id": snapshot_id, "station_id": 2, "stop_sequence": 2},
+    ]
+    for i in range(1, 61):
+        stops.append({
+            "train_id": 200,
+            "snapshot_id": snapshot_id,
+            "station_id": i+2,
+            "stop_sequence": i+2
+        })
+
+    db_session.execute(TrainStopObservation.__table__.insert(), stops)
+    db_session.commit()
+
+    result = calculate_edge_route_co_traversal_affinity(db_session, snapshot_id, "AAA", "BBB")
+
+    edges = result["shared_edges"]
+    assert len(edges) == 60  # > 50 proving no arbitrary truncation
+

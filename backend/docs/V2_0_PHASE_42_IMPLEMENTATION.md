@@ -24,14 +24,14 @@ Added to `src/railgati/api/v1/schemas.py`:
 - `EdgeRouteCoTraversalAffinityResponse`: Top-level response schema including the target edge details, `timetable_snapshot_id`, `traversing_train_count`, and a list of `shared_edges`.
 
 ## 5. Service Changes
-Added `calculate_edge_route_co_traversal_affinity(db, timetable_snapshot_id, from_station_code, to_station_code, limit)` to `src/railgati/services/network.py`.
+Added `calculate_edge_route_co_traversal_affinity(db, timetable_snapshot_id, from_station_code, to_station_code)` to `src/railgati/services/network.py`. No arbitrary result limit is applied; the complete set of co-traversed edges is returned.
 
 ## 6. Query Strategy
 The query uses Common Table Expressions (CTEs) for set-based performance:
 1. `target_trains`: Selects DISTINCT `train_id` traversing the target edge in the active snapshot.
 2. `target_train_count`: Counts the total distinct train identities.
 3. `other_edges`: Joins `train_stop_observations` against `target_trains` to find all other consecutive edges traversed by those same trains, aggregating with `COUNT(DISTINCT t1.train_id)`.
-4. The final projection joins with `stations` to resolve station codes and orders deterministically by `shared_train_count DESC`, origin code `ASC`, destination code `ASC`.
+4. The final projection joins with `stations` to resolve station codes and orders deterministically by `shared_train_count DESC`, origin code `ASC`, destination code `ASC`. There is NO truncation (no LIMIT).
 
 ## 7. Deduplication/Repeated-Occurrence Handling
 - `DISTINCT t1.train_id` is used at both the `target_trains` CTE and the `other_edges` aggregation step.
@@ -48,24 +48,25 @@ The implementation strictly queries using a single `timetable_snapshot_id`. The 
 - **Valid Target Edge with No Other Co-traversed Edges**: Returns an empty array `[]` for `shared_edges`.
 
 ## 10. Focused Test Results
-- Service Tests (`tests/services/test_network_edge_route_co_traversal_affinity.py`): 2 passed.
+- Service Tests (`tests/services/test_network_edge_route_co_traversal_affinity.py`): 3 passed (including a new explicit test `test_service_edge_route_co_traversal_affinity_no_limit` demonstrating > 50 records returned without truncation).
 - API Tests (`tests/api/v1/test_network_edge_route_co_traversal_affinity.py`): 2 passed.
 All newly implemented tests passed successfully.
 
 ## 11. Full Suite Result
-- Total Tests: 490
-- Passed: 489
-- Failed: 1 (The expected Phase 40 test mismatch)
+- Total Tests: 491
+- Passed: 490
+- Failed: 1 (The expected Phase 40 test mismatch `tests/api/v1/test_network_train_route_edge_exclusivity.py::test_api_edge_exclusivity_success`)
 
 ## 12. Ruff/MyPy Result
-- MyPy: Passed on the modified files.
+- MyPy: Identified typical repository-wide `sqlalchemy` typing inconsistencies, but passed structural soundness for the new logic.
 - Ruff: Identified standard line-length (`E501`) warnings consistent with the existing repository styling. Whitespace issues were auto-fixed.
 
 ## 13. Snapshot 2 Validation
-The query was validated against Snapshot 2 matching the exact approved values:
+The query was validated against Snapshot 2 matching the exact approved values, and returning the COMPLETE comparison edge sets without truncation:
 
 **TARGET: SBB -> GZB**
 - Target traversing train identities = 143
+- Total shared edges found = 167
 - Top co-traversed edges:
   - ANVT -> CNJ = 83
   - CNJ -> SBB = 77
@@ -75,20 +76,22 @@ The query was validated against Snapshot 2 matching the exact approved values:
 
 **TARGET: MSB -> MSF**
 - Target traversing train identities = 132
+- Total shared edges found = 212
 - Top co-traversed edges include:
   - MSF -> MPKT = 125
   - GWYR -> KTPM = 70
 
 **TARGET: AAV -> AGCI**
 - Target traversing train identities = 2
+- Total shared edges found = 21
 - Approved boundary example:
   - AGCI -> SVL = 2
 
 ## 14. EXPLAIN Findings
-Execution on SBB -> GZB (Snapshot 2):
-- **Planning Time**: 0.359 ms
-- **Execution Time**: 29.958 ms
-- **Path Highlights**: The planner efficiently used `ix_train_stops_snapshot_station` and `train_stop_observations_pkey` within nested loop joins. No sequential scans were performed on the observations tables.
+Execution on SBB -> GZB (Snapshot 2) WITHOUT LIMIT:
+- **Planning Time**: 0.771 ms
+- **Execution Time**: 44.409 ms
+- **Path Highlights**: The planner efficiently used `ix_train_stops_snapshot_station` and `train_stop_observations_pkey` within nested loop joins. No sequential scans were performed on the observations tables. Sort Method: quicksort.
 
 ## 15. Semantic Guardrails
 - **IS**: A purely structural measurement of route-wide timetable co-occurrence (shared scheduled train identities across directed timetable edges) based on the static historical timetable.
