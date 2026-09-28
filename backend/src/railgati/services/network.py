@@ -4169,3 +4169,99 @@ def calculate_train_topological_bypasses(
         "has_topological_bypasses": bypass_count > 0,
     }
 
+
+def calculate_edge_traversal_dispersion(
+    db: Session, timetable_snapshot_id: int, from_station_code: str, to_station_code: str
+) -> dict[str, object]:
+    """Calculate structural traversal dispersion analytics for a target network edge."""
+    from railgati.models.station import Station
+
+    st_from = db.query(Station).filter(Station.code == from_station_code).first()
+    if not st_from:
+        raise ValueError(f"Station {from_station_code} not found")
+
+    st_to = db.query(Station).filter(Station.code == to_station_code).first()
+    if not st_to:
+        raise ValueError(f"Station {to_station_code} not found")
+
+    query = text(
+        """
+        WITH edge_traversals AS (
+            SELECT 
+                t1.train_id,
+                t1.station_id as o,
+                t2.station_id as d,
+                t1.stop_sequence as seq_o,
+                t2.stop_sequence as seq_d
+            FROM train_stop_observations t1
+            JOIN train_stop_observations t2
+              ON t1.train_id = t2.train_id
+             AND t1.snapshot_id = t2.snapshot_id
+             AND t1.stop_sequence + 1 = t2.stop_sequence
+            WHERE t1.snapshot_id = :snapshot_id
+              AND t1.station_id = :from_id
+              AND t2.station_id = :to_id
+        )
+        SELECT 
+            (SELECT COUNT(*) FROM edge_traversals) as edge_volume,
+            (SELECT COUNT(DISTINCT t_prev.station_id) 
+             FROM edge_traversals et 
+             JOIN train_stop_observations t_prev 
+               ON t_prev.train_id = et.train_id 
+              AND t_prev.snapshot_id = :snapshot_id 
+              AND t_prev.stop_sequence = et.seq_o - 1) as convergence_count,
+            (SELECT COUNT(*) 
+             FROM edge_traversals et 
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM train_stop_observations t_prev 
+                 WHERE t_prev.train_id = et.train_id 
+                   AND t_prev.snapshot_id = :snapshot_id 
+                   AND t_prev.stop_sequence = et.seq_o - 1
+             )) as edge_originating_train_count,
+            (SELECT COUNT(DISTINCT t_next.station_id) 
+             FROM edge_traversals et 
+             JOIN train_stop_observations t_next 
+               ON t_next.train_id = et.train_id 
+              AND t_next.snapshot_id = :snapshot_id 
+              AND t_next.stop_sequence = et.seq_d + 1) as bifurcation_count,
+            (SELECT COUNT(*) 
+             FROM edge_traversals et 
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM train_stop_observations t_next 
+                 WHERE t_next.train_id = et.train_id 
+                   AND t_next.snapshot_id = :snapshot_id 
+                   AND t_next.stop_sequence = et.seq_d + 1
+             )) as edge_terminating_train_count
+        """
+    )
+
+    result = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "from_id": st_from.id,
+            "to_id": st_to.id,
+        },
+    ).fetchone()
+
+    if not result or result[0] == 0:
+        raise ValueError(f"No qualifying adjacent timetable edge found for {from_station_code} to {to_station_code}")
+
+    edge_volume = int(result[0])
+    convergence_count = int(result[1])
+    originating_count = int(result[2])
+    bifurcation_count = int(result[3])
+    terminating_count = int(result[4])
+
+    return {
+        "from_station_code": from_station_code,
+        "to_station_code": to_station_code,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "edge_volume": edge_volume,
+        "convergence_count": convergence_count,
+        "originating_count": originating_count,
+        "bifurcation_count": bifurcation_count,
+        "terminating_count": terminating_count,
+    }
+
+

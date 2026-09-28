@@ -766,3 +766,13 @@ class TrainTopologicalBypassResponse(BaseModel):
     route_length: int
     bypass_edge_count: int
     has_topological_bypasses: bool
+
+class EdgeTraversalDispersionResponse(BaseModel):
+    from_station_code: str
+    to_station_code: str
+    timetable_snapshot_id: int
+    edge_volume: int
+    convergence_count: int
+    originating_count: int
+    bifurcation_count: int
+    terminating_count: int
