@@ -753,3 +753,9 @@ class StationTransferFreeReachResponse(BaseModel):
     topological_outbound_degree: int
     transfer_free_outbound_reach: int
     reachability_span_ratio: float
+
+
+class TrainStructuralSubsumptionResponse(BaseModel):
+    train_number: str
+    subsuming_train_count: int
+    is_structurally_subsumed: bool

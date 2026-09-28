@@ -1698,3 +1698,27 @@ def get_network_station_transfer_free_reach(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
     return result
+
+
+@router.get(
+    "/trains/{train_number}/structural-subsumption",
+    response_model=schemas.TrainStructuralSubsumptionResponse,
+    summary="Calculate network train route structural subsumption analytics",
+    description="Calculates timetable-derived structural route-sequence containment.",
+)
+def get_train_structural_subsumption(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.services.network import calculate_train_structural_subsumption
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return calculate_train_structural_subsumption(db, timetable_snapshot_id, train_number)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e

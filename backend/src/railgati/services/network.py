@@ -4021,7 +4021,7 @@ def calculate_station_transfer_free_reach(
     if res is None:
         raise ValueError("Unexpected query failure")
 
-    row = typing.cast(tuple[int, int], res)
+    row = typing.cast("tuple[int, int]", res)
     n1_count = row[0] or 0
     tfor_count = row[1] or 0
 
@@ -4038,4 +4038,76 @@ def calculate_station_transfer_free_reach(
         "topological_outbound_degree": n1_count,
         "transfer_free_outbound_reach": tfor_count,
         "reachability_span_ratio": round(expansion_ratio, 2),
+    }
+
+
+def calculate_train_structural_subsumption(
+    db: Session, timetable_snapshot_id: int, train_number: str
+) -> dict[str, typing.Any]:
+    """Calculate Network Train Route Structural Subsumption Analytics."""
+    from sqlalchemy import select, text
+
+    from railgati.models.train import Train
+
+    train = db.scalar(select(Train).filter(Train.number == train_number))
+    if not train:
+        raise ValueError(f"Train '{train_number}' not found")
+
+    query = text("""
+        WITH target_stops AS (
+            SELECT station_id, 
+                   ROW_NUMBER() OVER (ORDER BY stop_sequence) as target_rnk
+            FROM train_stop_observations
+            WHERE snapshot_id = :snapshot_id 
+              AND train_id = :train_id
+        ),
+        target_count AS (
+            SELECT COUNT(*) as k FROM target_stops
+        ),
+        candidate_trains AS (
+            SELECT DISTINCT tso1.train_id
+            FROM train_stop_observations tso1
+            JOIN train_stop_observations tso2
+              ON tso1.train_id = tso2.train_id
+             AND tso1.snapshot_id = tso2.snapshot_id
+             AND tso1.stop_sequence < tso2.stop_sequence
+            WHERE tso1.snapshot_id = :snapshot_id
+              AND tso1.station_id = (SELECT station_id FROM target_stops ORDER BY target_rnk ASC LIMIT 1)
+              AND tso2.station_id = (SELECT station_id FROM target_stops ORDER BY target_rnk DESC LIMIT 1)
+              AND tso1.train_id != :train_id
+        ),
+        candidate_stops AS (
+            SELECT tso.train_id, 
+                   tso.station_id,
+                   ROW_NUMBER() OVER (PARTITION BY tso.train_id ORDER BY tso.stop_sequence) as cand_rnk
+            FROM train_stop_observations tso
+            JOIN candidate_trains ct ON tso.train_id = ct.train_id
+            WHERE tso.snapshot_id = :snapshot_id
+        ),
+        matches AS (
+            SELECT cs.train_id,
+                   (cs.cand_rnk - ts.target_rnk) as offset_val,
+                   COUNT(*) as matched_stops
+            FROM candidate_stops cs
+            JOIN target_stops ts ON cs.station_id = ts.station_id
+            GROUP BY cs.train_id, (cs.cand_rnk - ts.target_rnk)
+            HAVING COUNT(*) = (SELECT k FROM target_count)
+        )
+        SELECT COUNT(DISTINCT train_id) FROM matches
+    """)
+
+    result = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "train_id": train.id,
+        },
+    ).fetchone()
+
+    subsuming_count = int(result[0]) if result and result[0] is not None else 0
+
+    return {
+        "train_number": train.number,
+        "subsuming_train_count": subsuming_count,
+        "is_structurally_subsumed": subsuming_count > 0,
     }
