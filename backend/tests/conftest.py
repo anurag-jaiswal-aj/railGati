@@ -1,5 +1,6 @@
 """Pytest configuration and fixtures."""
 
+import typing
 from collections.abc import Generator
 from datetime import UTC, datetime
 
@@ -14,6 +15,7 @@ from railgati.main import app
 from railgati.models import Base
 from railgati.models.provenance import DatasetSnapshot, DataSource
 from railgati.models.station import Station, StationObservation
+from railgati.models.train import Train, TrainObservation, TrainStopObservation
 
 
 @pytest.fixture(scope="function")
@@ -133,3 +135,58 @@ def populated_db(db_session: Session) -> Session:
 
     db_session.commit()
     return db_session
+
+
+@pytest.fixture
+def route_diversity_fixtures(db_session: Session) -> typing.Any:
+    source = DataSource(name="test_source", url="http://test", publisher="test", license="test")
+    db_session.add(source)
+    db_session.commit()
+    snap = DatasetSnapshot(status="ACTIVE", source_id=source.id)
+    db_session.add(snap)
+    db_session.commit()
+    snap_id = snap.id
+
+    # Create stations
+    stations = {}
+    for code in ["A", "B", "C", "D", "E", "F", "X", "Y"]:
+        st = Station(code=code)
+        db_session.add(st)
+        stations[code] = st
+    db_session.commit()
+
+    # Create trains with diverse paths
+    # Train 1: A -> B -> C -> D
+    # Train 2: A -> B -> C -> D
+    # Train 3: A -> X -> Y -> D
+    # Train 4: A -> D (direct)
+    # Train 5: A -> B -> A -> D (loop)
+
+    paths = [
+        ("T1", ["A", "B", "C", "D"]),
+        ("T2", ["A", "B", "C", "D"]),
+        ("T3", ["A", "X", "Y", "D"]),
+        ("T4", ["A", "D"]),
+        ("T5", ["A", "B", "A", "D"]),
+    ]
+
+    for t_num, seq in paths:
+        tr = Train(number=t_num)
+        db_session.add(tr)
+        db_session.commit()
+
+        db_session.add(
+            TrainObservation(snapshot_id=snap_id, train_id=tr.id, name=t_num, type="EXP")
+        )
+        for idx, scode in enumerate(seq):
+            db_session.add(
+                TrainStopObservation(
+                    snapshot_id=snap_id,
+                    train_id=tr.id,
+                    station_id=stations[scode].id,
+                    stop_sequence=idx + 1,
+                )
+            )
+    db_session.commit()
+
+    return {"snapshot_id": snap_id, "stations": stations}
