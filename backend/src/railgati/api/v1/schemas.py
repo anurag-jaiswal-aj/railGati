@@ -789,10 +789,12 @@ class EdgeRouteTerminalDispersionResponse(BaseModel):
     distinct_origin_count: int
     distinct_destination_count: int
 
+
 class EdgeSharedTraversal(BaseModel):
     from_station_code: str
     to_station_code: str
     shared_train_count: int
+
 
 class EdgeRouteCoTraversalAffinityResponse(BaseModel):
     from_station_code: str
@@ -803,8 +805,12 @@ class EdgeRouteCoTraversalAffinityResponse(BaseModel):
 
 
 class TrainMaxSharedSubRouteItem(BaseModel):
-    other_train_number: str = Field(..., description="The train number that shares the contiguous route")
-    shared_station_count: int = Field(..., description="The length (in stations) of the contiguous sequence")
+    other_train_number: str = Field(
+        ..., description="The train number that shares the contiguous route"
+    )
+    shared_station_count: int = Field(
+        ..., description="The length (in stations) of the contiguous sequence"
+    )
     start_station_code: str = Field(..., description="The first station in the shared sequence")
     end_station_code: str = Field(..., description="The last station in the shared sequence")
 
@@ -814,9 +820,11 @@ class TrainMaxSharedSubRouteResponse(BaseModel):
     timetable_snapshot_id: int
     top_shared_sub_routes: list[TrainMaxSharedSubRouteItem]
 
+
 class TrainODExclusivityPairItem(BaseModel):
     origin_station_code: str
     destination_station_code: str
+
 
 class TrainODExclusivityResponse(BaseModel):
     target_train_number: str
@@ -824,10 +832,16 @@ class TrainODExclusivityResponse(BaseModel):
     exclusive_od_pair_count: int
     exclusive_od_pairs: list[TrainODExclusivityPairItem]
 
+
 class StationPairRouteDiversityPathItem(BaseModel):
-    station_sequence: list[str] = Field(..., description="The exact ordered sequence of station codes comprising this path.")
+    station_sequence: list[str] = Field(
+        ..., description="The exact ordered sequence of station codes comprising this path."
+    )
     path_length: int = Field(..., description="The number of stations in this path sequence.")
-    traversal_count: int = Field(..., description="The number of valid traversal instances sharing this exact path.")
+    traversal_count: int = Field(
+        ..., description="The number of valid traversal instances sharing this exact path."
+    )
+
 
 class StationPairRouteDiversityResponse(BaseModel):
     from_station_code: str
@@ -835,6 +849,7 @@ class StationPairRouteDiversityResponse(BaseModel):
     timetable_snapshot_id: int
     distinct_path_count: int
     paths: list[StationPairRouteDiversityPathItem]
+
 
 class StationPairHubItem(BaseModel):
     station_code: str
@@ -849,3 +864,14 @@ class StationPairIntermediateHubsResponse(BaseModel):
     timetable_snapshot_id: int
     total_traversal_instances: int
     intermediate_hubs: list[StationPairHubItem]
+
+
+class StationPairRouteBoundaryConfinementResponse(BaseModel):
+    from_station_code: str
+    to_station_code: str
+    timetable_snapshot_id: int
+    total_traversal_count: int
+    strictly_bounded_count: int
+    origin_bounded_count: int
+    destination_bounded_count: int
+    unbounded_embedded_count: int

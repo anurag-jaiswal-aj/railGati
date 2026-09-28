@@ -4554,7 +4554,7 @@ def calculate_edge_route_co_traversal_affinity(
             "snapshot_id": timetable_snapshot_id,
             "from_id": from_station.id,
             "to_id": to_station.id,
-        }
+        },
     ).fetchall()
 
     traversing_train_count = 0
@@ -4570,13 +4570,21 @@ def calculate_edge_route_co_traversal_affinity(
               AND t2.station_id = :to_id
               AND t2.stop_sequence = t1.stop_sequence + 1
         """)
-        traversing_train_count = db.scalar(edge_check_q, {
-            "snapshot_id": timetable_snapshot_id,
-            "from_id": from_station.id,
-            "to_id": to_station.id
-        }) or 0
+        traversing_train_count = (
+            db.scalar(
+                edge_check_q,
+                {
+                    "snapshot_id": timetable_snapshot_id,
+                    "from_id": from_station.id,
+                    "to_id": to_station.id,
+                },
+            )
+            or 0
+        )
         if traversing_train_count == 0:
-            raise ValueError(f"Directed edge not found: {from_station_code}->{to_station_code} (no active timetable trains).")
+            raise ValueError(
+                f"Directed edge not found: {from_station_code}->{to_station_code} (no active timetable trains)."
+            )
     else:
         traversing_train_count = rows[0][0]
 
@@ -4593,7 +4601,7 @@ def calculate_edge_route_co_traversal_affinity(
             }
             for r in rows
             if r[1] is not None
-        ]
+        ],
     }
 
 
@@ -4613,11 +4621,14 @@ def calculate_train_max_shared_sub_route(
         raise ValueError(f"Train not found: {train_number}")
 
     # Must also verify the train actually exists in the snapshot observation table to respect isolation
-    target_check = db.execute(text("""
+    target_check = db.execute(
+        text("""
         SELECT 1 FROM train_stop_observations
         WHERE train_id = :train_id AND snapshot_id = :snapshot_id
         LIMIT 1
-    """), {"train_id": train.id, "snapshot_id": timetable_snapshot_id}).scalar()
+    """),
+        {"train_id": train.id, "snapshot_id": timetable_snapshot_id},
+    ).scalar()
 
     if not target_check:
         raise ValueError(f"Train not found: {train_number} in snapshot {timetable_snapshot_id}")
@@ -4670,7 +4681,7 @@ def calculate_train_max_shared_sub_route(
         {
             "snapshot_id": timetable_snapshot_id,
             "target_id": train.id,
-        }
+        },
     ).fetchall()
 
     return {
@@ -4684,7 +4695,7 @@ def calculate_train_max_shared_sub_route(
                 "end_station_code": r[3],
             }
             for r in rows
-        ]
+        ],
     }
 
 
@@ -4754,7 +4765,7 @@ def calculate_train_route_od_exclusivity(db: Session, train_number: str) -> dict
         {
             "snapshot_id": timetable_snapshot_id,
             "target_id": train.id,
-        }
+        },
     ).fetchall()
 
     return {
@@ -4767,11 +4778,13 @@ def calculate_train_route_od_exclusivity(db: Session, train_number: str) -> dict
                 "destination_station_code": r[1],
             }
             for r in rows
-        ]
+        ],
     }
 
 
-def calculate_station_pair_route_diversity(db, from_station_code: str, to_station_code: str) -> dict[str, typing.Any]:
+def calculate_station_pair_route_diversity(
+    db, from_station_code: str, to_station_code: str
+) -> dict[str, typing.Any]:
     from sqlalchemy import text
 
     from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
@@ -4823,10 +4836,11 @@ def calculate_station_pair_route_diversity(db, from_station_code: str, to_statio
             "snapshot_id": timetable_snapshot_id,
             "from_id": from_st.id,
             "to_id": to_st.id,
-        }
+        },
     ).fetchall()
 
     import itertools
+
     paths_map = {}
 
     for _, group in itertools.groupby(rows, key=lambda x: (x[0], x[1], x[2])):
@@ -4835,11 +4849,9 @@ def calculate_station_pair_route_diversity(db, from_station_code: str, to_statio
 
     paths = []
     for seq, count in paths_map.items():
-        paths.append({
-            "station_sequence": list(seq),
-            "path_length": len(seq),
-            "traversal_count": count
-        })
+        paths.append(
+            {"station_sequence": list(seq), "path_length": len(seq), "traversal_count": count}
+        )
 
     paths.sort(key=lambda x: (-x["traversal_count"], -x["path_length"], x["station_sequence"]))
 
@@ -4848,8 +4860,10 @@ def calculate_station_pair_route_diversity(db, from_station_code: str, to_statio
         "to_station_code": to_station_code,
         "timetable_snapshot_id": timetable_snapshot_id,
         "distinct_path_count": len(paths),
-        "paths": paths
+        "paths": paths,
     }
+
+
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -4896,7 +4910,13 @@ def calculate_station_pair_intermediate_hubs(
               AND t1.stop_sequence < t2.stop_sequence
         ) q
     """)
-    total_instances = db.scalar(total_query, {"snapshot_id": timetable_snapshot_id, "from_id": from_st.id, "to_id": to_st.id}) or 0
+    total_instances = (
+        db.scalar(
+            total_query,
+            {"snapshot_id": timetable_snapshot_id, "from_id": from_st.id, "to_id": to_st.id},
+        )
+        or 0
+    )
 
     if total_instances == 0:
         return {
@@ -4904,7 +4924,7 @@ def calculate_station_pair_intermediate_hubs(
             "to_station_code": to_station_code,
             "timetable_snapshot_id": timetable_snapshot_id,
             "total_traversal_instances": 0,
-            "intermediate_hubs": []
+            "intermediate_hubs": [],
         }
 
     query = text("""
@@ -4949,7 +4969,9 @@ def calculate_station_pair_intermediate_hubs(
         ORDER BY traversal_instance_count DESC, occurrence_count DESC, station_code ASC
     """)
 
-    res = db.execute(query, {"snapshot_id": timetable_snapshot_id, "from_id": from_st.id, "to_id": to_st.id}).fetchall()
+    res = db.execute(
+        query, {"snapshot_id": timetable_snapshot_id, "from_id": from_st.id, "to_id": to_st.id}
+    ).fetchall()
 
     # Preload active station names
     station_ids = [r.station_id for r in res]
@@ -4964,17 +4986,129 @@ def calculate_station_pair_intermediate_hubs(
 
     hubs = []
     for r in res:
-        hubs.append({
-            "station_code": r.code,
-            "station_name": station_names.get(r.station_id),
-            "traversal_instance_count": r.traversal_instance_count,
-            "occurrence_count": r.occurrence_count
-        })
+        hubs.append(
+            {
+                "station_code": r.code,
+                "station_name": station_names.get(r.station_id),
+                "traversal_instance_count": r.traversal_instance_count,
+                "occurrence_count": r.occurrence_count,
+            }
+        )
 
     return {
         "from_station_code": from_station_code,
         "to_station_code": to_station_code,
         "timetable_snapshot_id": timetable_snapshot_id,
         "total_traversal_instances": total_instances,
-        "intermediate_hubs": hubs
+        "intermediate_hubs": hubs,
+    }
+
+
+def calculate_station_pair_route_boundary_confinement(
+    db: Session, from_station_code: str, to_station_code: str
+) -> dict[str, typing.Any]:
+    from fastapi import HTTPException, status
+    from sqlalchemy import select
+
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.models.station import Station
+
+    from_st = db.scalar(select(Station).filter(Station.code == from_station_code.upper()))
+    if not from_st:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Station not found: {from_station_code}"
+        )
+
+    to_st = db.scalar(select(Station).filter(Station.code == to_station_code.upper()))
+    if not to_st:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Station not found: {to_station_code}"
+        )
+
+    timetable_snap_id = get_active_timetable_snapshot_id(db)
+
+    q = text("""
+        WITH target_traversals AS (
+            SELECT DISTINCT
+                t1.train_id,
+                t1.stop_sequence as o_seq,
+                t2.stop_sequence as d_seq
+            FROM train_stop_observations t1
+            JOIN train_stop_observations t2
+              ON t1.train_id = t2.train_id AND t1.snapshot_id = t2.snapshot_id
+            WHERE t1.snapshot_id = :snap_id
+              AND t1.station_id = :from_id
+              AND t2.station_id = :to_id
+              AND t1.stop_sequence < t2.stop_sequence
+        ),
+        train_boundaries AS (
+            SELECT
+                t.train_id,
+                MIN(t.stop_sequence) as t_min,
+                MAX(t.stop_sequence) as t_max
+            FROM target_traversals tt
+            JOIN train_stop_observations t
+              ON t.train_id = tt.train_id AND t.snapshot_id = :snap_id
+            GROUP BY t.train_id
+        ),
+        classified_traversals AS (
+            SELECT
+                tt.train_id,
+                tt.o_seq,
+                tt.d_seq,
+                tb.t_min,
+                tb.t_max,
+                CASE
+                    WHEN tt.o_seq = tb.t_min AND tt.d_seq = tb.t_max THEN 'STRICTLY_BOUNDED'
+                    WHEN tt.o_seq = tb.t_min AND tt.d_seq < tb.t_max THEN 'ORIGIN_BOUNDED'
+                    WHEN tt.o_seq > tb.t_min AND tt.d_seq = tb.t_max THEN 'DESTINATION_BOUNDED'
+                    ELSE 'UNBOUNDED_EMBEDDED'
+                END as boundary_state
+            FROM target_traversals tt
+            JOIN train_boundaries tb ON tt.train_id = tb.train_id
+        )
+        SELECT
+            boundary_state,
+            COUNT(*) as traversal_count
+        FROM classified_traversals
+        GROUP BY boundary_state
+    """)
+
+    rows = db.execute(
+        q,
+        {
+            "snap_id": timetable_snap_id,
+            "from_id": from_st.id,
+            "to_id": to_st.id,
+        },
+    ).fetchall()
+
+    strictly_bounded_count = 0
+    origin_bounded_count = 0
+    destination_bounded_count = 0
+    unbounded_embedded_count = 0
+    total_traversal_count = 0
+
+    for row in rows:
+        state = row[0]
+        count = row[1]
+        total_traversal_count += count
+        if state == "STRICTLY_BOUNDED":
+            strictly_bounded_count += count
+        elif state == "ORIGIN_BOUNDED":
+            origin_bounded_count += count
+        elif state == "DESTINATION_BOUNDED":
+            destination_bounded_count += count
+        elif state == "UNBOUNDED_EMBEDDED":
+            unbounded_embedded_count += count
+
+    return {
+        "from_station_code": from_station_code,
+        "to_station_code": to_station_code,
+        "timetable_snapshot_id": timetable_snap_id,
+        "total_traversal_count": total_traversal_count,
+        "strictly_bounded_count": strictly_bounded_count,
+        "origin_bounded_count": origin_bounded_count,
+        "destination_bounded_count": destination_bounded_count,
+        "unbounded_embedded_count": unbounded_embedded_count,
     }

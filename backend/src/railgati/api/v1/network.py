@@ -3,7 +3,7 @@
 import typing
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -46,6 +46,7 @@ from railgati.services.network import (
     calculate_network_complexities,
     calculate_network_edge_asymmetry,
     calculate_network_temporal_concentration,
+    calculate_station_pair_route_boundary_confinement,
     find_network_paths,
     find_reachable_stations,
 )
@@ -1874,6 +1875,7 @@ def get_train_od_exclusivity(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
+
 @router.get(
     "/stations/{from_station_code}/{to_station_code}/route-diversity",
     response_model=schemas.StationPairRouteDiversityResponse,
@@ -1894,6 +1896,8 @@ def get_station_pair_route_diversity(
         if "not found" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+
+
 @router.get(
     "/stations/{from_station_code}/{to_station_code}/intermediate-hubs",
     response_model=schemas.StationPairIntermediateHubsResponse,
@@ -1921,3 +1925,23 @@ def get_network_station_pair_intermediate_hubs(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
 
     return result
+
+
+@router.get(
+    "/stations/{from_station_code}/{to_station_code}/route-boundary-confinement",
+    response_model=schemas.StationPairRouteBoundaryConfinementResponse,
+    tags=["Network", "Station Pairs", "Phase 47"],
+)
+def api_get_station_pair_route_boundary_confinement(
+    from_station_code: str = Path(..., description="Origin station code"),
+    to_station_code: str = Path(..., description="Destination station code"),
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    try:
+        return calculate_station_pair_route_boundary_confinement(
+            db, from_station_code.upper(), to_station_code.upper()
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
