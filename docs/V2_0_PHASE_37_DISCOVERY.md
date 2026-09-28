@@ -25,34 +25,66 @@ During discovery, multiple distinct analytical dimensions were evaluated before 
    - *Rejection Reason*: Explicitly documented as a cosmetic variation of Phase 20 (Station O-D Bridges logic applied to an edge).
 
 ## 3. Selected Capability: Network Train Route Structural Subsumption
-**Train Route Structural Subsumption** evaluates whether an entire scheduled train route operates strictly as a redundant sub-corridor within the exact topological footprint of another longer-distance train. 
+**Train Route Structural Subsumption** evaluates whether an entire scheduled train route operates strictly as a contiguous subsequence within the ordered stop sequence of another train.
 
 ### 4. Problem / Question Answered
-*Structurally, does this train operate entirely as a strict sub-corridor of another active train, providing purely supplementary local capacity within an identical topological footprint?*
+*Structurally, does the complete ordered timetable stop sequence of this train occur as a contiguous ordered subsequence of another active train's timetable stop sequence?*
 
 ### 5. Explicit Overlap Audit against Phases 1-36
-- **vs. Phase 13 (Train Route Similarity)**: Phase 13 calculates the Jaccard similarity index (intersection over union) between two known trains. It evaluates bidirectional overlap. Subsumption evaluates asymmetric, contiguous topological subsetting ($A \subset B$). A train that shares 50% of its route with another train has a high similarity score, but 0 subsumption. 
-- **vs. Phase 3 (Continuous Services)**: Phase 3 verifies if a single train connects a specific $A$ and $B$. It does not evaluate sequence subsetting.
-- **vs. Reachability / Bounded Metrics**: Subsumption bounds itself entirely to the specific stop sequence of the target train, avoiding graph recursion.
+- **vs. Phase 15 (Train Route Similarity)**: Phase 15 uses Jaccard similarity over distinct station sets and ignores route order/direction. Phase 37 uses asymmetric ordered contiguous stop-sequence containment and therefore captures a different structural relationship.
+- **vs. Phase 3 (Continuous Services)**: Phase 3 verifies if a single train occurrence connects a specific $A$ and $B$. It does not evaluate sequence subsetting.
+- **vs. Reachability / Bounded Metrics**: Subsumption bounds itself entirely to the specific ordered stop sequence of the target train, avoiding graph recursion.
 
 ### 6. Why the Selected Capability is Distinct
-This metric introduces **Timetable Corridor Redundancy** as a new dimension. Instead of identifying where a train goes, it identifies if a train's entire spatial sequence is already perfectly replicated by another longer service. It isolates dedicated local shuttles and supplementary corridor capacities from structurally unique services.
+This metric is distinct because it measures asymmetric containment of one complete ordered timetable stop sequence inside another complete ordered timetable stop sequence. Instead of identifying origin-destination connectivity, it establishes historical timetable structural containment between specific scheduled train occurrences.
 
 ## 7. Exact Semantics
-For a target train $T$, let $seq(T) = (S_1, S_2, ..., S_k)$ be its topologically ordered sequence of station stops.
+For a target train $T$, let $seq(T)$ be its complete ordered timetable stop sequence.
 A train $T$ is **structurally subsumed** by a candidate train $T'$ if and only if:
 1. $T \neq T'$
-2. $T$ and $T'$ both exist within the same active timetable snapshot.
-3. The exact sequence $seq(T)$ exists as a contiguous topological sub-sequence within $seq(T')$.
+2. Both train occurrences belong to the same active timetable snapshot.
+3. The complete ordered stop sequence of $T$ occurs as a contiguous ordered subsequence of $T'$.
 
 ## 8. Mathematical Definition
-Given $T$:
-$seq(T) = (S_{1}, S_{2}, ..., S_{k})$
+For a target train $T$:
+$seq(T) = [S_1, S_2, ..., S_k]$
 
-Let $V$ be the set of all active trains in the network.
-$SubsumingTrains(T) = \{ T' \in V \mid T' \neq T \land seq(T) \text{ is a sub-sequence of } seq(T') \}$
+For a candidate train $T'$:
+$seq(T') = [U_1, U_2, ..., U_m]$
 
-**Train Subsumption Count** = $|SubsumingTrains(T)|$
+$T'$ structurally subsumes $T$ iff:
+- $T \neq T'$
+- both train occurrences belong to the same active timetable snapshot;
+- there exists an offset $j$ such that for every $i$ from 1 through $k$:
+  $U_{j+i-1} = S_i$
+
+This definition explicitly preserves station order, direction, contiguity, and repeated station occurrences where present.
+
+**Train Subsumption Count** = number of distinct candidate trains $T'$ that structurally subsume $T$.
+
+### 8.1. Repeated Stations
+Repeated station occurrences are explicitly preserved in the ordered stop sequence. A match must preserve the actual ordered stop positions. 
+
+Example:
+Target: A → B → A
+
+Candidate: X → A → B → A → Y
+This qualifies because the complete ordered sequence occurs contiguously.
+
+Candidate: X → A → B → C → A → Y
+This does NOT qualify merely because all target station names occur; the required ordered contiguous sequence does not occur. Repeated visits must not be collapsed into a set.
+
+### 8.2. Directionality
+Direction and order matter explicitly in the ordered stop sequence evaluation.
+
+Example:
+Target: A → B → C
+
+Candidate: X → A → B → C → Y
+This qualifies.
+
+Candidate: X → C → B → A → Y
+This does not qualify. Reverse ordering is not treated as subsumption.
 
 ## 9. Data Dependencies
 - `trains`: For resolving the target train identifier.
@@ -85,7 +117,7 @@ To avoid unbounded `STRING_AGG` computation across the entire timetable, the alg
 1. **Target Extraction**: Extract the ordered $seq(T)$ for the target train.
 2. **Boundary Anchoring**: Identify $S_{first}$ and $S_{last}$ from $seq(T)$.
 3. **Candidate Filtering**: Select only candidate trains $T'$ that visit $S_{first}$ and later visit $S_{last}$ (`tso1.stop_sequence < tso2.stop_sequence`).
-4. **Sequence Verification**: For the heavily reduced candidate pool, apply `STRING_AGG(station_id ORDER BY stop_sequence)` and verify the subset using a `LIKE '%target_sequence%'` pattern match.
+4. **Sequence Verification**: For the heavily reduced candidate pool, implement a verification algorithm (which may potentially use `STRING_AGG` and `LIKE` if proven safe as an implementation technique) that strictly ensures the target's ordered stop sequence exists as a contiguous ordered subsequence inside the candidate's sequence, adhering to the mathematical definition.
 
 ## 15. Complexity Analysis
 - Target Extraction: $O(K \log K)$ where $K$ is the number of stops on the target train (typically < 100).
@@ -96,30 +128,42 @@ To avoid unbounded `STRING_AGG` computation across the entire timetable, the alg
 The worst-case occurs if a train starts at a massive hub (e.g., NDLS) and ends at another massive hub (e.g., CNB), generating a large candidate pool of trains that visit both. However, string aggregation for ~500 trains is still computationally trivial in PostgreSQL.
 
 ## 17. Performance Analysis (Real Snapshot 2 via EXPLAIN ANALYZE)
-Testing Train `58202` (a 15-stop local train):
-- **Planning Time**: 1.065 ms
-- **Execution Time**: 6.137 ms
-- **Indexes Leveraged**: `ix_train_stops_snapshot_station` heavily prunes the candidate set during the boundary anchoring phase, avoiding sequential scans.
+Testing an exploratory query on Train `58202` (a 15-stop local train):
+- **Planning Time**: approximately 1.065 ms
+- **Execution Time**: approximately 6.137 ms
+- **Indexes Leveraged**: `ix_train_stops_snapshot_station` heavily pruned the candidate set.
+
+*Note: This is discovery-stage performance for an exploratory query. It is not guaranteed that the final implementation will have identical performance.*
 
 ## 18. Real Snapshot 2 Validation
-Validation confirms the metric's utility in isolating highly subsumed local trains from unique services:
-- **Train 58202**: 49 STRICT subsuming trains (Execution: ~6ms)
-- **Train 51145**: 13 STRICT subsuming trains (Execution: ~3ms)
-- **Train 55512**: 4 STRICT subsuming trains (Execution: ~2ms)
-- **Train 51916**: 1 STRICT subsuming trains (Execution: ~2ms)
+Exploratory discovery queries generated the following provisional findings:
+- **Train 58202**: 49 candidate subsuming trains
+- **Train 51145**: 13 candidate subsuming trains
+- **Train 55512**: 4 candidate subsuming trains
+- **Train 51916**: 1 candidate subsuming train
+
+*Note: These values are exploratory/provisional because the discovery SQL used string aggregation. Implementation must independently validate these values using the exact ordered stop-sequence mathematical semantics to ensure compliance.*
 
 ## 19. Boundary Cases
-- **Non-Subsumed Express Trains**: Long-distance express trains crossing multiple zones will have 0 subsuming trains, acting as the structural supersets themselves.
-- **Directionality**: A candidate train traveling the reverse route does not subsume the target train due to strict `stop_sequence` ordering in string aggregation.
-- **Identical Clones**: If $T'$ has the exact same sequence as $T$, it counts as a subsumption (they structurally subsume each other, representing parallel redundant capacity).
+- **Non-Subsumed Trains**: Trains that are not completely contained within another sequence will have 0 subsuming candidate trains.
+- **Directionality**: Reverse-ordered routes do not qualify, as established in the mathematical semantics.
+- **Identical Sequences**: If $T'$ has the exact same ordered stop sequence as $T$, it mathematically satisfies the contiguous subsequence condition (offset $j=1$).
 
 ## 20. Non-Goals
-- Does not measure operational passenger capacity or real passenger demand.
-- Does not evaluate partial route overlap (handled by Phase 13).
-- Does not compute physical track infrastructure.
+This metric explicitly does NOT establish or measure:
+- passenger demand;
+- passenger accessibility;
+- actual passenger journeys;
+- operational redundancy;
+- operational capacity;
+- physical railway redundancy;
+- reliability;
+- congestion;
+- real-world service substitution;
+- partial route overlap (handled by Phase 15).
 
 ## 21. ₹0 Constraints
-- Met completely. Relies entirely on native PostgreSQL string aggregation (`STRING_AGG`) and subset matching (`LIKE`). No external graph databases or infrastructure are required.
+- Met completely. Implementation will rely on native PostgreSQL features without requiring external graph databases or infrastructure.
 
 ## 22. Implementation Boundaries
 - Modifies `api/v1/schemas.py` for response models.
