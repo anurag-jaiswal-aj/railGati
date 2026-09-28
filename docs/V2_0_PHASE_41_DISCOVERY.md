@@ -14,7 +14,7 @@ Before selecting the new capability, an explicit audit of existing structurally 
 - **Phase 38 (Train Route Topological Bypass)**: Identifies if a train route bypasses a station on another train's route.
 - **Phase 39 (Edge Traversal Dispersion)**: Evaluates immediate 1-hop upstream and downstream adjacency for an edge (converging/bifurcating immediately prior/subsequent stations). It does *not* consider the ultimate terminals of the routes traversing the edge.
 - **Phase 40 (Train Route Edge Structural Exclusivity)**: Classifies whether edges are strictly dedicated to a specific train's sequence. It does not quantify terminal diversity for a generic edge.
-- **Phase 22 (Station O-D Bridges)**: Finds edges that act as structural bottlenecks for a *given* Origin-Destination pair. It does not take a generic edge and evaluate its global Origin-Destination diversity.
+- **Phase 22 (Station O-D Bridges)**: identifies timetable-derived terminal Origin-Destination pairs associated with trains serving a specified station. It does not condition terminal diversity on traversal of a requested directed edge.
 - **Phase 23 (Station Temporal Gaps)**: Analyzes time gaps between consecutive arrivals at a station.
 - **Phase 30 (Station Outbound Dominance)**: Analyzes the distribution of outbound edge volumes from a specific station.
 
@@ -28,7 +28,7 @@ The selected metric (Edge Terminal Dispersion) is strictly orthogonal to all exi
 
 ### Candidate B: Network Station Triadic Alternation (Rejected)
 - **Concept**: Identifying if stations participate heavily in A -> B -> A cycles.
-- **Reason for Rejection**: Phase 28 (Topology Loops) already provides mature structural loop and cyclic pattern detection.
+- **Reason for Rejection**: Phase 26 (Train Topology Loop Analytics) already provides structural repeated-station/topological loop detection.
 
 ### Candidate C: Network Train Route Topological Redundancy (Rejected)
 - **Concept**: Finding alternate multi-edge paths between nodes on a single train's route provided by other services.
