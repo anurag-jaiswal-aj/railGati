@@ -86,7 +86,7 @@ Executed against local PostgreSQL Snapshot 2 datasets.
 
 ### `NDLS` $\to$ `HWH`
 - **Qualifying traversal-instance count**: 6
-- **Distinct intermediate station count**: 320 (Note: The original discovery document erroneously reported 159. Evidence from the discovery shell transcript proves the scratch SQL query `scratch_hub_concentration.py` utilized `LIMIT 15` and never executed a `COUNT(*)` over distinct stations. The 159 value was a manual transcription hallucination. The independent formal bounded count is exactly 320.)
+- **Distinct intermediate station count**: 320 (Note: Earlier discovery documentation contained incorrect manually recorded counts; independent relational verification established the authoritative values. The scratch SQL query utilized `LIMIT 15` and never executed a `COUNT(*)` over distinct stations. The independent formal bounded count is exactly 320.)
 - **Top stations by traversal_instance_count**:
   - `AAP` (Occurrence count: 6, Traversal instance count: 6)
   - `AJR` (Occurrence count: 6, Traversal instance count: 6)
@@ -97,8 +97,8 @@ Executed against local PostgreSQL Snapshot 2 datasets.
 
 ### `LTT` $\to$ `PUNE`
 - **Qualifying traversal-instance count**: 27
-- **Distinct intermediate station count**: 48 (Note: The original document erroneously reported 49. Evidence proves this was a manual estimation/transcription error; the formal limit is exactly 48.)
-- **Stations occurring in all qualifying traversal instances (27/27)**: `ABH`, `AKRD`, `BGW`, `BND`, `BUD`, `BVS`, `CCH`, `DAPD`, `DEHR`, `DI`, `DIVA`, `GC`, `GRWD`, `KAD`, `KJMG`, `KJT`, `KK`, `KMST`, `KNHE`, `KOPR`, `KSWD`, `KYN`, `LNL`, `MLND`, `MVL`, `NHU`, `NRL`, `PDI`, `PMP`, `SHLU`, `SVJR`, `TGN`, `THK`, `TNA`, `ULNR`, `VDN`, `VGI`, `VK`, `VLDI`, `VVH`. (Note: The original document erroneously listed 26 stations. This was a manual transcription error. The formal distinct bound is 40 stations.)
+- **Distinct intermediate station count**: 48 (Note: Earlier discovery documentation contained incorrect manually recorded counts; independent relational verification established the authoritative values. The formal limit is exactly 48.)
+- **Stations occurring in all qualifying traversal instances (27/27)**: `ABH`, `AKRD`, `BGW`, `BND`, `BUD`, `BVS`, `CCH`, `DAPD`, `DEHR`, `DI`, `DIVA`, `GC`, `GRWD`, `KAD`, `KJMG`, `KJT`, `KK`, `KMST`, `KNHE`, `KOPR`, `KSWD`, `KYN`, `LNL`, `MLND`, `MVL`, `NHU`, `NRL`, `PDI`, `PMP`, `SHLU`, `SVJR`, `TGN`, `THK`, `TNA`, `ULNR`, `VDN`, `VGI`, `VK`, `VLDI`, `VVH`. (Note: Earlier discovery documentation contained incorrect manually recorded counts; independent relational verification established the authoritative values. The formal distinct bound is 40 stations.)
 - **Stations occurring in only one qualifying traversal instance (1/27)**: `BGWI`, `MHLC`, `NAGC`, `NNCN`, `SLRW`, `TKW`.
 
 ### `VDR` $\to$ `CDG` (Zero Hub Case)
