@@ -36,9 +36,9 @@ The definition of a "Network Terminal" is strictly scoped to the active `snapsho
 
 ## Closest Existing Phases
 1. **Phase 41 (Edge Route Terminal Dispersion)**
-   - **What Phase 41 mathematically measures:** For a specific *Edge* (Station Pair), identifies the distinct Terminals of all trains passing through that physical track. (Edge $\to$ Trains $\to$ Terminals).
-   - **What Phase 48 mathematically measures:** For a specific *Train*, calculates the proportion of its topological stops that map to Terminals network-wide. (Train $\to$ Stations $\to$ Terminals).
-   - **Distinction:** Phase 41 measures the geographical catchment area of a *track segment* (where does the traffic on this track come from/go to?). Phase 48 measures the structural hub-profile of a *train service* (does this train serve major hubs or local stations?). Phase 48 cannot be trivially derived from Phase 41 because Phase 41 discards the train identities and intermediate topology to focus purely on the endpoints of trains sharing a track. They evaluate completely orthogonal entities against the "Terminal" property.
+   - **What Phase 41 mathematically measures:** edge-conditioned terminal diversity.
+   - **What Phase 48 mathematically measures:** train-route incidence with the network-wide set of station identities that occur as timetable origin or destination positions for at least one train occurrence in the active snapshot.
+   - **Distinction:** Phase 41 groups all traffic that shares an edge to find where it came from. Phase 48 profiles the structural behavior of a specific train route by assessing its topological intersection with global network terminals. Phase 48 cannot be trivially derived from Phase 41 because Phase 41 discards the train identities and intermediate topology to focus purely on the endpoints of trains sharing an edge. They evaluate completely orthogonal entities against the "Terminal" property.
 
 2. **Phase 21 (Train Route Profile)**
    - **What Phase 21 mathematically measures:** Profiles a train's timetable-derived kinematic profile (distance, duration, average speed).
@@ -82,7 +82,7 @@ Queries evaluated on historical Snapshot 2 using actual IDs:
 
 ## Edge Cases
 - **Cyclic Routes:** Both occurrences are strictly counted in `terminal_occurrence_count`, accurately reflecting the structural topology of the cyclic route interacting with a terminal.
-- **Self-Terminals:** The origin and destination of the target train $T$ itself automatically qualify as Network Terminals. Because there are no valid trains with $< 2$ stops in Snapshot 2, the lower bound for `terminal_occurrence_count` is rigorously mathematically proven to be $\ge 2$ for all routes. (However, `distinct_terminal_station_count` may be 1 for a purely degenerate circular route starting/ending at the exact same physical station).
+- **Self-Terminals:** A valid multi-stop train occurrence has a minimum `stop_sequence` position and a maximum `stop_sequence` position. The station identities at those positions belong to the network-terminal set because the target train itself contributes those extrema. Thus, structurally, `terminal_occurrence_count` $\ge 2$. (Empirically, in Snapshot 2, there are no valid trains with $< 2$ stops to violate this bound. However, `distinct_terminal_station_count` may be 1 for a purely degenerate circular route starting/ending at the exact same station identity).
 - **Missing Train:** Defined as a 404 Not Found error.
 - **Empty Snapshot:** Defined as a 404 Not Found error.
 
@@ -92,7 +92,7 @@ Execution plan against Snapshot 2 for Train 12951:
 - **Execution Time:** 138.895 ms
 - **Major Operators:** Aggregate (Hashed), Hash Join, Sort, CTE Scan.
 - **Relevant Indexes:** `train_stop_observations_pkey`, `ix_trains_number`.
-- **Sequential Scans:** The global bounds (`MIN`/`MAX` stop sequence) utilize a Parallel Seq Scan over the snapshot data to build the in-memory HashAggregate of Network Terminals. This parallel scan is entirely expected and mathematically optimal because computing a true global property across all $T_i \in S$ requires inspecting all $T_i$. It strictly avoids catastrophic correlated subqueries, maintaining performance.
+- **Sequential Scans:** The global terminal set is computed across the active timetable snapshot, and PostgreSQL selected a Parallel Seq Scan for the global bounds computation in the measured plan. This is an observed execution-plan choice, not a claim of optimality. It strictly avoids catastrophic correlated subqueries, maintaining performance.
 
 ## API Proposal
 Endpoint: `GET /api/v1/network/trains/{train_number}/terminal-incidence`
