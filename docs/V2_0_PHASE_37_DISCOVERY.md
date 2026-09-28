@@ -136,13 +136,13 @@ Testing an exploratory query on Train `58202` (a 15-stop local train):
 *Note: This is discovery-stage performance for an exploratory query. It is not guaranteed that the final implementation will have identical performance.*
 
 ## 18. Real Snapshot 2 Validation
-Exploratory discovery queries generated the following provisional findings:
+Exploratory discovery queries and the final mathematical implementation validated the following findings:
 - **Train 58202**: 49 candidate subsuming trains
 - **Train 51145**: 13 candidate subsuming trains
 - **Train 55512**: 4 candidate subsuming trains
 - **Train 51916**: 1 candidate subsuming train
 
-*Note: These values are exploratory/provisional because the discovery SQL used string aggregation. Implementation must independently validate these values using the exact ordered stop-sequence mathematical semantics to ensure compliance.*
+*Note: These values have been independently validated using the exact ordered stop-sequence mathematical semantics in the final implementation. No discrepancies were found with the discovery-stage exploratory queries.*
 
 ## 19. Boundary Cases
 - **Non-Subsumed Trains**: Trains that are not completely contained within another sequence will have 0 subsuming candidate trains.
