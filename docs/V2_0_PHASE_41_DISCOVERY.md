@@ -5,19 +5,26 @@ Discover and define a new, genuinely distinct historical timetable analytics cap
 
 ## 2. Phase 1–40 Overlap Audit
 Before selecting the new capability, an explicit audit of existing structurally related metrics was performed:
+
+- **Phase 10 (Network O-D Flow)**: Groups timetable train occurrences by their absolute origin and absolute destination, and measures O-D flow volume for those train route occurrences. It asks: "How many timetable train occurrences have origin O and destination D?"
+  - *Phase 41 Distinction*: Phase 41 first conditions on a specific directed adjacent timetable edge A -> B, selects the distinct train identities that traverse that specific edge, and then examines the absolute origin and destination of those selected trains. It asks: "Among trains that traverse this specific edge, how diverse are their absolute timetable origins and destinations?" Therefore, Phase 41 is an edge-conditioned terminal-diversity metric, while Phase 10 is a global O-D flow aggregation that does not condition its aggregation on the traversal of a requested intermediate directed edge.
+- **Phase 35 (Station 2-Hop Reachability Expansion)**: Examines reachable stations from a specific station within 2 hops.
+- **Phase 36 (Station Transfer-Free Reachability)**: Evaluates global reachability from a single station without transfers.
+- **Phase 37 (Train Route Structural Subsumption)**: Determines if a train's entire route is a subset of another train's route.
+- **Phase 38 (Train Route Topological Bypass)**: Identifies if a train route bypasses a station on another train's route.
 - **Phase 39 (Edge Traversal Dispersion)**: Evaluates immediate 1-hop upstream and downstream adjacency for an edge (converging/bifurcating immediately prior/subsequent stations). It does *not* consider the ultimate terminals of the routes traversing the edge.
 - **Phase 40 (Train Route Edge Structural Exclusivity)**: Classifies whether edges are strictly dedicated to a specific train's sequence. It does not quantify terminal diversity for a generic edge.
-- **Phase 8 (Network O-D Bridges)**: Finds edges that act as structural bottlenecks for a *given* Origin-Destination pair. It does not take a generic edge and evaluate its global Origin-Destination diversity.
-- **Phase 4 (Network Flows)**: Counts total scheduled train volumes strictly between requested O-D pairs, independent of intermediate path traversal.
-- **Phase 3 (Network Termini)**: Identifies stations that act as terminals anywhere in the graph, without linking them to specific edge traversals.
+- **Phase 22 (Station O-D Bridges)**: Finds edges that act as structural bottlenecks for a *given* Origin-Destination pair. It does not take a generic edge and evaluate its global Origin-Destination diversity.
+- **Phase 23 (Station Temporal Gaps)**: Analyzes time gaps between consecutive arrivals at a station.
+- **Phase 30 (Station Outbound Dominance)**: Analyzes the distribution of outbound edge volumes from a specific station.
 
-The selected metric (Edge Terminal Dispersion) is strictly orthogonal to all existing metrics: it evaluates the macroscopic Origin-Destination diversity of any specified intermediate edge, distinguishing "global mixing trunks" from "dedicated local corridors."
+The selected metric (Edge Terminal Dispersion) is strictly orthogonal to all existing metrics: it evaluates the macroscopic Origin-Destination diversity of the trains that traverse any specified intermediate edge.
 
 ## 3. Candidates Considered
 
 ### Candidate A: Network Edge Route Terminal Dispersion Analytics (Selected)
-- **Concept**: Given a directed edge A -> B, evaluate all scheduled trains traversing that edge and count the number of *distinct absolute origins* and *distinct absolute destinations* for those trains.
-- **Rationale**: Structurally classifies the macro-role of a timetable edge (e.g., heavily shared long-distance trunk vs. isolated high-volume shuttle corridor).
+- **Concept**: Given a directed edge A -> B, evaluate all distinct scheduled trains traversing that edge and count the number of *distinct absolute origins* and *distinct absolute destinations* for those trains.
+- **Rationale**: Structurally classifies the terminal diversity of trains sharing a specific timetable edge.
 
 ### Candidate B: Network Station Triadic Alternation (Rejected)
 - **Concept**: Identifying if stations participate heavily in A -> B -> A cycles.
@@ -25,51 +32,76 @@ The selected metric (Edge Terminal Dispersion) is strictly orthogonal to all exi
 
 ### Candidate C: Network Train Route Topological Redundancy (Rejected)
 - **Concept**: Finding alternate multi-edge paths between nodes on a single train's route provided by other services.
-- **Reason for Rejection**: High overlap with Phase 38 (Topological Bypasses), which already structurally isolates path short-circuits.
+- **Reason for Rejection**: High overlap with Phase 38 (Train Route Topological Bypass), which already structurally isolates path short-circuits.
 
 ### Candidate D: Network Station Structural O-D Reachability (Rejected)
 - **Concept**: From station S, how many distinct Termini are reachable globally?
-- **Reason for Rejection**: Redundant overlap with Phase 31 (Transfer-Free Reach) and Phase 35 (Station Similarity).
+- **Reason for Rejection**: Redundant overlap with Phase 36 (Station Transfer-Free Reachability).
 
 ---
 
 ## 4. Selected Phase 41 Capability: Network Edge Route Terminal Dispersion Analytics
 
 ### 4.1 Exact Semantics & Constraints
+The metric is defined exactly as follows:
 - Evaluates a specific directed station edge E = (A, B) within the active historical timetable snapshot.
-- Identifies the set `T` of all canonical train occurrences traversing A -> B consecutively.
-- For each train `t` in `T`, determines its absolute Origin (the station with `min(stop_sequence)`) and absolute Destination (the station with `max(stop_sequence)`).
-- Calculates the count of distinct Origin stations and distinct Destination stations represented by `T`.
-- A valid edge returns exact traversal and terminal diversity counts.
-- An edge not traversed by any train gracefully returns a 404 Edge Not Found.
+- Let `T(A,B)` be the set of DISTINCT timetable train identities in the active timetable snapshot that contain at least one consecutive stop pair A -> B.
+- `traversing_train_count` = `|T(A,B)|`. It must NOT count repeated traversal of the same A -> B edge by the same train identity multiple times. One train identity counts exactly once.
+- For each selected train identity in `T(A,B)`:
+  - origin = station at minimum stop_sequence
+  - destination = station at maximum stop_sequence
+- `distinct_origin_count` = number of distinct origin station identities among `T(A,B)`.
+- `distinct_destination_count` = number of distinct destination station identities among `T(A,B)`.
 
 ### 4.2 Semantic Guardrails
-- **DO NOT** claim this represents physical passenger ticketing demand, passenger origin-destination matrices, or actual human travel patterns.
-- **DO NOT** imply live operations or real-time track capacity.
-- **DO NOT** conflate this with immediate upstream/downstream adjacency (Phase 39). This strictly identifies absolute endpoints of scheduled route graphs.
+This Phase 41 metric is strictly:
+- historical
+- timetable-derived
+- edge-conditioned
+- structural
+- based on scheduled train identities
 
-### 4.3 Real Snapshot 2 Validation
-The metric was manually validated against raw Snapshot 2 dataset tables.
+It is explicitly NOT:
+- passenger O-D demand
+- ticketing demand
+- passenger flow
+- physical track topology
+- infrastructure capacity
+- operational routing
+- current railway service
+- live traffic
+- congestion
+- reliability
+- trunk/branch classification
+- service quality
 
-**Edge: SBB (Sahibabad) -> GZB (Ghaziabad)** [Major Arterial Trunk]
-- **Traversing Trains**: 143
-- **Distinct Origins**: 32
-- **Distinct Destinations**: 64
-- *Validation*: Structurally represents a massive global mixing trunk. Despite only 143 trains, they scatter to 64 disparate destinations.
+### 4.3 Error Semantics
+The API defines deterministic behavior for edge and boundary cases:
+- **A. unknown station code**: Standard 404 Not Found (matches existing station verification conventions).
+- **B. known stations but no directed A -> B timetable edge**: Standard 404 Edge Not Found (matches existing edge verification conventions).
+- **C. valid edge with exactly one distinct traversing train identity**: Validly returns `traversing_train_count = 1`, `distinct_origin_count = 1`, `distinct_destination_count = 1`.
+- **D. valid edge with multiple trains sharing the same origin/destination**: Validly returns `traversing_train_count > 1`, but the distinct origin and destination counts will reflect the deduplicated terminal sets.
+- **E. valid edge where the same train traverses A -> B multiple times**: The duplicate traversals are deduplicated when defining `T(A,B)`. The train identity contributes exactly 1 to `traversing_train_count` and its origin/destination contribute exactly 1 to the distinct terminal sets.
 
-**Edge: MSB (Chennai Beach) -> MSF (Chennai Fort)** [Local High-Volume Corridor]
-- **Traversing Trains**: 132
-- **Distinct Origins**: 11
-- **Distinct Destinations**: 12
-- *Validation*: Structurally represents a tightly constrained local corridor. Volume is massive (132 trains), but they only shuttle between 11/12 specific terminals.
+### 4.4 Real Snapshot 2 Validation
+The metric was manually validated against raw Snapshot 2 dataset tables using the exact formulated SQL query.
 
-**Edge: AAV (Ambivli) -> AGCI (Angadippuram)** [Edge-Case / Anomaly]
-- **Traversing Trains**: 2
-- **Distinct Origins**: 1
-- **Distinct Destinations**: 1
-- *Validation*: A dedicated structural relationship with absolutely no dispersion.
+**SBB (Sahibabad) -> GZB (Ghaziabad)** (Edge with higher terminal diversity)
+- traversing_train_count = 143
+- distinct_origin_count = 32
+- distinct_destination_count = 64
 
-### 4.4 API Contract
+**MSB (Chennai Beach) -> MSF (Chennai Fort)** (Edge with lower terminal diversity)
+- traversing_train_count = 132
+- distinct_origin_count = 11
+- distinct_destination_count = 12
+
+**AAV (Ambivli) -> AGCI (Angadippuram)** (Edge with minimum terminal diversity)
+- traversing_train_count = 2
+- distinct_origin_count = 1
+- distinct_destination_count = 1
+
+### 4.5 API Contract
 **Method/Endpoint:**
 `GET /api/v1/network/edges/{from_station_code}/{to_station_code}/route-terminal-dispersion`
 
@@ -89,10 +121,12 @@ The metric was manually validated against raw Snapshot 2 dataset tables.
 }
 ```
 
-### 4.5 Query Strategy
+### 4.6 Query Strategy
+The conceptual query strategy leverages a fully relational approach using standard Common Table Expressions (CTEs) without looping or array aggregation. It explicitly enforces the distinct train identity rule by using `SELECT DISTINCT` in the initial `edge_trains` CTE.
+
 ```sql
 WITH edge_trains AS (
-    SELECT 
+    SELECT DISTINCT
         t1.train_id
     FROM train_stop_observations t1
     JOIN train_stop_observations t2 
@@ -137,16 +171,13 @@ SELECT
 FROM train_terminals;
 ```
 
-### 4.6 Performance Measurement (EXPLAIN ANALYZE)
-Tested against the heavily loaded SBB -> GZB edge (143 traversing trains):
-- **Planning Time**: ~1.975 ms
-- **Execution Time**: ~18.384 ms
-- **Scan Behavior**: Employs `Index Scan` utilizing `ix_train_stops_snapshot_station` to find the initial edge constraints rapidly. It utilizes `train_stop_observations_pkey` (Snapshot ID, Train ID, Stop Sequence) perfectly to locate `min(stop_sequence)` and `max(stop_sequence)` bounding rows instantaneously for all 143 traversing trains. There are zero sequential scans, ensuring robust scalability regardless of global snapshot size.
-
-### 4.7 Edge Cases
-- Unknown `from_code` or `to_code`: standard 404 Not Found.
-- Edge exists logically but not traversed consecutively in the active snapshot: standard 404 Edge Not Found.
-- Start or end of train (where A is Origin or B is Destination): Safe; minimum/maximum sequence boundary inclusive.
+### 4.7 Performance Measurement (EXPLAIN ANALYZE)
+Tested exact proposed query against the SBB -> GZB edge (143 distinct traversing train identities) in Snapshot 2:
+- **Planning Time**: 1.929 ms
+- **Execution Time**: 14.552 ms
+- **Scan Behavior**: The observed plan utilizes an `Index Scan` via `ix_train_stops_snapshot_station` to find the initial edge constraints. It then utilizes `train_stop_observations_pkey` via `Index Only Scan` to locate bounding `min(stop_sequence)` and `max(stop_sequence)` rows.
+- **Sequential Scans**: Zero sequential scans were observed in the tested plan.
+*(Note: This represents the plan for the tested case and should not be generalized arbitrarily).*
 
 ### 4.8 Future Implementation Boundary
 This capability requires a single new API route in `api/v1/network.py` and a corresponding service function in `services/network.py`. No database migrations, index adjustments, or dependency additions are necessary.
