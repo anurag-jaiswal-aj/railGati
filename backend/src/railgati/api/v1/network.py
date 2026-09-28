@@ -1828,3 +1828,27 @@ def get_edge_route_co_traversal_affinity(
         if "not found" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+
+
+@router.get(
+    "/trains/{train_number}/maximum-shared-sub-route",
+    response_model=schemas.TrainMaxSharedSubRouteResponse,
+    summary="Calculate maximum shared sub-route analytics",
+    description="Calculates the maximum contiguous shared structural sub-route for a given train.",
+)
+def get_train_max_shared_sub_route(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.services.network import calculate_train_max_shared_sub_route
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return calculate_train_max_shared_sub_route(db, timetable_snapshot_id, train_number)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e

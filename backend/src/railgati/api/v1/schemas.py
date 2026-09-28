@@ -800,3 +800,16 @@ class EdgeRouteCoTraversalAffinityResponse(BaseModel):
     timetable_snapshot_id: int
     traversing_train_count: int
     shared_edges: list[EdgeSharedTraversal]
+
+
+class TrainMaxSharedSubRouteItem(BaseModel):
+    other_train_number: str = Field(..., description="The train number that shares the contiguous route")
+    shared_station_count: int = Field(..., description="The length (in stations) of the contiguous sequence")
+    start_station_code: str = Field(..., description="The first station in the shared sequence")
+    end_station_code: str = Field(..., description="The last station in the shared sequence")
+
+
+class TrainMaxSharedSubRouteResponse(BaseModel):
+    target_train_number: str
+    timetable_snapshot_id: int
+    top_shared_sub_routes: list[TrainMaxSharedSubRouteItem]

@@ -4595,3 +4595,94 @@ def calculate_edge_route_co_traversal_affinity(
             if r[1] is not None
         ]
     }
+
+
+def calculate_train_max_shared_sub_route(
+    db: Session,
+    timetable_snapshot_id: int,
+    train_number: str,
+) -> dict[str, typing.Any]:
+    """Calculate maximum shared contiguous sub-route analytics."""
+
+    from sqlalchemy import select, text
+
+    from railgati.models.train import Train
+
+    train = db.scalar(select(Train).filter(Train.number == train_number.upper()))
+    if not train:
+        raise ValueError(f"Train not found: {train_number}")
+
+    # Must also verify the train actually exists in the snapshot observation table to respect isolation
+    target_check = db.execute(text("""
+        SELECT 1 FROM train_stop_observations
+        WHERE train_id = :train_id AND snapshot_id = :snapshot_id
+        LIMIT 1
+    """), {"train_id": train.id, "snapshot_id": timetable_snapshot_id}).scalar()
+    
+    if not target_check:
+        raise ValueError(f"Train not found: {train_number} in snapshot {timetable_snapshot_id}")
+
+    query = text("""
+        WITH target_stops AS (
+            SELECT 
+                t1.station_id,
+                t1.stop_sequence,
+                s.code as station_code
+            FROM train_stop_observations t1
+            JOIN stations s ON s.id = t1.station_id
+            WHERE t1.train_id = :target_id
+              AND t1.snapshot_id = :snapshot_id
+        ),
+        shared_segments AS (
+            SELECT 
+                tr2.number as other_train,
+                COUNT(*) as shared_len,
+                MIN(ts.stop_sequence) as start_seq,
+                MAX(ts.stop_sequence) as end_seq
+            FROM train_stop_observations t2
+            JOIN target_stops ts ON ts.station_id = t2.station_id
+            JOIN trains tr2 ON tr2.id = t2.train_id
+            WHERE t2.snapshot_id = :snapshot_id
+              AND tr2.id != :target_id
+            GROUP BY t2.train_id, tr2.number, (ts.stop_sequence - t2.stop_sequence)
+        ),
+        ranked_segments AS (
+            SELECT 
+                ss.other_train,
+                ss.shared_len,
+                (SELECT station_code FROM target_stops WHERE stop_sequence = ss.start_seq) as start_code,
+                (SELECT station_code FROM target_stops WHERE stop_sequence = ss.end_seq) as end_code,
+                RANK() OVER (ORDER BY ss.shared_len DESC) as rnk
+            FROM shared_segments ss
+        )
+        SELECT DISTINCT
+            other_train,
+            shared_len,
+            start_code,
+            end_code
+        FROM ranked_segments
+        WHERE rnk = 1
+        ORDER BY other_train ASC, start_code ASC;
+    """)
+
+    rows = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "target_id": train.id,
+        }
+    ).fetchall()
+
+    return {
+        "target_train_number": train_number.upper(),
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "top_shared_sub_routes": [
+            {
+                "other_train_number": r[0],
+                "shared_station_count": r[1],
+                "start_station_code": r[2],
+                "end_station_code": r[3],
+            }
+            for r in rows
+        ]
+    }
