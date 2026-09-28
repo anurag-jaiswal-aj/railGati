@@ -33,27 +33,41 @@ def api_od_exclusivity_fixtures(db_session: Session) -> typing.Any:
     db_session.add(TrainObservation(snapshot_id=snap_id, train_id=tr.id, name="T_API", type="EXP"))
 
     for idx, s_code in enumerate(["A", "B", "C"]):
-        db_session.add(TrainStopObservation(
-            snapshot_id=snap_id, train_id=tr.id, station_id=stations[s_code].id, stop_sequence=idx + 1
-        ))
+        db_session.add(
+            TrainStopObservation(
+                snapshot_id=snap_id,
+                train_id=tr.id,
+                station_id=stations[s_code].id,
+                stop_sequence=idx + 1,
+            )
+        )
 
     # Candidate: A -> B
     cand = Train(number="C_API")
     db_session.add(cand)
     db_session.commit()
-    db_session.add(TrainObservation(snapshot_id=snap_id, train_id=cand.id, name="C_API", type="EXP"))
+    db_session.add(
+        TrainObservation(snapshot_id=snap_id, train_id=cand.id, name="C_API", type="EXP")
+    )
 
     for idx, s_code in enumerate(["A", "B"]):
-        db_session.add(TrainStopObservation(
-            snapshot_id=snap_id, train_id=cand.id, station_id=stations[s_code].id, stop_sequence=idx + 1
-        ))
+        db_session.add(
+            TrainStopObservation(
+                snapshot_id=snap_id,
+                train_id=cand.id,
+                station_id=stations[s_code].id,
+                stop_sequence=idx + 1,
+            )
+        )
 
     db_session.commit()
 
     return {"snapshot_id": snap_id}
 
 
-def test_api_od_exclusivity_success(client: TestClient, api_od_exclusivity_fixtures: typing.Any) -> None:
+def test_api_od_exclusivity_success(
+    client: TestClient, api_od_exclusivity_fixtures: typing.Any
+) -> None:
     response = client.get("/api/v1/network/trains/T_API/od-exclusivity")
     assert response.status_code == 200
     data = response.json()
@@ -69,6 +83,8 @@ def test_api_od_exclusivity_success(client: TestClient, api_od_exclusivity_fixtu
     assert pairs[1]["destination_station_code"] == "C"
 
 
-def test_api_od_exclusivity_not_found(client: TestClient, api_od_exclusivity_fixtures: typing.Any) -> None:
+def test_api_od_exclusivity_not_found(
+    client: TestClient, api_od_exclusivity_fixtures: typing.Any
+) -> None:
     response = client.get("/api/v1/network/trains/INVALID/od-exclusivity")
     assert response.status_code == 404

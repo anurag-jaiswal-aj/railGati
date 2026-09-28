@@ -817,8 +817,6 @@ class TrainMaxSharedSubRouteResponse(BaseModel):
 class TrainODExclusivityPairItem(BaseModel):
     origin_station_code: str
     destination_station_code: str
-    origin_stop_sequence: int
-    destination_stop_sequence: int
 
 class TrainODExclusivityResponse(BaseModel):
     target_train_number: str

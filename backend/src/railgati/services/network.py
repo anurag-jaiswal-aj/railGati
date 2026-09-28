@@ -4714,36 +4714,39 @@ def calculate_train_route_od_exclusivity(db: Session, train_number: str) -> dict
 
     query = text("""
         WITH target_stops AS (
-            SELECT station_id, stop_sequence, (SELECT code FROM stations WHERE id = station_id) as code
+            SELECT station_id, stop_sequence,
+                (SELECT code FROM stations WHERE id = station_id) as code
             FROM train_stop_observations
             WHERE train_id = :target_id
               AND snapshot_id = :snapshot_id
         ),
         target_pairs AS (
-            SELECT 
-                t1.station_id as o_id, t1.code as o_code, t1.stop_sequence as o_seq,
-                t2.station_id as d_id, t2.code as d_code, t2.stop_sequence as d_seq
+            SELECT DISTINCT
+                t1.station_id as o_id, t1.code as o_code,
+                t2.station_id as d_id, t2.code as d_code
             FROM target_stops t1
             JOIN target_stops t2 ON t1.stop_sequence < t2.stop_sequence
         ),
         shared_pairs AS (
             SELECT DISTINCT tp.o_id, tp.d_id
             FROM target_pairs tp
-            JOIN train_stop_observations ts1 ON ts1.station_id = tp.o_id AND ts1.snapshot_id = :snapshot_id
-            JOIN train_stop_observations ts2 ON ts2.station_id = tp.d_id AND ts2.snapshot_id = :snapshot_id
-             AND ts1.train_id = ts2.train_id 
+            JOIN train_stop_observations ts1
+              ON ts1.station_id = tp.o_id AND ts1.snapshot_id = :snapshot_id
+            JOIN train_stop_observations ts2
+              ON ts2.station_id = tp.d_id AND ts2.snapshot_id = :snapshot_id
+             AND ts1.train_id = ts2.train_id
              AND ts1.stop_sequence < ts2.stop_sequence
             WHERE ts1.train_id != :target_id
         ),
         exclusive_pairs AS (
-            SELECT tp.o_code, tp.d_code, tp.o_seq, tp.d_seq
+            SELECT tp.o_code, tp.d_code
             FROM target_pairs tp
             LEFT JOIN shared_pairs sp ON tp.o_id = sp.o_id AND tp.d_id = sp.d_id
             WHERE sp.o_id IS NULL
         )
-        SELECT o_code, d_code, o_seq, d_seq
+        SELECT o_code, d_code
         FROM exclusive_pairs
-        ORDER BY o_seq ASC, d_seq ASC;
+        ORDER BY o_code ASC, d_code ASC;
     """)
 
     rows = db.execute(
@@ -4762,8 +4765,6 @@ def calculate_train_route_od_exclusivity(db: Session, train_number: str) -> dict
             {
                 "origin_station_code": r[0],
                 "destination_station_code": r[1],
-                "origin_stop_sequence": r[2],
-                "destination_stop_sequence": r[3],
             }
             for r in rows
         ]
