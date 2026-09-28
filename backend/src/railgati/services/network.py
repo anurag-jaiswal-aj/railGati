@@ -4850,3 +4850,114 @@ def calculate_station_pair_route_diversity(db, from_station_code: str, to_statio
         "distinct_path_count": len(paths),
         "paths": paths
     }
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+
+def calculate_station_pair_intermediate_hubs(
+    db: Session, from_station_code: str, to_station_code: str
+) -> dict[str, Any]:
+    from sqlalchemy import select
+
+    from railgati.api.v1.snapshots import (
+        get_active_station_snapshot_id,
+        get_active_timetable_snapshot_id,
+    )
+    from railgati.models.station import Station, StationObservation
+
+    from_station_code = from_station_code.upper()
+    to_station_code = to_station_code.upper()
+
+    from_st = db.scalar(select(Station).filter(Station.code == from_station_code))
+    if not from_st:
+        raise ValueError(f"Station not found: {from_station_code}")
+
+    to_st = db.scalar(select(Station).filter(Station.code == to_station_code))
+    if not to_st:
+        raise ValueError(f"Station not found: {to_station_code}")
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+    if not timetable_snapshot_id:
+        raise ValueError("No active timetable snapshot available.")
+
+    station_snapshot_id = get_active_station_snapshot_id(db)
+
+    # First get total traversal instance count
+    total_query = text("""
+        SELECT COUNT(DISTINCT t1.train_id || '-' || t1.stop_sequence || '-' || t2.stop_sequence)
+        FROM train_stop_observations t1
+        JOIN train_stop_observations t2 
+          ON t1.train_id = t2.train_id AND t1.snapshot_id = t2.snapshot_id
+        WHERE t1.snapshot_id = :snapshot_id
+          AND t1.station_id = :from_id
+          AND t2.station_id = :to_id
+          AND t1.stop_sequence < t2.stop_sequence
+    """)
+    total_instances = db.scalar(total_query, {"snapshot_id": timetable_snapshot_id, "from_id": from_st.id, "to_id": to_st.id}) or 0
+
+    if total_instances == 0:
+        return {
+            "from_station_code": from_station_code,
+            "to_station_code": to_station_code,
+            "timetable_snapshot_id": timetable_snapshot_id,
+            "total_traversal_instances": 0,
+            "intermediate_hubs": []
+        }
+
+    query = text("""
+        WITH target_trains AS (
+            SELECT t1.train_id, t1.stop_sequence as o_seq, t2.stop_sequence as d_seq
+            FROM train_stop_observations t1
+            JOIN train_stop_observations t2 
+              ON t1.train_id = t2.train_id AND t1.snapshot_id = t2.snapshot_id
+            WHERE t1.snapshot_id = :snapshot_id
+              AND t1.station_id = :from_id
+              AND t2.station_id = :to_id
+              AND t1.stop_sequence < t2.stop_sequence
+        )
+        SELECT 
+            s.code,
+            s.id as station_id,
+            COUNT(ts.train_id) as occurrence_count,
+            COUNT(DISTINCT tt.train_id || '-' || tt.o_seq || '-' || tt.d_seq) as traversal_instance_count
+        FROM target_trains tt
+        JOIN train_stop_observations ts 
+          ON ts.train_id = tt.train_id 
+         AND ts.snapshot_id = :snapshot_id
+         AND ts.stop_sequence > tt.o_seq 
+         AND ts.stop_sequence < tt.d_seq
+        JOIN stations s ON s.id = ts.station_id
+        GROUP BY s.code, s.id
+        ORDER BY traversal_instance_count DESC, occurrence_count DESC, s.code ASC
+    """)
+
+    res = db.execute(query, {"snapshot_id": timetable_snapshot_id, "from_id": from_st.id, "to_id": to_st.id}).fetchall()
+
+    # Preload active station names
+    station_ids = [r.station_id for r in res]
+    station_names = {}
+    if station_ids:
+        obs = db.scalars(
+            select(StationObservation)
+            .filter(StationObservation.snapshot_id == station_snapshot_id)
+            .filter(StationObservation.station_id.in_(station_ids))
+        ).all()
+        station_names = {o.station_id: o.name for o in obs}
+
+    hubs = []
+    for r in res:
+        hubs.append({
+            "station_code": r.code,
+            "station_name": station_names.get(r.station_id),
+            "traversal_instance_count": r.traversal_instance_count,
+            "occurrence_count": r.occurrence_count
+        })
+
+    return {
+        "from_station_code": from_station_code,
+        "to_station_code": to_station_code,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "total_traversal_instances": total_instances,
+        "intermediate_hubs": hubs
+    }

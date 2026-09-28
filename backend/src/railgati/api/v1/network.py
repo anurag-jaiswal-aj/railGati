@@ -1894,3 +1894,30 @@ def get_station_pair_route_diversity(
         if "not found" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+@router.get(
+    "/stations/{from_station_code}/{to_station_code}/intermediate-hubs",
+    response_model=schemas.StationPairIntermediateHubsResponse,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Station not found"},
+        status.HTTP_400_BAD_REQUEST: {"description": "Validation error"},
+    },
+)
+def get_network_station_pair_intermediate_hubs(
+    from_station_code: str,
+    to_station_code: str,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """Calculate Station Pair Intermediate Flow Concentration Analytics."""
+    from railgati.services.network import calculate_station_pair_intermediate_hubs
+
+    try:
+        result = calculate_station_pair_intermediate_hubs(db, from_station_code, to_station_code)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        if "No active" in msg:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+
+    return result

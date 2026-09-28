@@ -835,3 +835,17 @@ class StationPairRouteDiversityResponse(BaseModel):
     timetable_snapshot_id: int
     distinct_path_count: int
     paths: list[StationPairRouteDiversityPathItem]
+
+class StationPairHubItem(BaseModel):
+    station_code: str
+    station_name: str | None
+    traversal_instance_count: int
+    occurrence_count: int
+
+
+class StationPairIntermediateHubsResponse(BaseModel):
+    from_station_code: str
+    to_station_code: str
+    timetable_snapshot_id: int
+    total_traversal_instances: int
+    intermediate_hubs: list[StationPairHubItem]
