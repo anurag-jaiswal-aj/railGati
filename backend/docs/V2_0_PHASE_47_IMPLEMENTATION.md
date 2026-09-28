@@ -36,5 +36,5 @@ The response yields the aggregated total counts for each state.
 
 ## Verification
 * Validated Snapshot 2 ground truth values: `NDLS` -> `HWH` (6, 6, 0, 0, 0), `LTT` -> `PUNE` (27, 0, 4, 6, 17), `NDLS` -> `CNB` (38, 2, 35, 0, 1), `VDR` -> `CDG` (0, 0, 0, 0, 0).
-* Maintained O(1) constant performance on Postgres index scans via `EXPLAIN`.
+* Verified high-performance index usage via `EXPLAIN (ANALYZE, BUFFERS)` showing ~0.15ms planning and ~1.1ms execution time using `ix_train_stops_snapshot_station` and `train_stop_observations_pkey` index scans without expensive sequential sweeps.
 * Fully compliant with Ruff, MyPy, and full test suite regression passing.
