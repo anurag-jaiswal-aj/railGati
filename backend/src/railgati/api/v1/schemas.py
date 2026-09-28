@@ -788,3 +788,15 @@ class EdgeRouteTerminalDispersionResponse(BaseModel):
     traversing_train_count: int
     distinct_origin_count: int
     distinct_destination_count: int
+
+class EdgeSharedTraversal(BaseModel):
+    from_station_code: str
+    to_station_code: str
+    shared_train_count: int
+
+class EdgeRouteCoTraversalAffinityResponse(BaseModel):
+    from_station_code: str
+    to_station_code: str
+    timetable_snapshot_id: int
+    traversing_train_count: int
+    shared_edges: list[EdgeSharedTraversal]

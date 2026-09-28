@@ -1801,3 +1801,31 @@ def get_edge_route_terminal_dispersion(
         if "not found" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+
+
+@router.get(
+    "/edges/{from_station_code}/{to_station_code}/route-co-traversal-affinity",
+    response_model=schemas.EdgeRouteCoTraversalAffinityResponse,
+    summary="Calculate network edge route co-traversal affinity analytics",
+    description="Calculates historical timetable-derived edge co-traversal affinity.",
+)
+def get_edge_route_co_traversal_affinity(
+    from_station_code: str,
+    to_station_code: str,
+    limit: int = Query(50, description="Max edges to return (default 50)"),
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.services.network import calculate_edge_route_co_traversal_affinity
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return calculate_edge_route_co_traversal_affinity(
+            db, timetable_snapshot_id, from_station_code, to_station_code, limit
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e

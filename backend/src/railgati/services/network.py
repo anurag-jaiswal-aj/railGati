@@ -4487,3 +4487,114 @@ def calculate_edge_route_terminal_dispersion(
         "distinct_origin_count": distinct_origin_count,
         "distinct_destination_count": distinct_destination_count,
     }
+
+
+def calculate_edge_route_co_traversal_affinity(
+    db: Session,
+    timetable_snapshot_id: int,
+    from_station_code: str,
+    to_station_code: str,
+    limit: int = 50,
+) -> dict[str, typing.Any]:
+    """Calculate historical timetable-derived edge co-traversal affinity."""
+
+    from sqlalchemy import select, text
+
+    from railgati.models.station import Station
+
+    from_station = db.scalar(select(Station).filter(Station.code == from_station_code.upper()))
+    if not from_station:
+        raise ValueError(f"Station not found: {from_station_code}")
+
+    to_station = db.scalar(select(Station).filter(Station.code == to_station_code.upper()))
+    if not to_station:
+        raise ValueError(f"Station not found: {to_station_code}")
+
+    query = text("""
+        WITH target_trains AS (
+            SELECT DISTINCT t1.train_id
+            FROM train_stop_observations t1
+            JOIN train_stop_observations t2 
+              ON t1.train_id = t2.train_id AND t1.snapshot_id = t2.snapshot_id
+            WHERE t1.snapshot_id = :snapshot_id
+              AND t1.station_id = :from_id
+              AND t2.station_id = :to_id
+              AND t2.stop_sequence = t1.stop_sequence + 1
+        ),
+        target_train_count AS (
+            SELECT COUNT(*) as c FROM target_trains
+        ),
+        other_edges AS (
+            SELECT 
+                t1.station_id as o,
+                t2.station_id as d,
+                COUNT(DISTINCT t1.train_id) as shared_trains
+            FROM train_stop_observations t1
+            JOIN train_stop_observations t2 
+              ON t1.train_id = t2.train_id AND t1.snapshot_id = t2.snapshot_id
+            JOIN target_trains tt ON tt.train_id = t1.train_id
+            WHERE t1.snapshot_id = :snapshot_id
+              AND t2.stop_sequence = t1.stop_sequence + 1
+              AND NOT (t1.station_id = :from_id AND t2.station_id = :to_id)
+            GROUP BY t1.station_id, t2.station_id
+        )
+        SELECT 
+            (SELECT c FROM target_train_count) as traversing_train_count,
+            s1.code as o_code, 
+            s2.code as d_code, 
+            oe.shared_trains
+        FROM other_edges oe
+        JOIN stations s1 ON s1.id = oe.o
+        JOIN stations s2 ON s2.id = oe.d
+        ORDER BY oe.shared_trains DESC, s1.code ASC, s2.code ASC
+        LIMIT :limit;
+    """)
+
+    rows = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "from_id": from_station.id,
+            "to_id": to_station.id,
+            "limit": limit,
+        }
+    ).fetchall()
+
+    traversing_train_count = 0
+    if not rows:
+        # We need to manually check if target edge exists to handle "0 trains" vs "just no co-traversals"
+        edge_check_q = text("""
+            SELECT COUNT(DISTINCT t1.train_id)
+            FROM train_stop_observations t1
+            JOIN train_stop_observations t2 
+              ON t1.train_id = t2.train_id AND t1.snapshot_id = t2.snapshot_id
+            WHERE t1.snapshot_id = :snapshot_id
+              AND t1.station_id = :from_id
+              AND t2.station_id = :to_id
+              AND t2.stop_sequence = t1.stop_sequence + 1
+        """)
+        traversing_train_count = db.scalar(edge_check_q, {
+            "snapshot_id": timetable_snapshot_id,
+            "from_id": from_station.id,
+            "to_id": to_station.id
+        }) or 0
+        if traversing_train_count == 0:
+            raise ValueError(f"Directed edge not found: {from_station_code}->{to_station_code} (no active timetable trains).")
+    else:
+        traversing_train_count = rows[0][0]
+
+    return {
+        "from_station_code": from_station_code.upper(),
+        "to_station_code": to_station_code.upper(),
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "traversing_train_count": traversing_train_count,
+        "shared_edges": [
+            {
+                "from_station_code": r[1],
+                "to_station_code": r[2],
+                "shared_train_count": r[3],
+            }
+            for r in rows
+            if r[1] is not None
+        ]
+    }
