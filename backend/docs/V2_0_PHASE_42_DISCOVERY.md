@@ -18,9 +18,19 @@ The RailGati network analytics suite currently provides comprehensive primitives
 
 ## 3. Detailed Overlap Audit
 Any new capability analyzing edge relationships must actively avoid reproducing:
-- **Immediate Adjacency Constraints**: Phase 34 and Phase 39 already map the *immediate* inbound/outbound structure around stations and edges.
-- **Terminal Constraints**: Phase 16, 22, and 41 already map the ultimate structural bounds (Origins/Destinations).
-- **Train Similarity Constraints**: Phase 21 already measures full route similarity (Jaccard) between pairs of specific trains.
+- **Phase 15 (Train Route Similarity)**: Compares station sets of two train routes using Jaccard similarity.
+- **Phase 16 (Station Service Similarity)**: Compares sets of train identities serving two stations using Jaccard similarity.
+- **Phase 39 (Edge Traversal Dispersion)**: Examines immediate predecessor and successor structure around one directed edge, measuring local one-edge neighborhood traversal dispersion.
+- **Phase 40 (Train Route Edge Structural Exclusivity)**: Asks whether each edge on one target train route is traversed exclusively by trains having the exact same full ordered route (route-sequence equivalence/exclusivity).
+- **Phase 41 (Edge Route Terminal Dispersion)**: Selects trains traversing an edge and examines their absolute timetable origins and destinations (terminal diversity conditioned on an edge).
+
+Phase 42 is distinct from Phase 15 and 16 because it conditions on one directed edge, identifies the set of train identities traversing that edge, compares that train set against the train set traversing *every other* directed adjacent timetable edge, and reports an edge-to-edge shared-train co-occurrence (intersection), not a Jaccard similarity between two pre-selected entities.
+
+Phase 42 is distinct from Phase 39 because it takes the train identities traversing the target edge and examines all other directed adjacent edges appearing anywhere in those same train routes, thereby capturing non-local route-wide edge co-occurrence rather than just the immediate neighborhood.
+
+Phase 42 is distinct from Phase 40 because Phase 42 performs an edge-to-edge train-set intersection, rather than asking for full route-sequence exclusivity.
+
+Phase 42 is distinct from Phase 41 because it measures route-wide edge co-occurrence conditioned on an edge, rather than terminal diversity.
 
 ## 4. Candidate Analytics Considered
 During discovery, multiple analytical candidates were explored using Snapshot 2 data:
@@ -29,7 +39,7 @@ During discovery, multiple analytical candidates were explored using Snapshot 2 
 3. **Network Edge Route Co-Traversal Affinity Analytics**: For a given directed edge A->B, identifying which *other* directed edges in the entire network are most frequently co-traversed by the exact same set of train identities.
 
 ## 5. Rejected Candidates and Reasons
-- **Network Station Route Co-occurrence Affinity**: Rejected as it acts as a trivial variant of Phase 20 (Station Similarity) which already computes station-to-station overlap using Jaccard similarity.
+- **Network Station Route Co-occurrence Affinity**: Rejected as it acts as a trivial variant of Phase 16 (Station Service Similarity) which already computes station-to-station overlap using Jaccard similarity.
 - **Network Edge Route Topological Alternation**: While structurally interesting, this is essentially Phase 38 (Train Route Topological Bypass) computed from the inverse perspective (evaluating the edge instead of evaluating the train).
 - **Network Edge Route Terminal Affinity**: Rejected as it is merely Phase 41 (Terminal Dispersion) presented with explicit OD-pair frequencies instead of distinct counts, mirroring the logic of Phase 22.
 
@@ -40,11 +50,18 @@ During discovery, multiple analytical candidates were explored using Snapshot 2 
 *For a requested directed edge A -> B, what other specific directed edges in the network have the highest co-traversal frequency by the exact same set of train identities?*
 
 ## 8. Formal Definition
-- **Input Entity**: A directed edge `E_target = A -> B` (where A and B are adjacent in at least one active train route).
-- **T(E_target)**: The set of distinct train identities traversing `A -> B` consecutively in the active timetable snapshot.
-- For all other directed consecutive edges `C -> D` (where `C != A` or `D != B`), let `T(C->D)` be the set of distinct train identities traversing `C -> D` consecutively.
-- **co_traversed_train_count(C->D)**: The cardinality of the intersection `|T(E_target) ∩ T(C->D)|`.
-- **Ordering**: The output must be deterministically sorted by `co_traversed_train_count` DESC, then `C.code` ASC, then `D.code` ASC.
+For target edge `E = (A,B)`:
+- `T(E)` = the set of DISTINCT train identities whose timetable occurrence contains at least one consecutive `A -> B` stop pair in the active timetable snapshot.
+
+For another directed adjacent edge `F = (C,D)`:
+- `T(F)` = the set of DISTINCT train identities whose timetable occurrence contains at least one consecutive `C -> D` stop pair in the same active timetable snapshot.
+
+Then:
+`shared_train_count(E,F) = |T(E) ∩ T(F)|`
+
+- **Ordering**: The output must be deterministically sorted by `shared_train_count` DESC, then `C.code` ASC, then `D.code` ASC.
+- **Exclusion**: The target edge E itself must be excluded from the returned result. Each returned directed edge must appear exactly once.
+- **Deduplication**: Repeated traversal of E or F by the same train identity must not inflate the count.
 
 ## 9. Data and Schema Mapping
 This capability exclusively utilizes existing RailGati relational structures:
@@ -55,10 +72,14 @@ This capability exclusively utilizes existing RailGati relational structures:
 - The metric must strictly isolate queries to the globally resolved **active timetable snapshot**.
 - Station resolution must use the **active station snapshot** to map requested codes to IDs.
 
-## 11. Deduplication / Repeated-Occurrence Semantics
-- If a Train Identity traverses `A -> B` multiple times (e.g., a looping topology), it is counted exactly **once** in `T(E_target)`.
-- If that same Train Identity traverses `C -> D` multiple times, it contributes exactly **once** to the intersection `co_traversed_train_count(C->D)`.
-- The sets `T(E_target)` and `T(C->D)` are strict sets of distinct Train IDs.
+## 11. Edge Cases & Repeated-Occurrence Semantics
+- **A. Unknown target station**: Return standard existing station 404 behavior.
+- **B. Target directed edge absent**: Return standard existing edge-not-found behavior.
+- **C. Target edge has one train**: Other edges traversed by that train may simply have `shared_train_count = 1`.
+- **D. Multiple trains traverse target edge**: `shared_train_count` represents distinct train identities.
+- **E. Same train traverses target edge multiple times**: That train identity contributes once to each edge's shared-train intersection.
+- **F. Another edge is traversed multiple times by one selected train**: Still contributes exactly one shared train identity to `shared_train_count`.
+- **G. Target edge has no other co-traversed edges**: Return an empty result according to established API conventions.
 
 ## 12. Proposed API Contract
 **Endpoint:**
@@ -76,26 +97,23 @@ This capability exclusively utilizes existing RailGati relational structures:
 {
   "from_station_code": "SBB",
   "to_station_code": "GZB",
-  "traversing_train_count": 143,
-  "co_traversals": [
+  "timetable_snapshot_id": 2,
+  "shared_edges": [
     {
-      "co_traversed_from": "ANVT",
-      "co_traversed_to": "CNJ",
-      "co_traversed_train_count": 83
-    },
-    ...
+      "from_station_code": "ANVT",
+      "to_station_code": "CNJ",
+      "shared_train_count": 83
+    }
   ]
 }
 ```
 
 ## 13. Error and Boundary Semantics
-- `404 Not Found` if either station does not exist in the active station snapshot.
-- `404 Not Found` if `traversing_train_count == 0` (the edge A->B does not exist consecutively in the active timetable).
-- The target edge `A->B` MUST be excluded from the `co_traversals` list.
+See Section 11 for complete edge case handling. The response must adhere deterministically to these rules, returning 404s for missing stations or absent target edges, and returning an empty list of shared edges if no other edges are traversed by the exact same trains.
 
 ## 14. Semantic Guardrails
-- **IS**: A purely structural measurement of route segment contingency based on the static historical timetable.
-- **IS NOT**: A measure of passenger demand, transfer volumes, track capacity, or real-time train movements. It measures timetable coupling (e.g. if A->B closes, C->D loses exactly N trains).
+- **IS**: A purely structural measurement of route-wide timetable co-occurrence (shared scheduled train identities across directed timetable edges) based on the static historical timetable.
+- **IS NOT**: Jaccard similarity, cosine similarity, correlation, passenger demand, passenger flow, operational dependency, physical track dependency, infrastructure dependency, route redundancy, capacity, congestion, reliability, or current/live service information. The term "affinity" is product terminology for edge-to-edge shared-train co-occurrence; the underlying metric is a raw distinct-train intersection count, not a normalized similarity coefficient or causal relationship.
 
 ## 15. Real Snapshot 2 Validation
 The prototype SQL was executed against the actual Snapshot 2 database.
@@ -108,7 +126,6 @@ The prototype SQL was executed against the actual Snapshot 2 database.
   3. `ANVR -> ANVT`: 67 trains
   4. `AJR -> DKDE`: 64 trains
   5. `ALJN -> DAQ`: 64 trains
-*(Note: Identifies both the immediate predecessor `CNJ->SBB` and entirely distant, highly correlated segments like `AJR->DKDE`)*
 
 **Ordinary Example:** `MSB -> MSF` (Chennai Beach to Chennai Fort)
 - `traversing_train_count`: 132
@@ -118,7 +135,6 @@ The prototype SQL was executed against the actual Snapshot 2 database.
   3. `INDR -> TYMR`: 70 trains
   4. `KTBR -> INDR`: 70 trains
   5. `KTPM -> KTBR`: 70 trains
-*(Note: Correctly identifies the MRTS line branch contingency down to Velachery via stations like `KTPM`)*
 
 **Small/Boundary Example:** `AAV -> AGCI`
 - `traversing_train_count`: 2
@@ -163,9 +179,9 @@ LIMIT :limit;
 
 ## 17. EXPLAIN / Performance Findings
 EXPLAIN ANALYZE was executed for `SBB -> GZB`:
-- **Planning Time**: 1.921 ms
-- **Execution Time**: 36.940 ms
-- **Path**: Nested Loop over `target_trains` using the primary key to fetch consecutive stops, aggregating via `GroupAggregate`, joining to `stations` for codes, and sorting via `top-N heapsort`.
+- **Planning Time**: observed ≈ 1.921 ms
+- **Execution Time**: observed ≈ 36.940 ms
+- **Path**: Nested Loop over `target_trains` using the primary key to fetch consecutive stops, aggregating via `GroupAggregate`, joining to `stations` for codes, and sorting via `top-N heapsort`. No sequential scan was observed in the tested plan.
 
 ## 18. Existing Index Usage
 The query relies heavily on existing indexes:
@@ -187,4 +203,4 @@ The query relies heavily on existing indexes:
 Phase 42 is strictly bounded to the Edge Route Co-Traversal Affinity endpoint. It MUST NOT interfere with the unrelated Phase 40 failure `test_api_edge_exclusivity_success` or modify any existing Phase 1-41 logic.
 
 ## 22. Final Discovery Decision
-**Network Edge Route Co-Traversal Affinity Analytics** is selected for V2.0 Phase 42. It provides genuinely novel insights into the structural contingency and bottleneck dependencies of network segments without duplicating any prior traversal or terminal metrics.
+**Network Edge Route Co-Traversal Affinity Analytics** is selected for V2.0 Phase 42. It provides genuinely novel insights into route-wide timetable co-occurrence (edge-to-edge shared scheduled train identities) without duplicating any prior traversal or terminal metrics.
