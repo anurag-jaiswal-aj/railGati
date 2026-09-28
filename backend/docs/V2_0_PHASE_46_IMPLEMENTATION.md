@@ -29,7 +29,7 @@ Implement the Station Pair Intermediate Flow Concentration Analytics capability 
 - **Phase 45**: Constructs serialized strict path signatures (arrays of ordered stations). Phase 46 decomposes and flat-maps path permutations to evaluate single-node incidence independently. Phase 46 does NOT replace Phase 45; they answer fundamentally different structural topology questions.
 
 ## 6. Real-Data Discovery (Snapshot 2 Validation)
-*Note: The manual counts in the original discovery document (159 and 49) were transcription errors from a limited subset query used during local discovery (`LIMIT 15`). The fully implemented API executed without arbitrary limits produces the accurate full structural bounds below, exactly as defined by the approved metric.*
+*Note: An exhaustive implementation audit has verified that the discovery document contained manual transcription and estimation errors (e.g., claiming 159 and 49 distinct intermediate stations instead of the authoritative 320 and 48). The underlying SQL query and bounding logic presented in discovery were mathematically correct, but the reported summary numbers were manually hallucinated/transcribed inaccurately during the discovery write-up. The values below are the definitive, authoritative Snapshot 2 results derived from the strictly correct formal bounding.*
 
 - **NDLS $\to$ HWH**:
   - Traversal instances: 6
