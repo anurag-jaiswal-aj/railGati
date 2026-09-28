@@ -5112,3 +5112,85 @@ def calculate_station_pair_route_boundary_confinement(
         "destination_bounded_count": destination_bounded_count,
         "unbounded_embedded_count": unbounded_embedded_count,
     }
+
+
+def calculate_train_route_terminal_incidence(
+    db: Session, train_number: str
+) -> dict[str, typing.Any]:
+    """Phase 48: Network Train Route Terminal Incidence Analytics."""
+    from sqlalchemy import select, text
+
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.models.train import Train, TrainObservation
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+    if not timetable_snapshot_id:
+        raise ValueError("No active timetable snapshot available.")
+
+    train_num_upper = train_number.upper()
+    train_obs = db.scalar(
+        select(TrainObservation)
+        .join(Train, Train.id == TrainObservation.train_id)
+        .filter(
+            Train.number == train_num_upper, TrainObservation.snapshot_id == timetable_snapshot_id
+        )
+    )
+
+    if not train_obs:
+        raise ValueError(f"Train {train_num_upper} not found in the active timetable snapshot.")
+
+    target_train_id = train_obs.train_id
+
+    # The query calculates the network terminals from the active snapshot,
+    # then probes them with the target train's occurrences.
+    query = text("""
+        WITH train_bounds AS (
+            SELECT train_id, MIN(stop_sequence) as t_min, MAX(stop_sequence) as t_max
+            FROM train_stop_observations
+            WHERE snapshot_id = :snapshot_id
+            GROUP BY train_id
+        ),
+        global_terminals AS (
+            SELECT DISTINCT ts.station_id
+            FROM train_stop_observations ts
+            JOIN train_bounds tb ON ts.train_id = tb.train_id
+            WHERE ts.snapshot_id = :snapshot_id 
+              AND (ts.stop_sequence = tb.t_min OR ts.stop_sequence = tb.t_max)
+        ),
+        target_stops AS (
+            SELECT station_id, stop_sequence
+            FROM train_stop_observations
+            WHERE snapshot_id = :snapshot_id
+              AND train_id = :target_train_id
+        )
+        SELECT 
+            (SELECT COUNT(*) FROM target_stops) as route_stop_occurrence_count,
+            (SELECT COUNT(DISTINCT station_id) FROM target_stops) as distinct_route_station_count,
+            (SELECT COUNT(*) FROM target_stops WHERE station_id IN (SELECT station_id FROM global_terminals)) as terminal_occurrence_count,
+            (SELECT COUNT(DISTINCT station_id) FROM target_stops WHERE station_id IN (SELECT station_id FROM global_terminals)) as distinct_terminal_station_count
+    """)
+
+    res = db.execute(
+        query, {"snapshot_id": timetable_snapshot_id, "target_train_id": target_train_id}
+    ).fetchone()
+
+    if not res:
+        raise ValueError("Failed to calculate train route terminal incidence.")
+
+    route_stop_occurrence_count = res[0] or 0
+    distinct_route_station_count = res[1] or 0
+    terminal_occurrence_count = res[2] or 0
+    distinct_terminal_station_count = res[3] or 0
+
+    incidence_ratio = 0.0
+    if route_stop_occurrence_count > 0:
+        incidence_ratio = float(terminal_occurrence_count) / float(route_stop_occurrence_count)
+
+    return {
+        "train_number": train_num_upper,
+        "route_stop_occurrence_count": route_stop_occurrence_count,
+        "distinct_route_station_count": distinct_route_station_count,
+        "terminal_occurrence_count": terminal_occurrence_count,
+        "distinct_terminal_station_count": distinct_terminal_station_count,
+        "incidence_ratio": round(incidence_ratio, 3),
+    }

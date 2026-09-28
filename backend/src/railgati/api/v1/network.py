@@ -1945,3 +1945,28 @@ def api_get_station_pair_route_boundary_confinement(
         raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get(
+    "/trains/{train_number}/terminal-incidence",
+    response_model=schemas.TrainRouteTerminalIncidenceResponse,
+    tags=["Network", "Trains", "Phase 48"],
+)
+def api_get_train_route_terminal_incidence(
+    train_number: str = Path(..., description="Train number"),
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """Phase 48: Calculate Network Train Route Terminal Incidence Analytics."""
+    from railgati.services.network import calculate_train_route_terminal_incidence
+
+    try:
+        return calculate_train_route_terminal_incidence(db, train_number)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        if "no active" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

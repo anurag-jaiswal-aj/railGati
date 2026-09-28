@@ -875,3 +875,12 @@ class StationPairRouteBoundaryConfinementResponse(BaseModel):
     origin_bounded_count: int
     destination_bounded_count: int
     unbounded_embedded_count: int
+
+
+class TrainRouteTerminalIncidenceResponse(BaseModel):
+    train_number: str
+    route_stop_occurrence_count: int
+    distinct_route_station_count: int
+    terminal_occurrence_count: int
+    distinct_terminal_station_count: int
+    incidence_ratio: float
