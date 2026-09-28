@@ -747,6 +747,7 @@ class StationReachabilityExpansionResponse(BaseModel):
     n2_count: int
     expansion_ratio: float
 
+
 class StationTransferFreeReachResponse(BaseModel):
     station_code: str
     station_name: str | None
@@ -760,12 +761,14 @@ class TrainStructuralSubsumptionResponse(BaseModel):
     subsuming_train_count: int
     is_structurally_subsumed: bool
 
+
 class TrainTopologicalBypassResponse(BaseModel):
     train_number: str
     timetable_snapshot_id: int
     route_length: int
     bypass_edge_count: int
     has_topological_bypasses: bool
+
 
 class EdgeTraversalDispersionResponse(BaseModel):
     from_station_code: str
@@ -776,3 +779,21 @@ class EdgeTraversalDispersionResponse(BaseModel):
     originating_count: int
     bifurcation_count: int
     terminating_count: int
+
+
+class EdgeRouteTerminalDispersionResponse(BaseModel):
+    from_station_code: str
+    to_station_code: str
+    timetable_snapshot_id: int
+    traversing_train_count: int
+    distinct_origin_count: int
+    distinct_destination_count: int
+
+
+class EdgeRouteTerminalDispersionResponse(BaseModel):
+    from_station_code: str
+    to_station_code: str
+    timetable_snapshot_id: int
+    traversing_train_count: int
+    distinct_origin_count: int
+    distinct_destination_count: int

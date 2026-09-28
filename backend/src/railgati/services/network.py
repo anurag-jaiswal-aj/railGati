@@ -3957,6 +3957,7 @@ def calculate_station_reachability_expansion(
         "expansion_ratio": float(n2_count) / float(n1_count),
     }
 
+
 def calculate_station_transfer_free_reach(
     db: Session, timetable_snapshot_id: int, station_code: str
 ) -> dict[str, typing.Any]:
@@ -4118,6 +4119,7 @@ def calculate_train_topological_bypasses(
 ) -> dict[str, object]:
     """Calculate the topological bypass analytics for a target train route."""
     from railgati.models.train import Train
+
     train = db.query(Train).filter(Train.number == train_number).first()
     if not train:
         raise ValueError(f"Train {train_number} not found in database.")
@@ -4245,7 +4247,9 @@ def calculate_edge_traversal_dispersion(
     ).fetchone()
 
     if not result or result[0] == 0:
-        raise ValueError(f"No qualifying adjacent timetable edge found for {from_station_code} to {to_station_code}")
+        raise ValueError(
+            f"No qualifying adjacent timetable edge found for {from_station_code} to {to_station_code}"
+        )
 
     edge_volume = int(result[0])
     convergence_count = int(result[1])
@@ -4365,7 +4369,12 @@ def calculate_train_route_edge_exclusivity(
     stop_count_query = text(
         "SELECT COUNT(*) FROM train_stop_observations WHERE snapshot_id = :snapshot_id AND train_id = :train_id"
     )
-    stop_count = int(db.execute(stop_count_query, {"snapshot_id": timetable_snapshot_id, "train_id": train.id}).scalar() or 0)
+    stop_count = int(
+        db.execute(
+            stop_count_query, {"snapshot_id": timetable_snapshot_id, "train_id": train.id}
+        ).scalar()
+        or 0
+    )
 
     shared_edge_count = route_edge_count - exclusive_edge_count
 
@@ -4384,4 +4393,97 @@ def calculate_train_route_edge_exclusivity(
     }
 
 
+def calculate_edge_route_terminal_dispersion(
+    db: Session,
+    timetable_snapshot_id: int,
+    from_station_code: str,
+    to_station_code: str,
+) -> dict[str, typing.Any]:
+    """Calculate historical timetable-derived structural routing terminal dispersion for an edge."""
 
+    from sqlalchemy import select, text
+
+    from railgati.models.station import Station
+
+    # 1. Verify Origin Station
+    from_station = db.scalar(select(Station).filter(Station.code == from_station_code.upper()))
+    if not from_station:
+        raise ValueError(f"Station not found: {from_station_code}")
+
+    # 2. Verify Destination Station
+    to_station = db.scalar(select(Station).filter(Station.code == to_station_code.upper()))
+    if not to_station:
+        raise ValueError(f"Station not found: {to_station_code}")
+
+    query = text("""
+        WITH edge_trains AS (
+            SELECT DISTINCT
+                t1.train_id
+            FROM train_stop_observations t1
+            JOIN train_stop_observations t2 
+              ON t1.train_id = t2.train_id
+             AND t1.snapshot_id = t2.snapshot_id
+             AND t2.stop_sequence = t1.stop_sequence + 1
+            WHERE t1.snapshot_id = :snapshot_id
+              AND t1.station_id = :from_id
+              AND t2.station_id = :to_id
+        ),
+        train_bounds AS (
+            SELECT 
+                tso.train_id,
+                MIN(tso.stop_sequence) as min_seq,
+                MAX(tso.stop_sequence) as max_seq
+            FROM train_stop_observations tso
+            JOIN edge_trains et ON tso.train_id = et.train_id
+            WHERE tso.snapshot_id = :snapshot_id
+            GROUP BY tso.train_id
+        ),
+        train_terminals AS (
+            SELECT 
+                tb.train_id,
+                orig_tso.station_id as origin_id,
+                dest_tso.station_id as dest_id
+            FROM train_bounds tb
+            JOIN train_stop_observations orig_tso 
+              ON orig_tso.train_id = tb.train_id 
+             AND orig_tso.stop_sequence = tb.min_seq
+             AND orig_tso.snapshot_id = :snapshot_id
+            JOIN train_stop_observations dest_tso 
+              ON dest_tso.train_id = tb.train_id 
+             AND dest_tso.stop_sequence = tb.max_seq
+             AND dest_tso.snapshot_id = :snapshot_id
+        )
+        SELECT 
+            COUNT(train_id) as traversing_train_count,
+            COUNT(DISTINCT origin_id) as distinct_origin_count,
+            COUNT(DISTINCT dest_id) as distinct_destination_count
+        FROM train_terminals;
+    """)
+
+    result = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "from_id": from_station.id,
+            "to_id": to_station.id,
+        },
+    ).fetchone()
+
+    traversing_train_count = result.traversing_train_count if result else 0
+    distinct_origin_count = result.distinct_origin_count if result else 0
+    distinct_destination_count = result.distinct_destination_count if result else 0
+
+    if traversing_train_count == 0:
+        raise ValueError(
+            f"Edge not found: {from_station_code} -> {to_station_code} "
+            f"in snapshot {timetable_snapshot_id}"
+        )
+
+    return {
+        "from_station_code": from_station_code,
+        "to_station_code": to_station_code,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "traversing_train_count": traversing_train_count,
+        "distinct_origin_count": distinct_origin_count,
+        "distinct_destination_count": distinct_destination_count,
+    }
