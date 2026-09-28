@@ -32,7 +32,7 @@ This metric identifies the "structural criticality" of a train. A train might sh
 - Let $P(T) = \{(s_i, s_j) \mid 1 \leq i < j \leq N\}$ represent the complete set of $\binom{N}{2}$ ordered origin-destination pairs serviced by $T$.
 - An O-D pair $(s_i, s_j) \in P(T)$ is defined as **shared** if there exists ANY train $U \neq T$ (within the same snapshot) that visits station $s_i$ at sequence $x$ and station $s_j$ at sequence $y$, where $x < y$.
 - An O-D pair $(s_i, s_j) \in P(T)$ is defined as **exclusive** if it is not shared by any $U$.
-- The metric outputs the set of all exclusive pairs for $T$, retaining the structural sequence indices $i$ and $j$.
+- The metric outputs the set of all exclusive pairs for $T$, returning the distinct ordered station identities $(origin\_station\_id, destination\_station\_id)$. Sequence indices are not retained in the final output, as repeated occurrences of the same station pair collapse into a single unique O-D pair.
 
 ## 7. Exact Data Semantics
 The query computes all topological pair combinations for the target train and tests their existence within the historical observations of all other distinct trains. The structural sequence order ($i < j$) is strictly preserved.
@@ -41,7 +41,7 @@ The query computes all topological pair combinations for the target train and te
 Target train generation and candidate pair evaluation are strictly isolated to the specified active `timetable_snapshot_id`.
 
 ## 9. Repeated-Occurrence Semantics
-If the target train visits a station multiple times (e.g., $A \to B \to A$), the topological pairs will correctly include both combinations representing the visits. However, the evaluation for exclusivity joins on physical `station_id`. If another train visits $A \to B$, it invalidates the exclusivity of any target sequence combination containing the physical stations $A$ and $B$. This mathematically preserves the definition of "exclusive one-seat physical service."
+If the target train visits a station multiple times (e.g., $A \to B \to A$), the topological pairs might initially contain duplicate station combinations. The finalized metric counts DISTINCT ordered station pairs, not stop-occurrence pairs. Thus, repeated occurrences of the exact same station pair collapse into one single unique O-D pair in the final result. Furthermore, the evaluation for exclusivity joins on physical `station_id`. If another train visits $A \to B$, it invalidates the exclusivity of the $A \to B$ pair. This mathematically preserves the definition of "exclusive one-seat physical service."
 
 ## 10. Tie/Edge-Case Semantics
 - **No Exclusive Pairs:** If every O-D combination on the train is shared by at least one other train, the API must return an empty array (length 0).
@@ -60,13 +60,11 @@ If the target train visits a station multiple times (e.g., $A \to B \to A$), the
 {
   "target_train_number": "11013",
   "timetable_snapshot_id": 2,
-  "exclusive_od_pair_count": 2158,
+  "exclusive_od_pair_count": 2155,
   "exclusive_od_pairs": [
     {
       "origin_station_code": "LTT",
-      "destination_station_code": "BLRR",
-      "origin_stop_sequence": 1,
-      "destination_stop_sequence": 42
+      "destination_station_code": "BLRR"
     }
   ]
 }
@@ -74,16 +72,16 @@ If the target train visits a station multiple times (e.g., $A \to B \to A$), the
 
 ## 13. Query Strategy
 1. **target_stops:** Extract stops for the target train.
-2. **target_pairs:** Compute the $\binom{N}{2}$ combinations via a self-join (`t1.stop_sequence < t2.stop_sequence`).
-3. **shared_pairs:** Join `target_pairs` with `train_stop_observations` twice (for origin and destination) where `ts1.train_id = ts2.train_id`, `ts1.stop_sequence < ts2.stop_sequence`, and the train is not the target train.
+2. **target_pairs:** Compute the combinations via a self-join (`t1.stop_sequence < t2.stop_sequence`), applying `SELECT DISTINCT` to ensure only distinct station pairs `(o_id, d_id)` are processed, effectively collapsing any duplicate pairs caused by repeated station occurrences.
+3. **shared_pairs:** Join `target_pairs` with `train_stop_observations` twice (for origin and destination) where `ts1.train_id = ts2.train_id`, `ts1.stop_sequence < ts2.stop_sequence`, and the train is not the target train. Use `SELECT DISTINCT` to prevent candidate multiplicity from inflating counts.
 4. **exclusive_pairs:** Apply a `LEFT JOIN ... WHERE sp.o_id IS NULL` anti-join to subtract shared pairs from target pairs.
-5. **Ordering:** Sort deterministically by `origin_stop_sequence ASC, destination_stop_sequence ASC`.
+5. **Ordering:** Sort deterministically by `origin_station_code ASC, destination_station_code ASC`.
 
 ## 14. Snapshot 2 Validation
 Exploration against PostgreSQL Snapshot 2 confirmed the metric works natively:
 - **Train 12004 (Shatabdi variant):** Yields 0 exclusive O-D pairs (all connections are highly shared).
 - **Train 12951 (Rajdhani variant):** Yields 0 exclusive O-D pairs.
-- **Train 11013 (Secondary Express with 135 stops):** Yields exactly **2158 exclusive O-D pairs** (e.g., LTT -> BLRR, LTT -> CRLM), definitively proving its unique structural criticality.
+- **Train 11013 (Secondary Express with 135 stops):** Yields exactly **2155 exclusive O-D pairs** (e.g., LTT -> BLRR, LTT -> CRLM), definitively proving its unique structural criticality. The original exploratory count of 2158 contained three duplicate station O-D pairs caused by repeated station occurrences, which have been correctly collapsed down to 2155 under the finalized DISTINCT semantics.
 
 ## 15. EXPLAIN ANALYZE Findings
 Testing the heavy 135-stop boundary case (Train 11013):
