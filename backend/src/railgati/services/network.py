@@ -4618,7 +4618,7 @@ def calculate_train_max_shared_sub_route(
         WHERE train_id = :train_id AND snapshot_id = :snapshot_id
         LIMIT 1
     """), {"train_id": train.id, "snapshot_id": timetable_snapshot_id}).scalar()
-    
+
     if not target_check:
         raise ValueError(f"Train not found: {train_number} in snapshot {timetable_snapshot_id}")
 
@@ -4682,6 +4682,88 @@ def calculate_train_max_shared_sub_route(
                 "shared_station_count": r[1],
                 "start_station_code": r[2],
                 "end_station_code": r[3],
+            }
+            for r in rows
+        ]
+    }
+
+
+def calculate_train_route_od_exclusivity(db: Session, train_number: str) -> dict[str, typing.Any]:
+    """Phase 44: Calculates Train Route O-D Structural Exclusivity Analytics."""
+    from sqlalchemy import select, text
+
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.models.train import Train, TrainObservation
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+    if not timetable_snapshot_id:
+        raise ValueError("No active timetable snapshot available.")
+
+    train = db.scalar(select(Train).filter(Train.number == train_number.upper()))
+    if not train:
+        raise ValueError(f"Train {train_number.upper()} not found.")
+
+    obs = db.scalar(
+        select(TrainObservation).filter(
+            TrainObservation.train_id == train.id,
+            TrainObservation.snapshot_id == timetable_snapshot_id,
+        )
+    )
+    if not obs:
+        raise ValueError(f"Train {train_number.upper()} not found in active timetable snapshot.")
+
+    query = text("""
+        WITH target_stops AS (
+            SELECT station_id, stop_sequence, (SELECT code FROM stations WHERE id = station_id) as code
+            FROM train_stop_observations
+            WHERE train_id = :target_id
+              AND snapshot_id = :snapshot_id
+        ),
+        target_pairs AS (
+            SELECT 
+                t1.station_id as o_id, t1.code as o_code, t1.stop_sequence as o_seq,
+                t2.station_id as d_id, t2.code as d_code, t2.stop_sequence as d_seq
+            FROM target_stops t1
+            JOIN target_stops t2 ON t1.stop_sequence < t2.stop_sequence
+        ),
+        shared_pairs AS (
+            SELECT DISTINCT tp.o_id, tp.d_id
+            FROM target_pairs tp
+            JOIN train_stop_observations ts1 ON ts1.station_id = tp.o_id AND ts1.snapshot_id = :snapshot_id
+            JOIN train_stop_observations ts2 ON ts2.station_id = tp.d_id AND ts2.snapshot_id = :snapshot_id
+             AND ts1.train_id = ts2.train_id 
+             AND ts1.stop_sequence < ts2.stop_sequence
+            WHERE ts1.train_id != :target_id
+        ),
+        exclusive_pairs AS (
+            SELECT tp.o_code, tp.d_code, tp.o_seq, tp.d_seq
+            FROM target_pairs tp
+            LEFT JOIN shared_pairs sp ON tp.o_id = sp.o_id AND tp.d_id = sp.d_id
+            WHERE sp.o_id IS NULL
+        )
+        SELECT o_code, d_code, o_seq, d_seq
+        FROM exclusive_pairs
+        ORDER BY o_seq ASC, d_seq ASC;
+    """)
+
+    rows = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "target_id": train.id,
+        }
+    ).fetchall()
+
+    return {
+        "target_train_number": train_number.upper(),
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "exclusive_od_pair_count": len(rows),
+        "exclusive_od_pairs": [
+            {
+                "origin_station_code": r[0],
+                "destination_station_code": r[1],
+                "origin_stop_sequence": r[2],
+                "destination_stop_sequence": r[3],
             }
             for r in rows
         ]

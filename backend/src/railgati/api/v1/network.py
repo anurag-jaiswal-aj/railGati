@@ -1852,3 +1852,24 @@ def get_train_max_shared_sub_route(
         if "not found" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+
+
+@router.get(
+    "/trains/{train_number}/od-exclusivity",
+    response_model=schemas.TrainODExclusivityResponse,
+    summary="Calculate Train Route O-D Structural Exclusivity Analytics",
+    description="Identifies every ordered Origin-Destination station pair served by the target train that no other distinct train identity serves in the same ordered direction within the active timetable snapshot.",
+)
+def get_train_od_exclusivity(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    from railgati.services.network import calculate_train_route_od_exclusivity
+
+    try:
+        return calculate_train_route_od_exclusivity(db, train_number)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e

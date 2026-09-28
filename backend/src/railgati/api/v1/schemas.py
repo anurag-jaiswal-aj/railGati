@@ -813,3 +813,15 @@ class TrainMaxSharedSubRouteResponse(BaseModel):
     target_train_number: str
     timetable_snapshot_id: int
     top_shared_sub_routes: list[TrainMaxSharedSubRouteItem]
+
+class TrainODExclusivityPairItem(BaseModel):
+    origin_station_code: str
+    destination_station_code: str
+    origin_stop_sequence: int
+    destination_stop_sequence: int
+
+class TrainODExclusivityResponse(BaseModel):
+    target_train_number: str
+    timetable_snapshot_id: int
+    exclusive_od_pair_count: int
+    exclusive_od_pairs: list[TrainODExclusivityPairItem]
