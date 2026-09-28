@@ -759,3 +759,10 @@ class TrainStructuralSubsumptionResponse(BaseModel):
     train_number: str
     subsuming_train_count: int
     is_structurally_subsumed: bool
+
+class TrainTopologicalBypassResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    route_length: int
+    bypass_edge_count: int
+    has_topological_bypasses: bool

@@ -4111,3 +4111,61 @@ def calculate_train_structural_subsumption(
         "subsuming_train_count": subsuming_count,
         "is_structurally_subsumed": subsuming_count > 0,
     }
+
+
+def calculate_train_topological_bypasses(
+    db: Session, timetable_snapshot_id: int, train_number: str
+) -> dict[str, object]:
+    """Calculate the topological bypass analytics for a target train route."""
+    from railgati.models.train import Train
+    train = db.query(Train).filter(Train.number == train_number).first()
+    if not train:
+        raise ValueError(f"Train {train_number} not found in database.")
+
+    query = text(
+        """
+        WITH target_seq AS (
+            SELECT station_id, 
+                   ROW_NUMBER() OVER (ORDER BY stop_sequence) as rnk
+            FROM train_stop_observations 
+            WHERE snapshot_id = :snapshot_id 
+              AND train_id = :train_id
+        ),
+        target_pairs AS (
+            SELECT ts1.station_id as o, ts2.station_id as d, ts1.rnk as rnk_o, ts2.rnk as rnk_d
+            FROM target_seq ts1
+            JOIN target_seq ts2 ON ts2.rnk > ts1.rnk + 1
+        ),
+        bypasses AS (
+            SELECT DISTINCT tp.o, tp.d
+            FROM target_pairs tp
+            JOIN train_stop_observations t1 ON t1.station_id = tp.o AND t1.snapshot_id = :snapshot_id
+            JOIN train_stop_observations t2 ON t2.station_id = tp.d AND t2.snapshot_id = :snapshot_id
+              AND t1.train_id = t2.train_id
+              AND t1.stop_sequence + 1 = t2.stop_sequence
+        )
+        SELECT 
+            (SELECT COUNT(*) FROM target_seq) as route_length,
+            (SELECT COUNT(*) FROM bypasses) as bypass_count
+        """
+    )
+
+    result = db.execute(
+        query,
+        {
+            "snapshot_id": timetable_snapshot_id,
+            "train_id": train.id,
+        },
+    ).fetchone()
+
+    route_length = int(result[0]) if result and result[0] is not None else 0
+    bypass_count = int(result[1]) if result and result[1] is not None else 0
+
+    return {
+        "train_number": train.number,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "route_length": route_length,
+        "bypass_edge_count": bypass_count,
+        "has_topological_bypasses": bypass_count > 0,
+    }
+

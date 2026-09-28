@@ -1722,3 +1722,28 @@ def get_train_structural_subsumption(
         if "not found" in msg.lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+
+
+@router.get(
+    "/trains/{train_number}/topological-bypasses",
+    response_model=schemas.TrainTopologicalBypassResponse,
+    summary="Calculate network train route topological bypass analytics",
+    description="Calculates historical timetable-derived structural bypass edges for a train route.",
+)
+def get_train_topological_bypasses(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.services.network import calculate_train_topological_bypasses
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return calculate_train_topological_bypasses(db, timetable_snapshot_id, train_number)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+
