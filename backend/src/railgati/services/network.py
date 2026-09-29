@@ -6056,7 +6056,7 @@ def calculate_train_sequence_disjoint_subpath_reconvergences(
         ORDER BY d.t_seq_A, d.t_seq_B, tr.number, d.c_seq_A, d.c_seq_B
         """)
         rows = db.execute(pg_query, {"train_id": train.id, "snap_id": snapshot_id}).fetchall()
-        
+
         reconvergences = []
         for row in rows:
             target_interior = list(row.target_interior_codes)
@@ -6077,20 +6077,20 @@ def calculate_train_sequence_disjoint_subpath_reconvergences(
             })
     else:
         rows = db.execute(query, {"train_id": train.id, "snap_id": snapshot_id}).fetchall()
-        
+
         reconvergences = []
-        
+
         target_codes_query = text("""
-            SELECT s.code 
+            SELECT s.code
             FROM train_stop_observations t_int
             JOIN stations s ON s.id = t_int.station_id
             WHERE t_int.train_id = :t_id AND t_int.snapshot_id = :snap_id
               AND t_int.stop_sequence > :t_seq_A AND t_int.stop_sequence < :t_seq_B
             ORDER BY t_int.stop_sequence
         """)
-        
+
         candidate_codes_query = text("""
-            SELECT s.code 
+            SELECT s.code
             FROM train_stop_observations c_int
             JOIN stations s ON s.id = c_int.station_id
             WHERE c_int.train_id = :c_id AND c_int.snapshot_id = :snap_id
@@ -6103,12 +6103,12 @@ def calculate_train_sequence_disjoint_subpath_reconvergences(
                 "t_id": train.id, "snap_id": snapshot_id, "t_seq_A": row.t_seq_a, "t_seq_B": row.t_seq_b
             }).fetchall()
             target_interior = [r[0] for r in t_res]
-            
+
             c_res = db.execute(candidate_codes_query, {
                 "c_id": row.c_id, "snap_id": snapshot_id, "c_seq_A": row.c_seq_a, "c_seq_B": row.c_seq_b
             }).fetchall()
             candidate_interior = [r[0] for r in c_res]
-            
+
             reconvergences.append({
                 "anchor_from_station_code": row.anchor_from_code,
                 "anchor_to_station_code": row.anchor_to_code,
@@ -6123,7 +6123,7 @@ def calculate_train_sequence_disjoint_subpath_reconvergences(
                 "target_interior_station_codes": target_interior,
                 "candidate_interior_station_codes": candidate_interior
             })
-        
+
     return {
         "train_number": train.number,
         "timetable_snapshot_id": snapshot_id,
@@ -6147,7 +6147,7 @@ def calculate_train_sequence_topological_degree_extremes(
         SELECT o1.station_id as s1, o2.station_id as s2
         FROM train_stop_observations o1
         JOIN train_stop_observations o2
-          ON o1.train_id = o2.train_id 
+          ON o1.train_id = o2.train_id
          AND o1.snapshot_id = o2.snapshot_id
          AND o2.stop_sequence = o1.stop_sequence + 1
         WHERE o1.snapshot_id = :snap_id
@@ -6163,7 +6163,7 @@ def calculate_train_sequence_topological_degree_extremes(
         GROUP BY u
     ),
     target_seq AS (
-        SELECT 
+        SELECT
             o.stop_sequence,
             s.code as station_code,
             COALESCE(sd.global_degree, 0) as global_degree,
@@ -6191,12 +6191,12 @@ def calculate_train_sequence_topological_degree_extremes(
     """)
 
     rows = db.execute(query, {"train_id": train.id, "snap_id": snapshot_id}).fetchall()
-    
+
     local_maxima_count = 0
     local_minima_count = 0
     transit_count = 0
     sequence_classification = []
-    
+
     for row in rows:
         classification = row.classification_type
         if classification == "LOCAL_MAXIMUM":
@@ -6205,14 +6205,14 @@ def calculate_train_sequence_topological_degree_extremes(
             local_minima_count += 1
         elif classification == "TRANSIT":
             transit_count += 1
-            
+
         sequence_classification.append({
             "stop_sequence": row.stop_sequence,
             "station_code": row.station_code,
             "global_degree": row.global_degree,
             "classification_type": classification
         })
-        
+
     return {
         "train_number": train.number,
         "timetable_snapshot_id": snapshot_id,
@@ -6231,18 +6231,18 @@ def calculate_station_neighborhood_subsumption(
     from sqlalchemy import func, select, text
     from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
     from fastapi import HTTPException
-    
+
     snapshot_id = get_active_timetable_snapshot_id(db)
     target = db.scalar(select(Station).filter(func.lower(Station.code) == station_code.lower()))
     if not target:
         raise HTTPException(status_code=404, detail="Station not found")
-        
+
     query = text("""
     WITH target_neighbors AS (
         SELECT o2.station_id as v
         FROM train_stop_observations o1
         JOIN train_stop_observations o2
-          ON o1.train_id = o2.train_id 
+          ON o1.train_id = o2.train_id
          AND o1.snapshot_id = o2.snapshot_id
          AND o2.stop_sequence = o1.stop_sequence + 1
         WHERE o1.snapshot_id = :snap_id AND o1.station_id = :target_id
@@ -6250,7 +6250,7 @@ def calculate_station_neighborhood_subsumption(
         SELECT o1.station_id as v
         FROM train_stop_observations o1
         JOIN train_stop_observations o2
-          ON o1.train_id = o2.train_id 
+          ON o1.train_id = o2.train_id
          AND o1.snapshot_id = o2.snapshot_id
          AND o2.stop_sequence = o1.stop_sequence + 1
         WHERE o1.snapshot_id = :snap_id AND o2.station_id = :target_id
@@ -6263,7 +6263,7 @@ def calculate_station_neighborhood_subsumption(
         FROM target_neighbors_clean tn
         JOIN train_stop_observations o1 ON o1.station_id = tn.v AND o1.snapshot_id = :snap_id
         JOIN train_stop_observations o2
-          ON o1.train_id = o2.train_id 
+          ON o1.train_id = o2.train_id
          AND o1.snapshot_id = o2.snapshot_id
          AND o2.stop_sequence = o1.stop_sequence + 1
         UNION
@@ -6271,7 +6271,7 @@ def calculate_station_neighborhood_subsumption(
         FROM target_neighbors_clean tn
         JOIN train_stop_observations o2 ON o2.station_id = tn.v AND o2.snapshot_id = :snap_id
         JOIN train_stop_observations o1
-          ON o2.train_id = o1.train_id 
+          ON o2.train_id = o1.train_id
          AND o2.snapshot_id = o1.snapshot_id
          AND o1.stop_sequence = o2.stop_sequence - 1
     ),
@@ -6281,19 +6281,19 @@ def calculate_station_neighborhood_subsumption(
         SELECT v as u, u as v FROM candidate_edges WHERE u != v
     ),
     candidate_neighbors_clean AS (
-        SELECT u, v FROM candidate_neighbors 
+        SELECT u, v FROM candidate_neighbors
         WHERE u IN (SELECT v FROM target_neighbors_clean)
     ),
     neighbor_degrees AS (
         SELECT u, COUNT(*) as deg FROM candidate_neighbors_clean GROUP BY u
     )
-    SELECT 
+    SELECT
         s.code as neighbor_code,
         nd.deg as neighbor_degree
     FROM target_neighbors_clean t
     JOIN stations s ON s.id = t.v
     JOIN neighbor_degrees nd ON nd.u = t.v
-    WHERE 
+    WHERE
         NOT EXISTS (
             SELECT 1 FROM target_neighbors_clean t2
             WHERE t2.v != t.v
@@ -6312,15 +6312,15 @@ def calculate_station_neighborhood_subsumption(
         )
     ORDER BY s.code
     """)
-    
+
     rows = db.execute(query, {"target_id": target.id, "snap_id": snapshot_id}).fetchall()
-    
+
     total_neighbors = db.scalar(text("""
         WITH edge_pairs AS (
             SELECT o1.station_id as u, o2.station_id as v
             FROM train_stop_observations o1
             JOIN train_stop_observations o2
-              ON o1.train_id = o2.train_id 
+              ON o1.train_id = o2.train_id
              AND o1.snapshot_id = o2.snapshot_id
              AND o2.stop_sequence = o1.stop_sequence + 1
             WHERE o1.snapshot_id = :snap_id
@@ -6332,17 +6332,113 @@ def calculate_station_neighborhood_subsumption(
         )
         SELECT COUNT(*) FROM undirected_edges WHERE u = :target_id
     """), {"target_id": target.id, "snap_id": snapshot_id}) or 0
-    
+
     subsuming_neighbors = []
     for row in rows:
         subsuming_neighbors.append({
             "station_code": row.neighbor_code,
             "neighbor_degree": row.neighbor_degree
         })
-        
+
     return {
         "station_code": target.code,
         "timetable_snapshot_id": snapshot_id,
         "total_neighbors": total_neighbors,
         "subsuming_neighbors": subsuming_neighbors
+    }
+
+def calculate_station_strict_local_bridges(
+    db: Session, station_code: str
+) -> dict[str, typing.Any]:
+    """Calculate Station Neighborhood Strict Local Bridge Pairs."""
+    from railgati.models.station import Station
+    from sqlalchemy import func, select, text
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from fastapi import HTTPException
+
+    snapshot_id = get_active_timetable_snapshot_id(db)
+    target = db.scalar(select(Station).filter(func.lower(Station.code) == station_code.lower()))
+    if not target:
+        raise HTTPException(status_code=404, detail="Station not found")
+
+    query = text("""
+    WITH target_neighbors AS (
+        SELECT DISTINCT o2.station_id as v
+        FROM train_stop_observations o1
+        JOIN train_stop_observations o2
+          ON o1.train_id = o2.train_id
+         AND o1.snapshot_id = o2.snapshot_id
+         AND (o2.stop_sequence = o1.stop_sequence + 1 OR o2.stop_sequence = o1.stop_sequence - 1)
+        WHERE o1.snapshot_id = :snap_id
+          AND o1.station_id = :target_id
+    ),
+    extended_edges AS (
+        SELECT DISTINCT oa.station_id as u, ob.station_id as v
+        FROM target_neighbors tn
+        JOIN train_stop_observations oa ON oa.station_id = tn.v AND oa.snapshot_id = :snap_id
+        JOIN train_stop_observations ob
+          ON oa.train_id = ob.train_id
+         AND oa.snapshot_id = ob.snapshot_id
+         AND (ob.stop_sequence = oa.stop_sequence + 1 OR ob.stop_sequence = oa.stop_sequence - 1)
+    ),
+    undirected_extended AS (
+        SELECT u, v FROM extended_edges
+        UNION
+        SELECT v as u, u as v FROM extended_edges
+    ),
+    neighbor_pairs AS (
+        SELECT a.v as a_id, b.v as b_id
+        FROM target_neighbors a
+        JOIN target_neighbors b ON a.v < b.v
+    ),
+    pair_evals AS (
+        SELECT
+            np.a_id,
+            np.b_id,
+            EXISTS(
+                SELECT 1 FROM undirected_extended e WHERE e.u = np.a_id AND e.v = np.b_id
+            ) as has_direct,
+            (
+                SELECT COUNT(DISTINCT x.v)
+                FROM undirected_extended x
+                JOIN undirected_extended y ON y.u = x.v AND y.v = np.b_id
+                WHERE x.u = np.a_id
+                  AND x.v != :target_id
+                  AND x.v != np.a_id
+                  AND x.v != np.b_id
+            ) as alt_count
+        FROM neighbor_pairs np
+    )
+    SELECT
+        sa.code as neighbor_a,
+        sb.code as neighbor_b,
+        pe.has_direct,
+        pe.alt_count
+    FROM pair_evals pe
+    JOIN stations sa ON sa.id = pe.a_id
+    JOIN stations sb ON sb.id = pe.b_id
+    ORDER BY sa.code, sb.code
+    """)
+
+    rows = db.execute(query, {"target_id": target.id, "snap_id": snapshot_id}).fetchall()
+
+    evaluated_pairs = []
+    for row in rows:
+        has_direct = bool(row.has_direct)
+        alt_count = int(row.alt_count)
+        is_strict = (not has_direct) and (alt_count == 0)
+
+        evaluated_pairs.append({
+            "neighbor_a": row.neighbor_a,
+            "neighbor_b": row.neighbor_b,
+            "has_direct_adjacency": has_direct,
+            "alternative_bridge_count": alt_count,
+            "is_strict_local_bridge": is_strict
+        })
+
+    return {
+        "station_code": target.code,
+        "timetable_snapshot_id": snapshot_id,
+        "total_neighbor_pairs": len(evaluated_pairs),
+        "evaluated_pairs": evaluated_pairs
     }

@@ -1058,3 +1058,20 @@ class StationNeighborhoodTopologicalSubsumptionResponse(BaseModel):
     timetable_snapshot_id: int
     total_neighbors: int
     subsuming_neighbors: list[StationNeighborhoodSubsumingNeighbor]
+
+
+class NeighborPairEvaluation(BaseModel):
+    neighbor_a: str
+    neighbor_b: str
+    has_direct_adjacency: bool
+    alternative_bridge_count: int
+    is_strict_local_bridge: bool
+
+
+class StationStrictLocalBridgesResponse(BaseModel):
+    """Network Station Neighborhood Strict Local Bridge Pairs analytics."""
+
+    station_code: str
+    timetable_snapshot_id: int
+    total_neighbor_pairs: int
+    evaluated_pairs: list[NeighborPairEvaluation]
