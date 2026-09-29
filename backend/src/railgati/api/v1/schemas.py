@@ -999,3 +999,29 @@ class TrainSequenceTopologicalTransitionContinuityResponse(BaseModel):
     minimum_continuity_ratio: float | None = None
     maximum_continuity_ratio: float | None = None
     transitions: list[TopologicalTransitionRecord]
+
+
+class TrainSequenceDisjointSubpathReconvergenceRecord(BaseModel):
+    """A disjoint topological reconvergence between target and candidate trains."""
+
+    anchor_from_station_code: str
+    anchor_to_station_code: str
+    target_from_sequence: int
+    target_to_sequence: int
+    candidate_train_number: str
+    candidate_from_sequence: int
+    candidate_to_sequence: int
+    target_interior_station_count: int
+    candidate_interior_station_count: int
+    shared_interior_station_count: int
+    target_interior_station_codes: list[str]
+    candidate_interior_station_codes: list[str]
+
+
+class TrainSequenceDisjointSubpathReconvergencesResponse(BaseModel):
+    """Network Train Sequence Disjoint Sub-Path Reconvergences analytics."""
+
+    train_number: str
+    timetable_snapshot_id: int
+    total_reconvergence_count: int
+    reconvergences: list[TrainSequenceDisjointSubpathReconvergenceRecord]

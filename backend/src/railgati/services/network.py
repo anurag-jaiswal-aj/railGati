@@ -5917,3 +5917,216 @@ def calculate_train_sequence_topological_transition_continuity(
         "maximum_continuity_ratio": max(ratios),
         "transitions": transitions
     }
+
+
+def calculate_train_sequence_disjoint_subpath_reconvergences(
+    db: Session, snapshot_id: int, train_number: str
+) -> dict[str, typing.Any]:
+    """Calculate Train Sequence Disjoint Sub-Path Reconvergences."""
+    from railgati.models.train import Train
+    from sqlalchemy import text, select, func
+
+    train = db.scalar(select(Train).filter(func.upper(Train.number) == train_number.upper()))
+    if not train:
+        raise ValueError(f"Train '{train_number}' not found.")
+
+    query = text("""
+    WITH target_stops AS (
+        SELECT station_id, stop_sequence as seq
+        FROM train_stop_observations
+        WHERE train_id = :train_id AND snapshot_id = :snap_id
+    ),
+    target_anchors AS (
+        SELECT
+            t1.station_id as st_A, t1.seq as seq_A,
+            t2.station_id as st_B, t2.seq as seq_B
+        FROM target_stops t1
+        JOIN target_stops t2 ON t2.seq > t1.seq + 1
+    ),
+    candidate_trains AS (
+        SELECT
+            c1.train_id,
+            a.st_A, a.st_B, a.seq_A as t_seq_A, a.seq_B as t_seq_B,
+            c1.stop_sequence as c_seq_A, c2.stop_sequence as c_seq_B
+        FROM target_anchors a
+        JOIN train_stop_observations c1
+          ON c1.station_id = a.st_A AND c1.snapshot_id = :snap_id
+        JOIN train_stop_observations c2
+          ON c2.station_id = a.st_B AND c2.snapshot_id = :snap_id
+         AND c2.train_id = c1.train_id
+         AND c2.stop_sequence > c1.stop_sequence + 1
+        WHERE c1.train_id != :train_id
+    ),
+    disjoint_candidates AS (
+        SELECT c.*
+        FROM candidate_trains c
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM train_stop_observations c_int
+            WHERE c_int.train_id = c.train_id AND c_int.snapshot_id = :snap_id
+              AND c_int.stop_sequence > c.c_seq_A AND c_int.stop_sequence < c.c_seq_B
+              AND EXISTS (
+                  SELECT 1
+                  FROM target_stops t_int
+                  WHERE t_int.seq > c.t_seq_A AND t_int.seq < c.t_seq_B
+                    AND t_int.station_id = c_int.station_id
+              )
+        )
+    )
+    SELECT
+        d.t_seq_A as t_seq_a, d.t_seq_B as t_seq_b,
+        s_A.code as anchor_from_code, s_B.code as anchor_to_code,
+        tr.number as candidate_number,
+        d.train_id as c_id,
+        d.c_seq_A as c_seq_a, d.c_seq_B as c_seq_b
+    FROM disjoint_candidates d
+    JOIN stations s_A ON s_A.id = d.st_A
+    JOIN stations s_B ON s_B.id = d.st_B
+    JOIN trains tr ON tr.id = d.train_id
+    ORDER BY d.t_seq_A, d.t_seq_B, tr.number, d.c_seq_A, d.c_seq_B
+    """)
+
+    if db.bind.dialect.name == "postgresql":
+        pg_query = text("""
+        WITH target_stops AS (
+            SELECT station_id, stop_sequence as seq
+            FROM train_stop_observations
+            WHERE train_id = :train_id AND snapshot_id = :snap_id
+        ),
+        target_anchors AS (
+            SELECT
+                t1.station_id as st_A, t1.seq as seq_A,
+                t2.station_id as st_B, t2.seq as seq_B
+            FROM target_stops t1
+            JOIN target_stops t2 ON t2.seq > t1.seq + 1
+        ),
+        candidate_trains AS (
+            SELECT
+                c1.train_id,
+                a.st_A, a.st_B, a.seq_A as t_seq_A, a.seq_B as t_seq_B,
+                c1.stop_sequence as c_seq_A, c2.stop_sequence as c_seq_B
+            FROM target_anchors a
+            JOIN train_stop_observations c1
+              ON c1.station_id = a.st_A AND c1.snapshot_id = :snap_id
+            JOIN train_stop_observations c2
+              ON c2.station_id = a.st_B AND c2.snapshot_id = :snap_id
+             AND c2.train_id = c1.train_id
+             AND c2.stop_sequence > c1.stop_sequence + 1
+            WHERE c1.train_id != :train_id
+        ),
+        disjoint_candidates AS (
+            SELECT c.*
+            FROM candidate_trains c
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM train_stop_observations c_int
+                WHERE c_int.train_id = c.train_id AND c_int.snapshot_id = :snap_id
+                  AND c_int.stop_sequence > c.c_seq_A AND c_int.stop_sequence < c.c_seq_B
+                  AND EXISTS (
+                      SELECT 1
+                      FROM target_stops t_int
+                      WHERE t_int.seq > c.t_seq_A AND t_int.seq < c.t_seq_B
+                        AND t_int.station_id = c_int.station_id
+                  )
+            )
+        )
+        SELECT
+            d.t_seq_A as t_seq_a, d.t_seq_B as t_seq_b,
+            s_A.code as anchor_from_code, s_B.code as anchor_to_code,
+            tr.number as candidate_number,
+            d.train_id as c_id,
+            d.c_seq_A as c_seq_a, d.c_seq_B as c_seq_b,
+            (
+                SELECT COALESCE(array_agg(s.code ORDER BY t_int.seq), '{}')
+                FROM target_stops t_int
+                JOIN stations s ON s.id = t_int.station_id
+                WHERE t_int.seq > d.t_seq_A AND t_int.seq < d.t_seq_B
+            ) as target_interior_codes,
+            (
+                SELECT COALESCE(array_agg(s.code ORDER BY c_int.stop_sequence), '{}')
+                FROM train_stop_observations c_int
+                JOIN stations s ON s.id = c_int.station_id
+                WHERE c_int.train_id = d.train_id AND c_int.snapshot_id = :snap_id
+                  AND c_int.stop_sequence > d.c_seq_A AND c_int.stop_sequence < d.c_seq_B
+            ) as candidate_interior_codes
+        FROM disjoint_candidates d
+        JOIN stations s_A ON s_A.id = d.st_A
+        JOIN stations s_B ON s_B.id = d.st_B
+        JOIN trains tr ON tr.id = d.train_id
+        ORDER BY d.t_seq_A, d.t_seq_B, tr.number, d.c_seq_A, d.c_seq_B
+        """)
+        rows = db.execute(pg_query, {"train_id": train.id, "snap_id": snapshot_id}).fetchall()
+        
+        reconvergences = []
+        for row in rows:
+            target_interior = list(row.target_interior_codes)
+            candidate_interior = list(row.candidate_interior_codes)
+            reconvergences.append({
+                "anchor_from_station_code": row.anchor_from_code,
+                "anchor_to_station_code": row.anchor_to_code,
+                "target_from_sequence": row.t_seq_a,
+                "target_to_sequence": row.t_seq_b,
+                "candidate_train_number": row.candidate_number,
+                "candidate_from_sequence": row.c_seq_a,
+                "candidate_to_sequence": row.c_seq_b,
+                "target_interior_station_count": len(target_interior),
+                "candidate_interior_station_count": len(candidate_interior),
+                "shared_interior_station_count": 0,
+                "target_interior_station_codes": target_interior,
+                "candidate_interior_station_codes": candidate_interior
+            })
+    else:
+        rows = db.execute(query, {"train_id": train.id, "snap_id": snapshot_id}).fetchall()
+        
+        reconvergences = []
+        
+        target_codes_query = text("""
+            SELECT s.code 
+            FROM train_stop_observations t_int
+            JOIN stations s ON s.id = t_int.station_id
+            WHERE t_int.train_id = :t_id AND t_int.snapshot_id = :snap_id
+              AND t_int.stop_sequence > :t_seq_A AND t_int.stop_sequence < :t_seq_B
+            ORDER BY t_int.stop_sequence
+        """)
+        
+        candidate_codes_query = text("""
+            SELECT s.code 
+            FROM train_stop_observations c_int
+            JOIN stations s ON s.id = c_int.station_id
+            WHERE c_int.train_id = :c_id AND c_int.snapshot_id = :snap_id
+              AND c_int.stop_sequence > :c_seq_A AND c_int.stop_sequence < :c_seq_B
+            ORDER BY c_int.stop_sequence
+        """)
+
+        for row in rows:
+            t_res = db.execute(target_codes_query, {
+                "t_id": train.id, "snap_id": snapshot_id, "t_seq_A": row.t_seq_a, "t_seq_B": row.t_seq_b
+            }).fetchall()
+            target_interior = [r[0] for r in t_res]
+            
+            c_res = db.execute(candidate_codes_query, {
+                "c_id": row.c_id, "snap_id": snapshot_id, "c_seq_A": row.c_seq_a, "c_seq_B": row.c_seq_b
+            }).fetchall()
+            candidate_interior = [r[0] for r in c_res]
+            
+            reconvergences.append({
+                "anchor_from_station_code": row.anchor_from_code,
+                "anchor_to_station_code": row.anchor_to_code,
+                "target_from_sequence": row.t_seq_a,
+                "target_to_sequence": row.t_seq_b,
+                "candidate_train_number": row.candidate_number,
+                "candidate_from_sequence": row.c_seq_a,
+                "candidate_to_sequence": row.c_seq_b,
+                "target_interior_station_count": len(target_interior),
+                "candidate_interior_station_count": len(candidate_interior),
+                "shared_interior_station_count": 0,
+                "target_interior_station_codes": target_interior,
+                "candidate_interior_station_codes": candidate_interior
+            })
+        
+    return {
+        "train_number": train.number,
+        "timetable_snapshot_id": snapshot_id,
+        "total_reconvergence_count": len(reconvergences),
+        "reconvergences": reconvergences
+    }
