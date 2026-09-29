@@ -1044,3 +1044,17 @@ class TrainSequenceTopologicalDegreeExtremesResponse(BaseModel):
     local_minima_count: int
     transit_count: int
     sequence_classification: list[TopologicalDegreeExtremesClassification]
+
+
+class StationNeighborhoodSubsumingNeighbor(BaseModel):
+    station_code: str
+    neighbor_degree: int
+
+
+class StationNeighborhoodTopologicalSubsumptionResponse(BaseModel):
+    """Network Station Neighborhood Topological Subsumption analytics."""
+
+    station_code: str
+    timetable_snapshot_id: int
+    total_neighbors: int
+    subsuming_neighbors: list[StationNeighborhoodSubsumingNeighbor]

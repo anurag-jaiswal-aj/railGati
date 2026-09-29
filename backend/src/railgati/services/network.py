@@ -6222,3 +6222,127 @@ def calculate_train_sequence_topological_degree_extremes(
         "transit_count": transit_count,
         "sequence_classification": sequence_classification
     }
+
+def calculate_station_neighborhood_subsumption(
+    db: Session, station_code: str
+) -> dict[str, typing.Any]:
+    """Calculate Station Neighborhood Topological Subsumption."""
+    from railgati.models.station import Station
+    from sqlalchemy import func, select, text
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from fastapi import HTTPException
+    
+    snapshot_id = get_active_timetable_snapshot_id(db)
+    target = db.scalar(select(Station).filter(func.lower(Station.code) == station_code.lower()))
+    if not target:
+        raise HTTPException(status_code=404, detail="Station not found")
+        
+    query = text("""
+    WITH target_neighbors AS (
+        SELECT o2.station_id as v
+        FROM train_stop_observations o1
+        JOIN train_stop_observations o2
+          ON o1.train_id = o2.train_id 
+         AND o1.snapshot_id = o2.snapshot_id
+         AND o2.stop_sequence = o1.stop_sequence + 1
+        WHERE o1.snapshot_id = :snap_id AND o1.station_id = :target_id
+        UNION
+        SELECT o1.station_id as v
+        FROM train_stop_observations o1
+        JOIN train_stop_observations o2
+          ON o1.train_id = o2.train_id 
+         AND o1.snapshot_id = o2.snapshot_id
+         AND o2.stop_sequence = o1.stop_sequence + 1
+        WHERE o1.snapshot_id = :snap_id AND o2.station_id = :target_id
+    ),
+    target_neighbors_clean AS (
+        SELECT v FROM target_neighbors WHERE v != :target_id
+    ),
+    candidate_edges AS (
+        SELECT o1.station_id as u, o2.station_id as v
+        FROM target_neighbors_clean tn
+        JOIN train_stop_observations o1 ON o1.station_id = tn.v AND o1.snapshot_id = :snap_id
+        JOIN train_stop_observations o2
+          ON o1.train_id = o2.train_id 
+         AND o1.snapshot_id = o2.snapshot_id
+         AND o2.stop_sequence = o1.stop_sequence + 1
+        UNION
+        SELECT o1.station_id as u, o2.station_id as v
+        FROM target_neighbors_clean tn
+        JOIN train_stop_observations o2 ON o2.station_id = tn.v AND o2.snapshot_id = :snap_id
+        JOIN train_stop_observations o1
+          ON o2.train_id = o1.train_id 
+         AND o2.snapshot_id = o1.snapshot_id
+         AND o1.stop_sequence = o2.stop_sequence - 1
+    ),
+    candidate_neighbors AS (
+        SELECT u, v FROM candidate_edges WHERE u != v
+        UNION
+        SELECT v as u, u as v FROM candidate_edges WHERE u != v
+    ),
+    candidate_neighbors_clean AS (
+        SELECT u, v FROM candidate_neighbors 
+        WHERE u IN (SELECT v FROM target_neighbors_clean)
+    ),
+    neighbor_degrees AS (
+        SELECT u, COUNT(*) as deg FROM candidate_neighbors_clean GROUP BY u
+    )
+    SELECT 
+        s.code as neighbor_code,
+        nd.deg as neighbor_degree
+    FROM target_neighbors_clean t
+    JOIN stations s ON s.id = t.v
+    JOIN neighbor_degrees nd ON nd.u = t.v
+    WHERE 
+        NOT EXISTS (
+            SELECT 1 FROM target_neighbors_clean t2
+            WHERE t2.v != t.v
+            AND NOT EXISTS (
+                SELECT 1 FROM candidate_neighbors_clean c
+                WHERE c.u = t.v AND c.v = t2.v
+            )
+        )
+        AND EXISTS (
+            SELECT 1 FROM candidate_neighbors_clean c
+            WHERE c.u = t.v
+            AND c.v != :target_id
+            AND NOT EXISTS (
+                SELECT 1 FROM target_neighbors_clean t3 WHERE t3.v = c.v
+            )
+        )
+    ORDER BY s.code
+    """)
+    
+    rows = db.execute(query, {"target_id": target.id, "snap_id": snapshot_id}).fetchall()
+    
+    total_neighbors = db.scalar(text("""
+        WITH edge_pairs AS (
+            SELECT o1.station_id as u, o2.station_id as v
+            FROM train_stop_observations o1
+            JOIN train_stop_observations o2
+              ON o1.train_id = o2.train_id 
+             AND o1.snapshot_id = o2.snapshot_id
+             AND o2.stop_sequence = o1.stop_sequence + 1
+            WHERE o1.snapshot_id = :snap_id
+        ),
+        undirected_edges AS (
+            SELECT u, v FROM edge_pairs WHERE u != v
+            UNION
+            SELECT v as u, u as v FROM edge_pairs WHERE u != v
+        )
+        SELECT COUNT(*) FROM undirected_edges WHERE u = :target_id
+    """), {"target_id": target.id, "snap_id": snapshot_id}) or 0
+    
+    subsuming_neighbors = []
+    for row in rows:
+        subsuming_neighbors.append({
+            "station_code": row.neighbor_code,
+            "neighbor_degree": row.neighbor_degree
+        })
+        
+    return {
+        "station_code": target.code,
+        "timetable_snapshot_id": snapshot_id,
+        "total_neighbors": total_neighbors,
+        "subsuming_neighbors": subsuming_neighbors
+    }

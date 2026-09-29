@@ -2353,3 +2353,31 @@ def get_train_sequence_topological_degree_extremes(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get(
+    "/stations/{station_code}/neighborhood-subsumption",
+    response_model=schemas.StationNeighborhoodTopologicalSubsumptionResponse,
+    summary="Get Station Neighborhood Topological Subsumption",
+)
+def get_station_neighborhood_subsumption(
+    station_code: str,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """
+    Get Phase 59: Station Neighborhood Topological Subsumption.
+    
+    Identifies adjacent stations that topologically dominate the target station.
+    """
+    try:
+        from railgati.services.network import calculate_station_neighborhood_subsumption
+
+        res = calculate_station_neighborhood_subsumption(db, station_code)
+        return schemas.StationNeighborhoodTopologicalSubsumptionResponse(**res)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        if "not found" in str(e).lower() and "station" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
