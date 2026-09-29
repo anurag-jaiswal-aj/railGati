@@ -922,3 +922,30 @@ class StationPairIntermediateHaltStratificationResponse(BaseModel):
     is_perfectly_homogeneous: bool = Field(
         ..., description="True if min_halts == max_halts and traversal count > 0"
     )
+
+
+class StationPairReturnServiceAdherenceResponse(BaseModel):
+    origin_station_code: str = Field(..., description="Origin station code")
+    destination_station_code: str = Field(..., description="Destination station code")
+    timetable_snapshot_id: int = Field(..., description="ID of the active timetable snapshot")
+    total_forward_traversal_count: int = Field(
+        ..., description="Count of valid O->D traversals"
+    )
+    unpaired_traversal_count: int = Field(
+        ..., description="Count where return_train_number is absent"
+    )
+    adherent_return_traversal_count: int = Field(
+        ..., description="Count where return train correctly traverses D->O"
+    )
+    non_adherent_return_traversal_count: int = Field(
+        ..., description="Count where return train is missing or fails to traverse D->O"
+    )
+    adherence_ratio: float | None = Field(
+        None, description="adherent_traversal_count / total_forward_traversal_count"
+    )
+    unpaired_ratio: float | None = Field(
+        None, description="unpaired_traversal_count / total_forward_traversal_count"
+    )
+    non_adherent_ratio: float | None = Field(
+        None, description="non_adherent_traversal_count / total_forward_traversal_count"
+    )

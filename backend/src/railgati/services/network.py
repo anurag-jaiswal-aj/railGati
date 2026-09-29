@@ -5451,3 +5451,104 @@ def calculate_station_pair_intermediate_halt_stratification(
         "distinct_halt_strata_count": strata_count,
         "is_perfectly_homogeneous": is_homogeneous,
     }
+def calculate_station_pair_return_service_adherence(
+    db: Session, origin_code: str, destination_code: str, snapshot_id: int
+) -> dict[str, Any]:
+    """
+    Calculate the structural adherence of published return services
+    for trains traveling between two stations.
+    """
+    if origin_code == destination_code:
+        raise ValueError("Origin and destination stations cannot be identical.")
+
+    query = text("""
+    WITH forward_traversals AS (
+        SELECT
+            t1.train_id,
+            t1.snapshot_id,
+            tr_obs.return_train_number,
+            t1.stop_sequence as o_seq,
+            t2.stop_sequence as d_seq
+        FROM train_stop_observations t1
+        JOIN train_stop_observations t2
+          ON t1.train_id = t2.train_id
+         AND t1.snapshot_id = t2.snapshot_id
+        JOIN train_observations tr_obs
+          ON t1.train_id = tr_obs.train_id
+         AND t1.snapshot_id = tr_obs.snapshot_id
+        WHERE t1.snapshot_id = :snapshot_id
+          AND t1.station_id = (SELECT id FROM stations WHERE code = :o_code)
+          AND t2.station_id = (SELECT id FROM stations WHERE code = :d_code)
+          AND t1.stop_sequence < t2.stop_sequence
+    ),
+    return_validation AS (
+        SELECT
+            f.train_id,
+            f.o_seq,
+            f.d_seq,
+            CASE
+                WHEN f.return_train_number IS NULL OR f.return_train_number = '' THEN 'unpaired'
+                WHEN r_t.id IS NULL THEN 'non_adherent'
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM train_stop_observations r_t1
+                    JOIN train_stop_observations r_t2
+                      ON r_t1.train_id = r_t2.train_id
+                     AND r_t1.snapshot_id = r_t2.snapshot_id
+                    WHERE r_t1.train_id = r_t.id
+                      AND r_t1.snapshot_id = f.snapshot_id
+                      AND r_t1.station_id = (SELECT id FROM stations WHERE code = :d_code)
+                      AND r_t2.station_id = (SELECT id FROM stations WHERE code = :o_code)
+                      AND r_t1.stop_sequence < r_t2.stop_sequence
+                ) THEN 'adherent'
+                ELSE 'non_adherent'
+            END as adherence_status
+        FROM forward_traversals f
+        LEFT JOIN trains r_t
+          ON r_t.number = f.return_train_number
+    )
+    SELECT
+        COUNT(*) as total_forward_traversals,
+        COUNT(CASE WHEN adherence_status = 'unpaired' THEN 1 END) as unpaired_traversals,
+        COUNT(CASE WHEN adherence_status = 'adherent' THEN 1 END) as adherent_traversals,
+        COUNT(CASE WHEN adherence_status = 'non_adherent' THEN 1 END) as non_adherent_traversals
+    FROM return_validation;
+    """)
+
+    res = db.execute(
+        query, {"snapshot_id": snapshot_id, "o_code": origin_code, "d_code": destination_code}
+    ).fetchone()
+
+    total_forward = 0
+    unpaired = 0
+    adherent = 0
+    non_adherent = 0
+
+    if res:
+        mapping = dict(res._mapping)
+        total_forward = mapping["total_forward_traversals"] or 0
+        unpaired = mapping["unpaired_traversals"] or 0
+        adherent = mapping["adherent_traversals"] or 0
+        non_adherent = mapping["non_adherent_traversals"] or 0
+
+    adherence_ratio = None
+    unpaired_ratio = None
+    non_adherent_ratio = None
+
+    if total_forward > 0:
+        adherence_ratio = adherent / total_forward
+        unpaired_ratio = unpaired / total_forward
+        non_adherent_ratio = non_adherent / total_forward
+
+    return {
+        "origin_station_code": origin_code,
+        "destination_station_code": destination_code,
+        "timetable_snapshot_id": snapshot_id,
+        "total_forward_traversal_count": total_forward,
+        "unpaired_traversal_count": unpaired,
+        "adherent_return_traversal_count": adherent,
+        "non_adherent_return_traversal_count": non_adherent,
+        "adherence_ratio": adherence_ratio,
+        "unpaired_ratio": unpaired_ratio,
+        "non_adherent_ratio": non_adherent_ratio,
+    }

@@ -1,7 +1,7 @@
 """Network reachability API endpoint."""
 
 import typing
-from typing import Annotated
+from typing import Any, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import func, select
@@ -2117,6 +2117,64 @@ def get_station_pair_intermediate_halt_stratification(
         )
 
         result = calculate_station_pair_intermediate_halt_stratification(
+            db, origin_code, destination_code, timetable_snapshot_id
+        )
+        return result
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get(
+    "/station-pairs/{origin_code}/{destination_code}/return-service-adherence",
+    response_model=schemas.StationPairReturnServiceAdherenceResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_station_pair_return_service_adherence(
+    origin_code: str,
+    destination_code: str,
+    db: Session = Depends(get_db),
+) -> Any:
+    try:
+        timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+        if origin_code.lower() == destination_code.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Origin and destination stations cannot be identical.",
+            )
+
+        from sqlalchemy import func, select
+        from railgati.models.station import Station
+
+        origin_station = db.scalar(
+            select(Station).filter(func.lower(Station.code) == origin_code.lower())
+        )
+        dest_station = db.scalar(
+            select(Station).filter(func.lower(Station.code) == destination_code.lower())
+        )
+
+        if not origin_station:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Origin station '{origin_code}' not found.",
+            )
+        if not dest_station:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Destination station '{destination_code}' not found.",
+            )
+
+        from railgati.services.network import (
+            calculate_station_pair_return_service_adherence,
+        )
+
+        result = calculate_station_pair_return_service_adherence(
             db, origin_code, destination_code, timetable_snapshot_id
         )
         return result
