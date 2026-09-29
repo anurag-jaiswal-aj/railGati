@@ -151,16 +151,15 @@ def test_calculate_train_route_terminal_incidence_normal(
     )
 
     # Create stations X, Y, Z
-    stations = terminal_incidence_fixtures["stations"]
-    s_X = Station(code="X")
-    s_Y = Station(code="Y")
-    s_Z = Station(code="Z")
-    db_session.add_all([s_X, s_Y, s_Z])
+    s_x = Station(code="X")
+    s_y = Station(code="Y")
+    s_z = Station(code="Z")
+    db_session.add_all([s_x, s_y, s_z])
     db_session.commit()
 
     # Route: X -> Y -> Z
     # Terminals: X (start), Z (end). Y is not a terminal.
-    for idx, st in enumerate([s_X, s_Y, s_Z]):
+    for idx, st in enumerate([s_x, s_y, s_z]):
         db_session.add(
             TrainStopObservation(
                 snapshot_id=terminal_incidence_fixtures["snapshot_id"],
@@ -204,8 +203,8 @@ def test_calculate_train_route_terminal_incidence_cyclic_repeated(
         )
     )
 
-    s_W = Station(code="W")
-    db_session.add(s_W)
+    s_w = Station(code="W")
+    db_session.add(s_w)
     db_session.commit()
 
     # Route: A -> W -> A
@@ -213,7 +212,7 @@ def test_calculate_train_route_terminal_incidence_cyclic_repeated(
     for idx, st in enumerate(
         [
             terminal_incidence_fixtures["stations"]["A"],
-            s_W,
+            s_w,
             terminal_incidence_fixtures["stations"]["A"],
         ]
     ):
