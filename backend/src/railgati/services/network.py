@@ -5383,3 +5383,71 @@ def calculate_station_pair_temporal_order_inversions(
         "inversion_pair_count": inv_count,
         "distinct_inverted_train_count": dist_trains,
     }
+
+
+def calculate_station_pair_intermediate_halt_stratification(
+    db: Session, origin_code: str, destination_code: str, snapshot_id: int
+) -> dict[str, Any]:
+    """
+    Calculate the stratification of intermediate halt counts for
+    trains traveling between two stations.
+    """
+    if origin_code == destination_code:
+        raise ValueError("Origin and destination stations cannot be identical.")
+
+    query = text("""
+    WITH traversals AS (
+        SELECT
+            t1.train_id,
+            (t2.stop_sequence - t1.stop_sequence - 1) as halt_count
+        FROM train_stop_observations t1
+        JOIN train_stop_observations t2
+          ON t1.train_id = t2.train_id
+         AND t1.snapshot_id = t2.snapshot_id
+        WHERE t1.snapshot_id = :snapshot_id
+          AND t1.station_id = (SELECT id FROM stations WHERE code = :o_code)
+          AND t2.station_id = (SELECT id FROM stations WHERE code = :d_code)
+          AND t1.stop_sequence < t2.stop_sequence
+    )
+    SELECT
+        COUNT(*) as total_traversal_count,
+        MIN(halt_count) as min_halts,
+        MAX(halt_count) as max_halts,
+        COUNT(DISTINCT halt_count) as distinct_halt_strata_count
+    FROM traversals
+    """)
+
+    res = db.execute(
+        query, {"snapshot_id": snapshot_id, "o_code": origin_code, "d_code": destination_code}
+    ).fetchone()
+
+    if not res:
+        total_traversals = 0
+        min_halts = None
+        max_halts = None
+        strata_count = 0
+    else:
+        mapping = dict(res._mapping)
+        total_traversals = mapping["total_traversal_count"] or 0
+        min_halts = mapping["min_halts"]
+        max_halts = mapping["max_halts"]
+        strata_count = mapping["distinct_halt_strata_count"] or 0
+
+        if total_traversals == 0:
+            min_halts = None
+            max_halts = None
+
+    is_homogeneous = False
+    if total_traversals > 0 and min_halts is not None and max_halts is not None:
+        is_homogeneous = min_halts == max_halts
+
+    return {
+        "origin_station_code": origin_code,
+        "destination_station_code": destination_code,
+        "timetable_snapshot_id": snapshot_id,
+        "total_traversal_count": total_traversals,
+        "min_halts": min_halts,
+        "max_halts": max_halts,
+        "distinct_halt_strata_count": strata_count,
+        "is_perfectly_homogeneous": is_homogeneous,
+    }

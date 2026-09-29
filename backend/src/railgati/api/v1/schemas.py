@@ -901,3 +901,24 @@ class StationPairTemporalOrderInversionsResponse(BaseModel):
     total_valid_traversal_count: int
     inversion_pair_count: int
     distinct_inverted_train_count: int
+
+
+class StationPairIntermediateHaltStratificationResponse(BaseModel):
+    origin_station_code: str = Field(..., description="Origin station code")
+    destination_station_code: str = Field(..., description="Destination station code")
+    timetable_snapshot_id: int = Field(..., description="ID of the active timetable snapshot")
+    total_traversal_count: int = Field(
+        ..., description="Total valid traversals between the origin and destination"
+    )
+    min_halts: int | None = Field(
+        None, description="Minimum intermediate halt count across valid traversals"
+    )
+    max_halts: int | None = Field(
+        None, description="Maximum intermediate halt count across valid traversals"
+    )
+    distinct_halt_strata_count: int = Field(
+        ..., description="Number of distinct intermediate halt-count values"
+    )
+    is_perfectly_homogeneous: bool = Field(
+        ..., description="True if min_halts == max_halts and traversal count > 0"
+    )
