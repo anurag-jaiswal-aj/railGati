@@ -5560,6 +5560,7 @@ def calculate_station_peak_simultaneous_presence(
 ) -> dict[str, typing.Any]:
     """Phase 53: Network Station Peak Simultaneous Presence Analytics."""
     from sqlalchemy import select, text
+
     from railgati.models.provenance import DatasetSnapshot
     from railgati.models.station import Station, StationObservation
 
@@ -5586,11 +5587,11 @@ def calculate_station_peak_simultaneous_presence(
     if is_sqlite:
         arr_calc = "CAST(strftime('%s', arrival_time) AS INTEGER) / 60"
         dep_calc = "CAST(strftime('%s', departure_time) AS INTEGER) / 60"
-        time_logic = f"departure_time < arrival_time"
+        time_logic = "departure_time < arrival_time"
     else:
         arr_calc = "EXTRACT(EPOCH FROM arrival_time::time)/60"
         dep_calc = "EXTRACT(EPOCH FROM departure_time::time)/60"
-        time_logic = f"departure_time < arrival_time"
+        time_logic = "departure_time < arrival_time"
 
     query = text(f"""
         WITH raw_events AS (
@@ -5645,4 +5646,118 @@ def calculate_station_peak_simultaneous_presence(
         "timetable_snapshot_id": timetable_snapshot_id,
         "qualifying_occurrence_count": qualifying_occurrence_count,
         "peak_simultaneous_presence": peak_concurrent,
+    }
+
+def calculate_train_stop_temporal_skew(
+    session: Session, snapshot_id: int, train_number: str
+) -> dict[str, typing.Any]:
+
+    from railgati.models.train import Train, TrainStopObservation
+
+    train = session.query(Train).filter_by(number=train_number).first()
+    if not train:
+        raise ValueError(f"Train with number {train_number} not found")
+
+    stops = session.query(TrainStopObservation).filter_by(
+        snapshot_id=snapshot_id, train_id=train.id
+    ).order_by(TrainStopObservation.stop_sequence.asc()).all()
+
+    if not stops or len(stops) < 2:
+        return {
+            "train_number": train_number,
+            "timetable_snapshot_id": snapshot_id,
+            "intermediate_stop_occurrence_count": 0,
+            "valid_intermediate_timing_occurrence_count": 0,
+            "mean_fraction": None,
+            "temporal_skew": None,
+            "journey_duration_minutes": None,
+            "classification": None,
+        }
+
+    origin = stops[0]
+    dest = stops[-1]
+
+    if not origin.departure_time or not dest.arrival_time or origin.source_day is None or dest.source_day is None:
+        return {
+            "train_number": train_number,
+            "timetable_snapshot_id": snapshot_id,
+            "intermediate_stop_occurrence_count": max(0, len(stops) - 2),
+            "valid_intermediate_timing_occurrence_count": 0,
+            "mean_fraction": None,
+            "temporal_skew": None,
+            "journey_duration_minutes": None,
+            "classification": None,
+        }
+
+    def time_to_mins(t_str: str) -> float:
+        parts = t_str.split(":")
+        return int(parts[0]) * 60.0 + int(parts[1])
+
+    start_mins = origin.source_day * 1440.0 + time_to_mins(origin.departure_time)
+    end_mins = dest.source_day * 1440.0 + time_to_mins(dest.arrival_time)
+
+    if dest.arrival_time < origin.departure_time and dest.source_day == origin.source_day:
+        end_mins += 1440.0
+
+    duration = end_mins - start_mins
+    if duration <= 0:
+        return {
+            "train_number": train_number,
+            "timetable_snapshot_id": snapshot_id,
+            "intermediate_stop_occurrence_count": max(0, len(stops) - 2),
+            "valid_intermediate_timing_occurrence_count": 0,
+            "mean_fraction": None,
+            "temporal_skew": None,
+            "journey_duration_minutes": None,
+            "classification": None,
+        }
+
+    fractions = []
+    intermediates = stops[1:-1]
+
+    for o in intermediates:
+        if o.source_day is None:
+            continue
+
+        arr_t = o.arrival_time
+        dep_t = o.departure_time
+        if not arr_t and not dep_t:
+            continue
+
+        m_list = []
+        if arr_t:
+            a_mins = o.source_day * 1440.0 + time_to_mins(arr_t)
+            if arr_t < origin.departure_time and o.source_day == origin.source_day:
+                a_mins += 1440.0
+            m_list.append(a_mins)
+        if dep_t:
+            d_mins = o.source_day * 1440.0 + time_to_mins(dep_t)
+            if dep_t < origin.departure_time and o.source_day == origin.source_day:
+                d_mins += 1440.0
+            m_list.append(d_mins)
+
+        inter_mins = sum(m_list) / len(m_list)
+        fractions.append((inter_mins - start_mins) / duration)
+
+    mean_fraction = sum(fractions) / len(fractions) if fractions else None
+    temporal_skew = mean_fraction - 0.5 if mean_fraction is not None else None
+
+    classification = None
+    if temporal_skew is not None:
+        if temporal_skew < 0:
+            classification = "FRONT_LOADED"
+        elif temporal_skew == 0:
+            classification = "BALANCED"
+        else:
+            classification = "BACK_LOADED"
+
+    return {
+        "train_number": train_number,
+        "timetable_snapshot_id": snapshot_id,
+        "intermediate_stop_occurrence_count": len(intermediates),
+        "valid_intermediate_timing_occurrence_count": len(fractions),
+        "mean_fraction": mean_fraction,
+        "temporal_skew": temporal_skew,
+        "journey_duration_minutes": duration,
+        "classification": classification,
     }

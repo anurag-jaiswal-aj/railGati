@@ -1,7 +1,7 @@
 """Network reachability API endpoint."""
 
 import typing
-from typing import Any, Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import func, select
@@ -1990,16 +1990,16 @@ def api_get_station_pair_route_extension(
         timetable_snapshot_id = get_active_timetable_snapshot_id(db)
         if not timetable_snapshot_id:
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, 
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="No active timetable snapshot"
             )
-        
+
         result = calculate_station_pair_route_extension(
             db, origin_code, destination_code, timetable_snapshot_id
         )
         if not result:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, 
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail="No direct valid traversal found or stations missing"
             )
         return result
@@ -2031,22 +2031,23 @@ def get_station_pair_temporal_order_inversions(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Origin and destination stations cannot be identical.",
         )
-    
+
     from railgati.services.network import calculate_station_pair_temporal_order_inversions
     try:
         timetable_snapshot_id = get_active_timetable_snapshot_id(db)
         if not timetable_snapshot_id:
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, 
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="No active timetable snapshot"
             )
-        
+
+        from sqlalchemy import func, select
+
         from railgati.models.station import Station
-        from sqlalchemy import select, func
-        
+
         origin_station = db.scalar(select(Station).filter(func.lower(Station.code) == origin_code.lower()))
         dest_station = db.scalar(select(Station).filter(func.lower(Station.code) == destination_code.lower()))
-        
+
         if not origin_station:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -2150,6 +2151,7 @@ def get_station_pair_return_service_adherence(
             )
 
         from sqlalchemy import func, select
+
         from railgati.models.station import Station
 
         origin_station = db.scalar(
@@ -2213,3 +2215,21 @@ def get_station_peak_simultaneous_presence(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get(
+    "/trains/{train_number}/stop-temporal-skew",
+    response_model=schemas.TrainStopTemporalSkewResponse,
+)
+def get_train_stop_temporal_skew(
+    train_number: str,
+    snapshot_id: int = Query(..., description="Timetable Snapshot ID"),
+    db: Session = Depends(get_db),
+):
+    try:
+        from railgati.services.network import calculate_train_stop_temporal_skew
+        res = calculate_train_stop_temporal_skew(db, snapshot_id, train_number)
+        return schemas.TrainStopTemporalSkewResponse(**res)
+    except ValueError as e:
+        if "not found" in str(e):
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e))

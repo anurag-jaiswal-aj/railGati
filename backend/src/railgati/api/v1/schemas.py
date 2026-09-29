@@ -956,3 +956,13 @@ class NetworkStationSimultaneousPresenceResponse(BaseModel):
     timetable_snapshot_id: int
     qualifying_occurrence_count: int
     peak_simultaneous_presence: int | None
+
+class TrainStopTemporalSkewResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    intermediate_stop_occurrence_count: int
+    valid_intermediate_timing_occurrence_count: int
+    mean_fraction: float | None = None
+    temporal_skew: float | None = None
+    journey_duration_minutes: float | None = None
+    classification: str | None = None
