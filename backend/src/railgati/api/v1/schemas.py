@@ -949,3 +949,10 @@ class StationPairReturnServiceAdherenceResponse(BaseModel):
     non_adherent_ratio: float | None = Field(
         None, description="non_adherent_traversal_count / total_forward_traversal_count"
     )
+
+class NetworkStationSimultaneousPresenceResponse(BaseModel):
+    station_code: str
+    station_name: str | None
+    timetable_snapshot_id: int
+    qualifying_occurrence_count: int
+    peak_simultaneous_presence: int | None

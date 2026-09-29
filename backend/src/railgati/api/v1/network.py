@@ -2187,3 +2187,29 @@ def get_station_pair_return_service_adherence(
         raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@router.get(
+    "/stations/{station_code}/simultaneous-presence",
+    response_model=schemas.NetworkStationSimultaneousPresenceResponse,
+    summary="Phase 53: Network Station Peak Simultaneous Presence Analytics",
+)
+def get_station_peak_simultaneous_presence(
+    station_code: str = Path(..., description="Station code"),
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    try:
+        snapshot_id = get_active_timetable_snapshot_id(db)
+        if not snapshot_id:
+            raise HTTPException(status_code=503, detail="No active timetable snapshot available.")
+
+        from railgati.services.network import calculate_station_peak_simultaneous_presence
+        result = calculate_station_peak_simultaneous_presence(
+            db, snapshot_id, station_code
+        )
+        return result
+    except ValueError as e:
+        if "not found" in str(e).lower() and "station" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
