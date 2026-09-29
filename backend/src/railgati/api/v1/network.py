@@ -2233,3 +2233,30 @@ def get_train_stop_temporal_skew(
         if "not found" in str(e):
             raise HTTPException(status_code=404, detail=str(e))
         raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get(
+    "/trains/{train_number}/sequence-subgraph-density",
+    response_model=schemas.TrainSequenceSubgraphDensityResponse,
+)
+def get_train_sequence_subgraph_density(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    try:
+        snapshot_id = get_active_timetable_snapshot_id(db)
+        if not snapshot_id:
+            raise HTTPException(status_code=503, detail="No active timetable snapshot available.")
+
+        from railgati.services.network import calculate_train_sequence_subgraph_density
+
+        res = calculate_train_sequence_subgraph_density(db, snapshot_id, train_number)
+        return schemas.TrainSequenceSubgraphDensityResponse(**res)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        if "not found" in str(e).lower() and "train" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

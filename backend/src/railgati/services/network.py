@@ -5761,3 +5761,61 @@ def calculate_train_stop_temporal_skew(
         "journey_duration_minutes": duration,
         "classification": classification,
     }
+
+
+def calculate_train_sequence_subgraph_density(
+    db: Session, snapshot_id: int, train_number: str
+) -> dict[str, Any]:
+    """Calculate the sequence-induced subgraph density for a target train (Phase 55)."""
+    from sqlalchemy import func, select, text
+
+    from railgati.models.train import Train
+
+    train = db.scalar(select(Train).filter(func.upper(Train.number) == train_number.upper()))
+    if not train:
+        raise ValueError(f"Train '{train_number}' not found.")
+
+    query = text("""
+    WITH target_seq AS (
+        SELECT station_id, stop_sequence as seq
+        FROM train_stop_observations
+        WHERE train_id = :train_id AND snapshot_id = :snap_id
+    ),
+    global_edges AS (
+        SELECT DISTINCT s1.station_id as o, s2.station_id as d
+        FROM train_stop_observations s1
+        JOIN train_stop_observations s2
+          ON s1.train_id = s2.train_id AND s2.stop_sequence = s1.stop_sequence + 1
+        WHERE s1.snapshot_id = :snap_id
+    )
+    SELECT
+        (SELECT COUNT(*) FROM target_seq) as n,
+        COUNT(CASE WHEN ts2.seq > ts1.seq + 1 AND ge.o IS NOT NULL THEN 1 END) as fwd_actual,
+        COUNT(CASE WHEN ts2.seq < ts1.seq AND ge.o IS NOT NULL THEN 1 END) as bwd_actual
+    FROM target_seq ts1
+    JOIN target_seq ts2 ON ts1.seq != ts2.seq
+    LEFT JOIN global_edges ge ON ge.o = ts1.station_id AND ge.d = ts2.station_id;
+    """)
+    result = db.execute(query, {"train_id": train.id, "snap_id": snapshot_id}).fetchone()
+
+    n = result[0] if result and result[0] else 0
+    fwd_actual = result[1] if result and result[1] else 0
+    bwd_actual = result[2] if result and result[2] else 0
+
+    d_fwd_max = ((n - 1) * (n - 2)) // 2 if n >= 3 else 0
+    d_bwd_max = (n * (n - 1)) // 2 if n >= 2 else 0
+
+    forward_density = float(fwd_actual) / d_fwd_max if d_fwd_max > 0 else 0.0
+    backward_density = float(bwd_actual) / d_bwd_max if d_bwd_max > 0 else 0.0
+
+    return {
+        "train_number": train.number,
+        "timetable_snapshot_id": snapshot_id,
+        "total_sequence_occurrences": n,
+        "forward_max_possible_chords": d_fwd_max,
+        "backward_max_possible_chords": d_bwd_max,
+        "forward_actual_chords": fwd_actual,
+        "backward_actual_chords": bwd_actual,
+        "forward_density": forward_density,
+        "backward_density": backward_density,
+    }

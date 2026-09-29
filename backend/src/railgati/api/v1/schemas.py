@@ -966,3 +966,15 @@ class TrainStopTemporalSkewResponse(BaseModel):
     temporal_skew: float | None = None
     journey_duration_minutes: float | None = None
     classification: str | None = None
+
+
+class TrainSequenceSubgraphDensityResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    total_sequence_occurrences: int
+    forward_max_possible_chords: int
+    backward_max_possible_chords: int
+    forward_actual_chords: int
+    backward_actual_chords: int
+    forward_density: float
+    backward_density: float
