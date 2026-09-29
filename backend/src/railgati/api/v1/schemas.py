@@ -892,3 +892,12 @@ class StationPairRouteExtensionResponse(BaseModel):
     pre_origin_station_count: int
     post_destination_station_count: int
     total_extension_station_count: int
+
+
+class StationPairTemporalOrderInversionsResponse(BaseModel):
+    origin_station_code: str
+    destination_station_code: str
+    timetable_snapshot_id: int
+    total_valid_traversal_count: int
+    inversion_pair_count: int
+    distinct_inverted_train_count: int

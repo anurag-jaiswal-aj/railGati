@@ -5212,8 +5212,9 @@ def calculate_station_pair_route_extension(
     if origin_code == destination_code:
         raise ValueError("Origin and destination cannot be identical.")
 
-    from railgati.models.station import Station
     from sqlalchemy import select
+
+    from railgati.models.station import Station
 
     # Validate stations
     orig_st = db.scalar(select(Station).filter_by(code=origin_code))
@@ -5223,13 +5224,13 @@ def calculate_station_pair_route_extension(
 
     query = text("""
         WITH valid_traversals AS (
-            SELECT 
+            SELECT
                 t1.train_id,
                 t1.stop_sequence as s_o,
                 t2.stop_sequence as s_d
             FROM train_stop_observations t1
-            JOIN train_stop_observations t2 
-              ON t1.train_id = t2.train_id 
+            JOIN train_stop_observations t2
+              ON t1.train_id = t2.train_id
              AND t1.snapshot_id = t2.snapshot_id
             WHERE t1.snapshot_id = :snapshot_id
               AND t1.station_id = :orig_id
@@ -5255,7 +5256,7 @@ def calculate_station_pair_route_extension(
             UNION
             SELECT station_id FROM post_dest_stops
         )
-        SELECT 
+        SELECT
             (SELECT COUNT(*) FROM valid_traversals) as traversal_occurrence_count,
             (SELECT COUNT(*) FROM pre_origin_stops) as pre_origin_station_count,
             (SELECT COUNT(*) FROM post_dest_stops) as post_destination_station_count,
@@ -5280,4 +5281,105 @@ def calculate_station_pair_route_extension(
         "pre_origin_station_count": res[1],
         "post_destination_station_count": res[2],
         "total_extension_station_count": res[3]
+    }
+
+
+def calculate_station_pair_temporal_order_inversions(
+    db: Session, origin_code: str, destination_code: str, snapshot_id: int
+) -> dict[str, Any]:
+    """
+    Calculate network station-pair temporal order inversion analytics.
+    Finds how often scheduled traversals on a shared origin-destination structural corridor
+    invert their temporal order (i.e. one departs strictly later but arrives strictly earlier).
+    """
+    if origin_code == destination_code:
+        raise ValueError("Origin and destination stations cannot be identical.")
+
+    is_sqlite = db.bind and db.bind.dialect.name == "sqlite"
+    
+    if is_sqlite:
+        dep_mins_expr = "CAST(strftime('%H', t1.departure_time) AS INTEGER) * 60 + CAST(strftime('%M', t1.departure_time) AS INTEGER)"
+        arr_mins_expr = "CAST(strftime('%H', t2.arrival_time) AS INTEGER) * 60 + CAST(strftime('%M', t2.arrival_time) AS INTEGER)"
+    else:
+        dep_mins_expr = "EXTRACT(HOUR FROM CAST(t1.departure_time AS time)) * 60 + EXTRACT(MINUTE FROM CAST(t1.departure_time AS time))"
+        arr_mins_expr = "EXTRACT(HOUR FROM CAST(t2.arrival_time AS time)) * 60 + EXTRACT(MINUTE FROM CAST(t2.arrival_time AS time))"
+
+    query = text(f"""
+    WITH valid_traversals AS (
+        SELECT
+            t1.train_id,
+            t1.stop_sequence as s_o,
+            t2.stop_sequence as s_d,
+            t1.departure_time,
+            t1.source_day as day_o,
+            t2.arrival_time,
+            t2.source_day as day_d,
+            (t1.source_day - 1) * 24 * 60 + {dep_mins_expr} as abs_dep_mins,
+            
+            (t2.source_day - 1) * 24 * 60 + {arr_mins_expr} as abs_arr_mins
+            
+        FROM train_stop_observations t1
+        JOIN train_stop_observations t2
+          ON t1.train_id = t2.train_id
+         AND t1.snapshot_id = t2.snapshot_id
+        WHERE t1.snapshot_id = :snapshot_id
+          AND t1.station_id = (SELECT id FROM stations WHERE code = :o_code)
+          AND t2.station_id = (SELECT id FROM stations WHERE code = :d_code)
+          AND t1.stop_sequence < t2.stop_sequence
+          AND t1.departure_time IS NOT NULL
+          AND t2.arrival_time IS NOT NULL
+          AND t1.source_day IS NOT NULL
+          AND t2.source_day IS NOT NULL
+    ),
+    inversions AS (
+        SELECT 
+            v1.train_id as train_a,
+            v1.s_o as s_o_a,
+            v1.s_d as s_d_a,
+            v2.train_id as train_b,
+            v2.s_o as s_o_b,
+            v2.s_d as s_d_b
+        FROM valid_traversals v1
+        JOIN valid_traversals v2 
+          ON (v1.train_id != v2.train_id OR v1.s_o != v2.s_o OR v1.s_d != v2.s_d)
+        WHERE v1.abs_dep_mins < v2.abs_dep_mins
+          AND v1.abs_arr_mins > v2.abs_arr_mins
+    )
+    SELECT 
+        (SELECT COUNT(*) FROM valid_traversals) as total_valid_traversal_count,
+        COUNT(*) as inversion_pair_count,
+        (
+            SELECT COUNT(DISTINCT train_id)
+            FROM (
+                SELECT train_a as train_id FROM inversions
+                UNION
+                SELECT train_b as train_id FROM inversions
+            ) as distinct_inverted
+        ) as distinct_inverted_train_count
+    FROM inversions
+    """)
+
+    res = db.execute(query, {"snapshot_id": snapshot_id, "o_code": origin_code, "d_code": destination_code}).fetchone()
+    if not res:
+        return {
+            "origin_station_code": origin_code,
+            "destination_station_code": destination_code,
+            "timetable_snapshot_id": snapshot_id,
+            "total_valid_traversal_count": 0,
+            "inversion_pair_count": 0,
+            "distinct_inverted_train_count": 0,
+        }
+    
+    mapping = dict(res._mapping)
+    total_valid = mapping["total_valid_traversal_count"] or 0
+    inv_count = mapping["inversion_pair_count"] or 0
+    dist_trains = mapping["distinct_inverted_train_count"] or 0
+    
+    return {
+        "origin_station_code": origin_code,
+        "destination_station_code": destination_code,
+        "timetable_snapshot_id": snapshot_id,
+        "total_valid_traversal_count": total_valid,
+        "inversion_pair_count": inv_count,
+        "distinct_inverted_train_count": dist_trains,
     }
