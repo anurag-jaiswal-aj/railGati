@@ -5194,3 +5194,90 @@ def calculate_train_route_terminal_incidence(
         "distinct_terminal_station_count": distinct_terminal_station_count,
         "incidence_ratio": round(incidence_ratio, 3),
     }
+
+
+def calculate_station_pair_route_extension(
+    db: Session,
+    origin_code: str,
+    destination_code: str,
+    timetable_snapshot_id: int
+) -> dict[str, object]:
+    """
+    Calculate the Phase 49 Network Station Pair Route Extension Analytics metric.
+    Extracts the timetable-derived station extension structures lying outside the O->D pair.
+    """
+    origin_code = origin_code.strip().upper()
+    destination_code = destination_code.strip().upper()
+
+    if origin_code == destination_code:
+        raise ValueError("Origin and destination cannot be identical.")
+
+    from railgati.models.station import Station
+    from sqlalchemy import select
+
+    # Validate stations
+    orig_st = db.scalar(select(Station).filter_by(code=origin_code))
+    dest_st = db.scalar(select(Station).filter_by(code=destination_code))
+    if not orig_st or not dest_st:
+        return {}  # Signal 404
+
+    query = text("""
+        WITH valid_traversals AS (
+            SELECT 
+                t1.train_id,
+                t1.stop_sequence as s_o,
+                t2.stop_sequence as s_d
+            FROM train_stop_observations t1
+            JOIN train_stop_observations t2 
+              ON t1.train_id = t2.train_id 
+             AND t1.snapshot_id = t2.snapshot_id
+            WHERE t1.snapshot_id = :snapshot_id
+              AND t1.station_id = :orig_id
+              AND t2.station_id = :dest_id
+              AND t1.stop_sequence < t2.stop_sequence
+        ),
+        pre_origin_stops AS (
+            SELECT DISTINCT ts.station_id
+            FROM train_stop_observations ts
+            JOIN valid_traversals vt ON ts.train_id = vt.train_id
+            WHERE ts.snapshot_id = :snapshot_id
+              AND ts.stop_sequence < vt.s_o
+        ),
+        post_dest_stops AS (
+            SELECT DISTINCT ts.station_id
+            FROM train_stop_observations ts
+            JOIN valid_traversals vt ON ts.train_id = vt.train_id
+            WHERE ts.snapshot_id = :snapshot_id
+              AND ts.stop_sequence > vt.s_d
+        ),
+        combined_extension AS (
+            SELECT station_id FROM pre_origin_stops
+            UNION
+            SELECT station_id FROM post_dest_stops
+        )
+        SELECT 
+            (SELECT COUNT(*) FROM valid_traversals) as traversal_occurrence_count,
+            (SELECT COUNT(*) FROM pre_origin_stops) as pre_origin_station_count,
+            (SELECT COUNT(*) FROM post_dest_stops) as post_destination_station_count,
+            (SELECT COUNT(*) FROM combined_extension) as total_extension_station_count
+    """)
+
+    res = db.execute(query, {
+        "snapshot_id": timetable_snapshot_id,
+        "orig_id": orig_st.id,
+        "dest_id": dest_st.id
+    }).fetchone()
+
+    # If no valid traversals were found, it means the O->D direct path does not exist.
+    # Return empty to signal 404 per API convention.
+    if not res or res[0] == 0:
+        return {}
+
+    return {
+        "origin_station": origin_code,
+        "destination_station": destination_code,
+        "traversal_occurrence_count": res[0],
+        "pre_origin_station_count": res[1],
+        "post_destination_station_count": res[2],
+        "total_extension_station_count": res[3]
+    }

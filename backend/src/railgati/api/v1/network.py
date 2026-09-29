@@ -1970,3 +1970,45 @@ def api_get_train_route_terminal_incidence(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get(
+    "/station-pairs/{origin_code}/{destination_code}/route-extension",
+    response_model=schemas.StationPairRouteExtensionResponse,
+    tags=["Network", "Station Pairs", "Phase 49"],
+)
+def api_get_station_pair_route_extension(
+    origin_code: str = Path(..., description="Origin station code"),
+    destination_code: str = Path(..., description="Destination station code"),
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """Phase 49: Calculate Network Station Pair Route Extension Analytics."""
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.services.network import calculate_station_pair_route_extension
+
+    try:
+        timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+        if not timetable_snapshot_id:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, 
+                detail="No active timetable snapshot"
+            )
+        
+        result = calculate_station_pair_route_extension(
+            db, origin_code, destination_code, timetable_snapshot_id
+        )
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="No direct valid traversal found or stations missing"
+            )
+        return result
+    except ValueError as e:
+        msg = str(e)
+        if "cannot be identical" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

@@ -884,3 +884,11 @@ class TrainRouteTerminalIncidenceResponse(BaseModel):
     terminal_occurrence_count: int
     distinct_terminal_station_count: int
     incidence_ratio: float
+
+class StationPairRouteExtensionResponse(BaseModel):
+    origin_station: str
+    destination_station: str
+    traversal_occurrence_count: int
+    pre_origin_station_count: int
+    post_destination_station_count: int
+    total_extension_station_count: int
