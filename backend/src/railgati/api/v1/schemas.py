@@ -978,3 +978,24 @@ class TrainSequenceSubgraphDensityResponse(BaseModel):
     backward_actual_chords: int
     forward_density: float
     backward_density: float
+
+
+class TopologicalTransitionRecord(BaseModel):
+    from_station_code: str
+    via_station_code: str
+    to_station_code: str
+    from_sequence: int
+    via_sequence: int
+    to_sequence: int
+    first_edge_occurrence_count: int
+    transition_occurrence_count: int
+    continuity_ratio: float
+
+class TrainSequenceTopologicalTransitionContinuityResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    total_transition_count: int
+    average_continuity_ratio: float | None = None
+    minimum_continuity_ratio: float | None = None
+    maximum_continuity_ratio: float | None = None
+    transitions: list[TopologicalTransitionRecord]

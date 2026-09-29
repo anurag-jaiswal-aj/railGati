@@ -2260,3 +2260,30 @@ def get_train_sequence_subgraph_density(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/trains/{train_number}/topological-transition-continuity",
+    response_model=schemas.TrainSequenceTopologicalTransitionContinuityResponse,
+)
+def get_train_sequence_topological_transition_continuity(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    try:
+        snapshot_id = get_active_timetable_snapshot_id(db)
+        if not snapshot_id:
+            raise HTTPException(status_code=503, detail="No active timetable snapshot available.")
+
+        from railgati.services.network import calculate_train_sequence_topological_transition_continuity
+
+        res = calculate_train_sequence_topological_transition_continuity(db, snapshot_id, train_number)
+        return schemas.TrainSequenceTopologicalTransitionContinuityResponse(**res)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        if "not found" in str(e).lower() and "train" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

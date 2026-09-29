@@ -5819,3 +5819,101 @@ def calculate_train_sequence_subgraph_density(
         "forward_density": forward_density,
         "backward_density": backward_density,
     }
+
+
+def calculate_train_sequence_topological_transition_continuity(
+    db: Session, snapshot_id: int, train_number: str
+) -> dict[str, Any]:
+    """Calculate the sequence topological transition continuity (Phase 56)."""
+    from sqlalchemy import func, select, text
+    from railgati.models.train import Train
+
+    train = db.scalar(select(Train).filter(func.upper(Train.number) == train_number.upper()))
+    if not train:
+        raise ValueError(f"Train '{train_number}' not found.")
+
+    query = text("""
+    WITH target_stops AS (
+        SELECT station_id, stop_sequence as seq
+        FROM train_stop_observations
+        WHERE train_id = :train_id AND snapshot_id = :snap_id
+    ),
+    target_triplets AS (
+        SELECT
+            s1.station_id as st1, s1.seq as seq1,
+            s2.station_id as st2, s2.seq as seq2,
+            s3.station_id as st3, s3.seq as seq3
+        FROM target_stops s1
+        JOIN target_stops s2 ON s2.seq = s1.seq + 1
+        JOIN target_stops s3 ON s3.seq = s2.seq + 1
+    )
+    SELECT
+        tt.seq1, tt.seq2, tt.seq3,
+        st1.code as code1, st2.code as code2, st3.code as code3,
+        (SELECT COUNT(*)
+         FROM train_stop_observations o1
+         JOIN train_stop_observations o2
+           ON o1.train_id = o2.train_id AND o1.snapshot_id = o2.snapshot_id AND o2.stop_sequence = o1.stop_sequence + 1
+         WHERE o1.snapshot_id = :snap_id AND o1.station_id = tt.st1 AND o2.station_id = tt.st2
+        ) as first_edge_occurrence_count,
+        (SELECT COUNT(*)
+         FROM train_stop_observations o1
+         JOIN train_stop_observations o2
+           ON o1.train_id = o2.train_id AND o1.snapshot_id = o2.snapshot_id AND o2.stop_sequence = o1.stop_sequence + 1
+         JOIN train_stop_observations o3
+           ON o2.train_id = o3.train_id AND o2.snapshot_id = o3.snapshot_id AND o3.stop_sequence = o2.stop_sequence + 1
+         WHERE o1.snapshot_id = :snap_id AND o1.station_id = tt.st1 AND o2.station_id = tt.st2 AND o3.station_id = tt.st3
+        ) as transition_occurrence_count
+    FROM target_triplets tt
+    JOIN stations st1 ON st1.id = tt.st1
+    JOIN stations st2 ON st2.id = tt.st2
+    JOIN stations st3 ON st3.id = tt.st3
+    ORDER BY tt.seq1 ASC;
+    """)
+
+    results = db.execute(query, {"train_id": train.id, "snap_id": snapshot_id}).fetchall()
+
+    if not results:
+        return {
+            "train_number": train.number,
+            "timetable_snapshot_id": snapshot_id,
+            "total_transition_count": 0,
+            "average_continuity_ratio": None,
+            "minimum_continuity_ratio": None,
+            "maximum_continuity_ratio": None,
+            "transitions": []
+        }
+
+    transitions = []
+    ratios = []
+
+    for r in results:
+        n_in = r.first_edge_occurrence_count
+        n_path = r.transition_occurrence_count
+        if n_in == 0:
+            ratio = 0.0
+        else:
+            ratio = float(n_path) / float(n_in)
+
+        ratios.append(ratio)
+        transitions.append({
+            "from_station_code": r.code1,
+            "via_station_code": r.code2,
+            "to_station_code": r.code3,
+            "from_sequence": r.seq1,
+            "via_sequence": r.seq2,
+            "to_sequence": r.seq3,
+            "first_edge_occurrence_count": n_in,
+            "transition_occurrence_count": n_path,
+            "continuity_ratio": ratio
+        })
+
+    return {
+        "train_number": train.number,
+        "timetable_snapshot_id": snapshot_id,
+        "total_transition_count": len(transitions),
+        "average_continuity_ratio": sum(ratios) / len(ratios),
+        "minimum_continuity_ratio": min(ratios),
+        "maximum_continuity_ratio": max(ratios),
+        "transitions": transitions
+    }
