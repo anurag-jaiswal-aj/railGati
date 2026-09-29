@@ -6130,3 +6130,95 @@ def calculate_train_sequence_disjoint_subpath_reconvergences(
         "total_reconvergence_count": len(reconvergences),
         "reconvergences": reconvergences
     }
+
+def calculate_train_sequence_topological_degree_extremes(
+    db: Session, snapshot_id: int, train_number: str
+) -> dict[str, typing.Any]:
+    """Calculate Train Sequence Topological Degree Extremes."""
+    from railgati.models.train import Train
+    from sqlalchemy import func, select, text
+
+    train = db.scalar(select(Train).filter(func.upper(Train.number) == train_number.upper()))
+    if not train:
+        raise ValueError(f"Train '{train_number}' not found.")
+
+    query = text("""
+    WITH edge_pairs AS (
+        SELECT o1.station_id as s1, o2.station_id as s2
+        FROM train_stop_observations o1
+        JOIN train_stop_observations o2
+          ON o1.train_id = o2.train_id 
+         AND o1.snapshot_id = o2.snapshot_id
+         AND o2.stop_sequence = o1.stop_sequence + 1
+        WHERE o1.snapshot_id = :snap_id
+    ),
+    undirected_edges AS (
+        SELECT s1 as u, s2 as v FROM edge_pairs
+        UNION
+        SELECT s2 as u, s1 as v FROM edge_pairs
+    ),
+    station_degrees AS (
+        SELECT u as station_id, count(distinct v) as global_degree
+        FROM undirected_edges
+        GROUP BY u
+    ),
+    target_seq AS (
+        SELECT 
+            o.stop_sequence,
+            s.code as station_code,
+            COALESCE(sd.global_degree, 0) as global_degree,
+            LAG(COALESCE(sd.global_degree, 0)) OVER (ORDER BY o.stop_sequence) as prev_deg,
+            LEAD(COALESCE(sd.global_degree, 0)) OVER (ORDER BY o.stop_sequence) as next_deg,
+            ROW_NUMBER() OVER (ORDER BY o.stop_sequence) as rnum,
+            COUNT(*) OVER () as total_count
+        FROM train_stop_observations o
+        JOIN stations s ON s.id = o.station_id
+        LEFT JOIN station_degrees sd ON sd.station_id = o.station_id
+        WHERE o.train_id = :train_id AND o.snapshot_id = :snap_id
+    )
+    SELECT
+        stop_sequence,
+        station_code,
+        global_degree,
+        CASE
+            WHEN rnum = 1 OR rnum = total_count THEN 'TERMINAL'
+            WHEN global_degree > prev_deg AND global_degree > next_deg THEN 'LOCAL_MAXIMUM'
+            WHEN global_degree < prev_deg AND global_degree < next_deg THEN 'LOCAL_MINIMUM'
+            ELSE 'TRANSIT'
+        END as classification_type
+    FROM target_seq
+    ORDER BY stop_sequence
+    """)
+
+    rows = db.execute(query, {"train_id": train.id, "snap_id": snapshot_id}).fetchall()
+    
+    local_maxima_count = 0
+    local_minima_count = 0
+    transit_count = 0
+    sequence_classification = []
+    
+    for row in rows:
+        classification = row.classification_type
+        if classification == "LOCAL_MAXIMUM":
+            local_maxima_count += 1
+        elif classification == "LOCAL_MINIMUM":
+            local_minima_count += 1
+        elif classification == "TRANSIT":
+            transit_count += 1
+            
+        sequence_classification.append({
+            "stop_sequence": row.stop_sequence,
+            "station_code": row.station_code,
+            "global_degree": row.global_degree,
+            "classification_type": classification
+        })
+        
+    return {
+        "train_number": train.number,
+        "timetable_snapshot_id": snapshot_id,
+        "total_stops": len(rows),
+        "local_maxima_count": local_maxima_count,
+        "local_minima_count": local_minima_count,
+        "transit_count": transit_count,
+        "sequence_classification": sequence_classification
+    }

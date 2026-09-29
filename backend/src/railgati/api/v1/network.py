@@ -2320,3 +2320,36 @@ def get_train_sequence_disjoint_subpath_reconvergences(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get(
+    "/trains/{train_number}/topological-degree-extremes",
+    response_model=schemas.TrainSequenceTopologicalDegreeExtremesResponse,
+    responses={404: {"description": "Train not found"}},
+    summary="Get Train Sequence Topological Degree Extremes",
+)
+def get_train_sequence_topological_degree_extremes(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """
+    Get Phase 58: Train Sequence Topological Degree Extremes.
+    
+    Evaluates the discrete local-extrema of global station degree along the ordered sequence of a train.
+    """
+    try:
+        snapshot_id = get_active_timetable_snapshot_id(db)
+        if not snapshot_id:
+            raise HTTPException(status_code=503, detail="No active timetable snapshot available.")
+
+        from railgati.services.network import calculate_train_sequence_topological_degree_extremes
+
+        res = calculate_train_sequence_topological_degree_extremes(db, snapshot_id, train_number)
+        return schemas.TrainSequenceTopologicalDegreeExtremesResponse(**res)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        if "not found" in str(e).lower() and "train" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

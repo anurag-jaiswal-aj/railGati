@@ -1025,3 +1025,22 @@ class TrainSequenceDisjointSubpathReconvergencesResponse(BaseModel):
     timetable_snapshot_id: int
     total_reconvergence_count: int
     reconvergences: list[TrainSequenceDisjointSubpathReconvergenceRecord]
+
+
+class TopologicalDegreeExtremesClassification(BaseModel):
+    stop_sequence: int
+    station_code: str
+    global_degree: int
+    classification_type: str
+
+
+class TrainSequenceTopologicalDegreeExtremesResponse(BaseModel):
+    """Network Train Sequence Topological Degree Extremes analytics."""
+
+    train_number: str
+    timetable_snapshot_id: int
+    total_stops: int
+    local_maxima_count: int
+    local_minima_count: int
+    transit_count: int
+    sequence_classification: list[TopologicalDegreeExtremesClassification]
