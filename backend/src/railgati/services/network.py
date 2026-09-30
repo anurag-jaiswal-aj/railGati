@@ -6613,3 +6613,106 @@ def calculate_train_structural_shortest_path_divergence(
         "divergence_absolute": div_abs,
         "divergence_ratio": div_ratio,
     }
+
+
+def calculate_station_junction_through_service(
+    db: Session, timetable_snapshot_id: int, station_code: str
+) -> dict[str, typing.Any]:
+    import typing
+    from railgati.models.station import Station, StationObservation
+
+    station = db.scalar(select(Station).filter(Station.code == station_code))
+    if not station:
+        raise ValueError(f"Station not found: '{station_code}'")
+
+    obs = db.scalar(select(StationObservation.name).filter(
+        StationObservation.station_id == station.id,
+        StationObservation.snapshot_id == timetable_snapshot_id
+    ))
+    station_name = obs if obs else station_code
+
+    # Step 1: Find topological neighbors in active snapshot
+    neighbors_query = text("""
+        SELECT DISTINCT CASE WHEN from_station_id = :st_id THEN to_station_id ELSE from_station_id END
+        FROM railway_network_edges
+        WHERE timetable_snapshot_id = :snap_id AND (from_station_id = :st_id OR to_station_id = :st_id)
+    """)
+    neighbor_ids = [row[0] for row in db.execute(neighbors_query, {"st_id": station.id, "snap_id": timetable_snapshot_id}).fetchall()]
+    k = len(neighbor_ids)
+
+    if k < 2:
+        raise ValueError(f"Station '{station_code}' is not a structural junction (degree = {k}) in this snapshot")
+
+    possible_pairs = k * (k - 1) // 2
+
+    # Step 2: Extract sequences for trains passing through S
+    bridged_query = text("""
+        WITH target_trains AS (
+            SELECT DISTINCT train_id
+            FROM train_stop_observations
+            WHERE snapshot_id = :snap_id AND station_id = :st_id
+        ),
+        sequence_visits AS (
+            SELECT
+                train_id,
+                LAG(station_id) OVER (PARTITION BY train_id ORDER BY stop_sequence) as prev_stn,
+                station_id,
+                LEAD(station_id) OVER (PARTITION BY train_id ORDER BY stop_sequence) as next_stn
+            FROM train_stop_observations
+            WHERE snapshot_id = :snap_id AND train_id IN (SELECT train_id FROM target_trains)
+        )
+        SELECT prev_stn, next_stn, train_id
+        FROM sequence_visits
+        WHERE station_id = :st_id AND prev_stn IS NOT NULL AND next_stn IS NOT NULL AND prev_stn != next_stn
+    """)
+    visits = db.execute(bridged_query, {"snap_id": timetable_snapshot_id, "st_id": station.id}).fetchall()
+
+    neighbor_set = set(neighbor_ids)
+    served_pairs_map: dict[tuple[int, int], set[int]] = {}
+
+    for prev_stn, next_stn, train_id in visits:
+        if prev_stn in neighbor_set and next_stn in neighbor_set:
+            # Canonicalize unordered pair (A,B) and deduplicate train identities
+            pair = tuple(sorted([prev_stn, next_stn]))
+            if pair not in served_pairs_map:
+                served_pairs_map[pair] = set()
+            served_pairs_map[pair].add(train_id)
+
+    relevant_ids = set()
+    for (a, b) in served_pairs_map.keys():
+        relevant_ids.add(a)
+        relevant_ids.add(b)
+
+    st_codes = {}
+    if relevant_ids:
+        rows = db.execute(select(Station.id, Station.code).where(Station.id.in_(relevant_ids))).fetchall()
+        st_codes = {r[0]: r[1] for r in rows}
+
+    served_pairs_out = []
+    for (a, b), train_ids in served_pairs_map.items():
+        # Enforce canonical string sorting for neighbor_a and neighbor_b
+        code_a = st_codes[a]
+        code_b = st_codes[b]
+        if code_a > code_b:
+            code_a, code_b = code_b, code_a
+
+        served_pairs_out.append({
+            "neighbor_a": code_a,
+            "neighbor_b": code_b,
+            "qualifying_train_count": len(train_ids)
+        })
+
+    served_pairs_out.sort(key=lambda x: (x["neighbor_a"], x["neighbor_b"]))
+
+    served_count = len(served_pairs_out)
+    ratio = round(served_count / possible_pairs, 4)
+
+    return {
+        "station_code": station.code,
+        "station_name": station_name,
+        "neighbor_count": k,
+        "possible_neighbor_pairs": possible_pairs,
+        "served_neighbor_pairs": served_count,
+        "through_service_pair_ratio": ratio,
+        "served_pairs": served_pairs_out,
+    }

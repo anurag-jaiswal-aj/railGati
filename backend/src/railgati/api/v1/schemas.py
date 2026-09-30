@@ -1107,3 +1107,21 @@ class TrainStructuralShortestPathDivergence(BaseModel):
     )
     divergence_absolute: int | None = Field(..., description="Difference between actual and shortest path length")
     divergence_ratio: float | None = Field(..., description="Ratio of actual to shortest path length")
+
+
+class StationJunctionServedPair(BaseModel):
+    neighbor_a: str
+    neighbor_b: str
+    qualifying_train_count: int
+
+
+class StationJunctionThroughServiceResponse(BaseModel):
+    """Network Station Junction Through-Service Connectivity."""
+
+    station_code: str
+    station_name: str
+    neighbor_count: int
+    possible_neighbor_pairs: int
+    served_neighbor_pairs: int
+    through_service_pair_ratio: float | None
+    served_pairs: list[StationJunctionServedPair]

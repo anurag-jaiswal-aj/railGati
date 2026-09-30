@@ -2473,3 +2473,36 @@ def get_network_train_structural_shortest_path_divergence(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/stations/{station_code}/junction-through-service",
+    response_model=schemas.StationJunctionThroughServiceResponse,
+    summary="Station Junction Through-Service Connectivity",
+)
+def get_network_station_junction_through_service(
+    station_code: str,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """
+    Get Phase 63: Station Junction Through-Service Connectivity.
+
+    Evaluates a station that acts as a structural junction to determine
+    the proportion of its topological branch pairings that are explicitly
+    traversed by a continuous through-service sequence.
+    """
+    try:
+        from railgati.services.network import calculate_station_junction_through_service
+        from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+
+        snapshot_id = get_active_timetable_snapshot_id(db)
+        res = calculate_station_junction_through_service(db, snapshot_id, station_code)
+        return schemas.StationJunctionThroughServiceResponse(**res)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        if "not found" in str(e).lower() and "station" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
