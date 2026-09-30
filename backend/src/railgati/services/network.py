@@ -7312,3 +7312,126 @@ def calculate_train_sequence_subgraph_diameter(
         "subgraph_connected": True,
         "component_count": components,
     }
+
+
+def calculate_train_sequence_subgraph_wiener_index(
+    db: Session, snapshot_id: int, train_number: str
+) -> dict[str, typing.Any]:
+    """Calculate the Wiener index of the undirected subgraph induced by a train's sequence."""
+    import collections
+
+    from sqlalchemy import func, select
+
+    from railgati.models.graph import RailwayNetworkEdge
+    from railgati.models.train import Train, TrainStopObservation
+
+    train = db.scalar(
+        select(Train).filter(
+            func.upper(Train.number) == train_number.upper()
+        )
+    )
+    if not train:
+        raise ValueError(f"Train '{train_number}' not found.")
+
+    # 1. Fetch distinct station identities visited by the target train
+    route_stations = set(
+        db.scalars(
+            select(TrainStopObservation.station_id)
+            .filter_by(train_id=train.id, snapshot_id=snapshot_id)
+        ).all()
+    )
+
+    n_stations = len(route_stations)
+
+    if n_stations == 0:
+        raise ValueError(
+            f"Train '{train_number}' has no stops in active snapshot."
+        )
+
+    if n_stations == 1:
+        return {
+            "train_number": train.number,
+            "timetable_snapshot_id": snapshot_id,
+            "route_station_count": n_stations,
+            "subgraph_wiener_index": 0,
+            "subgraph_connected": True,
+            "component_count": 1,
+        }
+
+    # 2. Fetch canonical edges where BOTH endpoints are in the route
+    edges = db.scalars(
+        select(RailwayNetworkEdge)
+        .filter_by(timetable_snapshot_id=snapshot_id)
+        .filter(
+            RailwayNetworkEdge.from_station_id.in_(route_stations)
+        )
+        .filter(
+            RailwayNetworkEdge.to_station_id.in_(route_stations)
+        )
+    ).all()
+
+    # 3. Build adjacency list for V_T
+    adj: dict[int, set[int]] = {s: set() for s in route_stations}
+    for edge in edges:
+        u, v = edge.from_station_id, edge.to_station_id
+        if u != v:
+            adj[u].add(v)
+            adj[v].add(u)
+
+    # 4. Find connected components
+    visited: set[int] = set()
+    components = 0
+    for s in route_stations:
+        if s not in visited:
+            components += 1
+            q = collections.deque([s])
+            visited.add(s)
+            while q:
+                curr = q.popleft()
+                for nxt in adj[curr]:
+                    if nxt not in visited:
+                        visited.add(nxt)
+                        q.append(nxt)
+
+    # 5. If disconnected, Wiener index is undefined
+    if components > 1:
+        return {
+            "train_number": train.number,
+            "timetable_snapshot_id": snapshot_id,
+            "route_station_count": n_stations,
+            "subgraph_wiener_index": None,
+            "subgraph_connected": False,
+            "component_count": components,
+        }
+
+    # 6. Compute Wiener index via BFS from each vertex
+    # Sum d(s, v) for v > s (canonical ordering) to count each
+    # unordered pair exactly once.
+    sorted_stations = sorted(route_stations)
+    station_rank: dict[int, int] = {
+        sid: i for i, sid in enumerate(sorted_stations)
+    }
+    wiener_index = 0
+    for s in sorted_stations:
+        s_rank = station_rank[s]
+        local_visited = {s}
+        q_dist: collections.deque[tuple[int, int]] = (
+            collections.deque([(s, 0)])
+        )
+        while q_dist:
+            curr, dist = q_dist.popleft()
+            if station_rank[curr] > s_rank:
+                wiener_index += dist
+            for nxt in adj[curr]:
+                if nxt not in local_visited:
+                    local_visited.add(nxt)
+                    q_dist.append((nxt, dist + 1))
+
+    return {
+        "train_number": train.number,
+        "timetable_snapshot_id": snapshot_id,
+        "route_station_count": n_stations,
+        "subgraph_wiener_index": wiener_index,
+        "subgraph_connected": True,
+        "component_count": components,
+    }

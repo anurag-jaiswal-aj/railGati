@@ -1217,3 +1217,12 @@ class TrainSequenceSubgraphDiameterResponse(BaseModel):
     subgraph_diameter: int | None
     subgraph_connected: bool
     component_count: int
+
+
+class TrainSequenceSubgraphWienerIndexResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    route_station_count: int
+    subgraph_wiener_index: int | None
+    subgraph_connected: bool
+    component_count: int

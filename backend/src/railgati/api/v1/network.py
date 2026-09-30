@@ -50,6 +50,7 @@ from railgati.services.network import (
     calculate_station_pair_route_boundary_confinement,
     calculate_train_sequence_subgraph_diameter,
     calculate_train_sequence_subgraph_triangles,
+    calculate_train_sequence_subgraph_wiener_index,
     find_network_paths,
     find_reachable_stations,
 )
@@ -2846,3 +2847,45 @@ def get_train_subgraph_diameter(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+@router.get(
+    "/trains/{train_number}/subgraph-wiener-index",
+    response_model=schemas.TrainSequenceSubgraphWienerIndexResponse,
+    summary="Get topological subgraph Wiener index for a train's sequence",
+    description=(
+        "Returns the sum of all pairwise shortest-path distances"
+        " within the train's induced topological subgraph."
+    ),
+)
+def get_train_subgraph_wiener_index(
+    train_number: Annotated[
+        str,
+        Path(
+            description="Canonical train number.",
+            min_length=1,
+            max_length=20,
+        ),
+    ],
+    db: Session = Depends(get_db),  # noqa: B008
+) -> schemas.TrainSequenceSubgraphWienerIndexResponse:
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return schemas.TrainSequenceSubgraphWienerIndexResponse(
+            **calculate_train_sequence_subgraph_wiener_index(
+                db=db,
+                snapshot_id=timetable_snapshot_id,
+                train_number=train_number,
+            )
+        )
+    except ValueError as e:
+        if "not found" in str(e).lower() or "no stops" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
