@@ -1208,3 +1208,12 @@ class TrainSequenceSubgraphTrianglesResponse(BaseModel):
     timetable_snapshot_id: int
     route_length: int
     subgraph_triangles: int
+
+
+class TrainSequenceSubgraphDiameterResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    route_station_count: int
+    subgraph_diameter: int | None
+    subgraph_connected: bool
+    component_count: int

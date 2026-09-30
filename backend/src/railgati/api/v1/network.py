@@ -32,9 +32,9 @@ from railgati.api.v1.schemas import (
     StructuralHaltResponse,
     TemporalConcentrationResponse,
     TerminusResponse,
+    TrainSequenceSubgraphTrianglesResponse,
     TrainSimilarityResponse,
     TravelTimeResponse,
-    TrainSequenceSubgraphTrianglesResponse,
 )
 from railgati.api.v1.snapshots import (
     get_active_station_snapshot_id,
@@ -48,6 +48,7 @@ from railgati.services.network import (
     calculate_network_edge_asymmetry,
     calculate_network_temporal_concentration,
     calculate_station_pair_route_boundary_confinement,
+    calculate_train_sequence_subgraph_diameter,
     calculate_train_sequence_subgraph_triangles,
     find_network_paths,
     find_reachable_stations,
@@ -2798,6 +2799,45 @@ def get_train_subgraph_triangles(
         )
     except ValueError as e:
         if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.get(
+    "/trains/{train_number}/subgraph-diameter",
+    response_model=schemas.TrainSequenceSubgraphDiameterResponse,
+    summary="Get topological subgraph diameter for a train's sequence",
+    description="Returns the max shortest-path distance structurally within the train's induced topological subgraph.",
+)
+def get_train_subgraph_diameter(
+    train_number: Annotated[
+        str,
+        Path(
+            description="Canonical train number.",
+            min_length=1,
+            max_length=20,
+        ),
+    ],
+    db: Session = Depends(get_db),  # noqa: B008
+) -> schemas.TrainSequenceSubgraphDiameterResponse:
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return schemas.TrainSequenceSubgraphDiameterResponse(
+            **calculate_train_sequence_subgraph_diameter(
+                db=db,
+                snapshot_id=timetable_snapshot_id,
+                train_number=train_number,
+            )
+        )
+    except ValueError as e:
+        if "not found" in str(e).lower() or "no stops" in str(e).lower():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(e),
