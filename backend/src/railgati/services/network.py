@@ -6442,3 +6442,174 @@ def calculate_station_strict_local_bridges(
         "total_neighbor_pairs": len(evaluated_pairs),
         "evaluated_pairs": evaluated_pairs
     }
+
+
+def calculate_train_single_station_intersections(
+    db: Session,
+    snapshot_id: int,
+    target_train_number: str
+) -> dict:
+    from sqlalchemy import select, text, func
+
+    from railgati.models.train import Train, TrainObservation
+
+    target = db.execute(
+        select(Train.id, Train.number)
+        .join(TrainObservation, TrainObservation.train_id == Train.id)
+        .filter(
+            TrainObservation.snapshot_id == snapshot_id,
+            func.lower(Train.number) == target_train_number.lower(),
+        )
+    ).first()
+
+    if not target:
+        raise ValueError(f"Train {target_train_number} not found in snapshot {snapshot_id}")
+
+    target_train_id = target.id
+    target_train_number_resolved = target.number
+
+    query = text("""
+        WITH target_stations AS (
+            SELECT DISTINCT station_id
+            FROM train_stop_observations
+            WHERE snapshot_id = :snapshot_id
+              AND train_id = :target_train_id
+        ),
+        intersecting_trains AS (
+            SELECT tso.train_id, tso.station_id
+            FROM train_stop_observations tso
+            JOIN target_stations ts ON tso.station_id = ts.station_id
+            WHERE tso.snapshot_id = :snapshot_id
+              AND tso.train_id != :target_train_id
+        ),
+        qualifying_trains AS (
+            SELECT train_id, MIN(station_id) as shared_station_id
+            FROM intersecting_trains
+            GROUP BY train_id
+            HAVING COUNT(DISTINCT station_id) = 1
+        )
+        SELECT
+            t.number AS other_train_number,
+            t_obs.name AS other_train_name,
+            s.code AS shared_station_code,
+            s_obs.name AS shared_station_name
+        FROM qualifying_trains qt
+        JOIN trains t ON t.id = qt.train_id
+        JOIN train_observations t_obs ON t_obs.train_id = t.id AND t_obs.snapshot_id = :snapshot_id
+        JOIN stations s ON s.id = qt.shared_station_id
+        LEFT JOIN station_observations s_obs ON s_obs.station_id = s.id AND s_obs.snapshot_id = :snapshot_id
+        ORDER BY t.number ASC
+    """)
+
+    rows = db.execute(query, {
+        "snapshot_id": snapshot_id,
+        "target_train_id": target_train_id
+    }).fetchall()
+
+    items = []
+    for row in rows:
+        items.append({
+            "other_train_number": row.other_train_number,
+            "other_train_name": row.other_train_name,
+            "shared_station_code": row.shared_station_code,
+            "shared_station_name": row.shared_station_name
+        })
+
+    return {
+        "target_train_number": target_train_number_resolved,
+        "timetable_snapshot_id": snapshot_id,
+        "total_intersecting_trains": len(items),
+        "items": items
+    }
+
+
+def calculate_train_structural_shortest_path_divergence(
+    db: Session, timetable_snapshot_id: int, train_number: str
+) -> dict[str, typing.Any]:
+    """Calculate Train Route Structural Shortest-Path Divergence."""
+    from sqlalchemy import select
+
+    from railgati.models.graph import RailwayGraphBuild, RailwayNetworkEdge
+    from railgati.models.station import Station
+    from railgati.models.train import Train, TrainStopObservation
+
+    build = db.scalar(
+        select(RailwayGraphBuild).filter(
+            RailwayGraphBuild.timetable_snapshot_id == timetable_snapshot_id
+        )
+    )
+    if not build or build.status != "ACTIVE":
+        raise ValueError("Active graph build unavailable for this snapshot")
+
+    train = db.scalar(select(Train).filter(Train.number == train_number.upper()))
+    if not train:
+        raise ValueError(f"Train '{train_number}' not found")
+
+    stops = db.execute(
+        select(TrainStopObservation.station_id)
+        .filter(
+            TrainStopObservation.snapshot_id == timetable_snapshot_id,
+            TrainStopObservation.train_id == train.id
+        )
+        .order_by(TrainStopObservation.stop_sequence)
+    ).scalars().all()
+
+    if not stops:
+        raise ValueError(f"Train '{train_number}' has no scheduled stops in this snapshot")
+
+    start_id = stops[0]
+    end_id = stops[-1]
+    actual_edges = len(stops) - 1
+
+    shortest_edges: int | None = None
+
+    if start_id == end_id:
+        shortest_edges = 0
+    else:
+        query = text("""
+            WITH RECURSIVE search_graph(station_id, depth) AS (
+                SELECT :start_id, 0
+                UNION
+                SELECT
+                    CASE WHEN e.from_station_id = sg.station_id THEN e.to_station_id ELSE e.from_station_id END,
+                    sg.depth + 1
+                FROM search_graph sg
+                JOIN railway_network_edges e ON
+                    (e.from_station_id = sg.station_id OR e.to_station_id = sg.station_id)
+                    AND e.timetable_snapshot_id = :snapshot_id
+                WHERE sg.depth < :max_edges
+            )
+            SELECT depth FROM search_graph WHERE station_id = :end_id ORDER BY depth LIMIT 1;
+        """)
+
+        res = db.execute(query, {
+            "start_id": start_id,
+            "end_id": end_id,
+            "snapshot_id": timetable_snapshot_id,
+            "max_edges": actual_edges
+        }).scalar()
+
+        if res is not None:
+            shortest_edges = int(res)
+
+    start_st = db.scalar(select(Station.code).filter(Station.id == start_id))
+    end_st = db.scalar(select(Station.code).filter(Station.id == end_id))
+
+    div_abs: int | None = None
+    div_ratio: float | None = None
+
+    if shortest_edges is not None:
+        div_abs = actual_edges - shortest_edges
+        if shortest_edges > 0:
+            div_ratio = round(actual_edges / shortest_edges, 4)
+
+    return {
+        "train_number": train.number,
+        "timetable_snapshot_id": timetable_snapshot_id,
+        "start_station_code": start_st,
+        "end_station_code": end_st,
+        "actual_structural_edges": actual_edges,
+        "shortest_structural_edges": shortest_edges,
+        "divergence_absolute": div_abs,
+        "divergence_ratio": div_ratio,
+    }

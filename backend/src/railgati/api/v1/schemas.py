@@ -491,6 +491,25 @@ class TrainSimilarityResponse(BaseModel):
     items: list[TrainSimilarityItem]
 
 
+class TrainSingleStationIntersectionItem(BaseModel):
+    """A train that intersects the target train at exactly one station identity."""
+
+    other_train_number: str
+    other_train_name: str | None = None
+    shared_station_code: str
+    shared_station_name: str | None = None
+
+
+class TrainSingleStationIntersectionResponse(BaseModel):
+    """Network single-station train intersection analytics for the active timetable snapshot."""
+
+    target_train_number: str
+    timetable_snapshot_id: int
+    total_intersecting_trains: int
+    items: list[TrainSingleStationIntersectionItem]
+
+
+
 class StationSimilarityItem(BaseModel):
     """Historical timetable service-set similarity for a compared station."""
 
@@ -1075,3 +1094,16 @@ class StationStrictLocalBridgesResponse(BaseModel):
     timetable_snapshot_id: int
     total_neighbor_pairs: int
     evaluated_pairs: list[NeighborPairEvaluation]
+class TrainStructuralShortestPathDivergence(BaseModel):
+    """Network Train Route Structural Shortest-Path Divergence."""
+
+    train_number: str = Field(..., description="Canonical target train number")
+    timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
+    start_station_code: str = Field(..., description="First station visited by the train")
+    end_station_code: str = Field(..., description="Last station visited by the train")
+    actual_structural_edges: int = Field(..., description="Actual number of structural edges traversed")
+    shortest_structural_edges: int | None = Field(
+        ..., description="Minimum structural hops between terminals in the global network graph"
+    )
+    divergence_absolute: int | None = Field(..., description="Difference between actual and shortest path length")
+    divergence_ratio: float | None = Field(..., description="Ratio of actual to shortest path length")

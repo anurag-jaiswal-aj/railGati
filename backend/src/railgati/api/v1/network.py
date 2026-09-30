@@ -2410,3 +2410,66 @@ def get_station_strict_local_bridges(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/trains/{train_number}/single-station-intersections",
+    response_model=schemas.TrainSingleStationIntersectionResponse,
+    summary="Get Train Route Single-Station Intersections",
+    response_model_exclude_none=True,
+)
+def get_network_train_single_station_intersections(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """
+    Get Phase 61: Train Route Single-Station Intersection Analytics.
+
+    Identifies other trains that intersect the target train at exactly one station identity.
+    """
+    try:
+        from railgati.services.network import calculate_train_single_station_intersections
+        from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+
+        snapshot_id = get_active_timetable_snapshot_id(db)
+        res = calculate_train_single_station_intersections(db, snapshot_id, train_number)
+        return schemas.TrainSingleStationIntersectionResponse(**res)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        if "not found" in str(e).lower() and "train" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get(
+    "/trains/{train_number}/structural-shortest-path-divergence",
+    response_model=schemas.TrainStructuralShortestPathDivergence,
+    summary="Train Route Structural Shortest-Path Divergence",
+)
+def get_network_train_structural_shortest_path_divergence(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """
+    Get Phase 62: Train Route Structural Shortest-Path Divergence.
+
+    Compares the actual number of consecutive timetable network edges traversed
+    against the minimum unweighted structural network hops between start and end.
+    """
+    try:
+        from railgati.services.network import calculate_train_structural_shortest_path_divergence
+        from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+
+        snapshot_id = get_active_timetable_snapshot_id(db)
+        res = calculate_train_structural_shortest_path_divergence(db, snapshot_id, train_number)
+        return schemas.TrainStructuralShortestPathDivergence(**res)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        if "not found" in str(e).lower() and "train" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
