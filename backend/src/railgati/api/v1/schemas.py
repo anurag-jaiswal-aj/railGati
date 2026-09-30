@@ -1226,3 +1226,10 @@ class TrainSequenceSubgraphWienerIndexResponse(BaseModel):
     subgraph_wiener_index: int | None
     subgraph_connected: bool
     component_count: int
+
+
+class NetworkStationTopologicalFarnessResponse(BaseModel):
+    station_code: str
+    timetable_snapshot_id: int
+    topological_farness: int
+    reachable_station_count: int

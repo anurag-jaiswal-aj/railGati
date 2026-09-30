@@ -48,6 +48,7 @@ from railgati.services.network import (
     calculate_network_edge_asymmetry,
     calculate_network_temporal_concentration,
     calculate_station_pair_route_boundary_confinement,
+    calculate_station_topological_farness,
     calculate_train_sequence_subgraph_diameter,
     calculate_train_sequence_subgraph_triangles,
     calculate_train_sequence_subgraph_wiener_index,
@@ -2881,6 +2882,48 @@ def get_train_subgraph_wiener_index(
         )
     except ValueError as e:
         if "not found" in str(e).lower() or "no stops" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+
+@router.get(
+    "/stations/{station_code}/topological-farness",
+    response_model=schemas.NetworkStationTopologicalFarnessResponse,
+    summary="Get topological farness for a station",
+    description=(
+        "Returns the sum of all shortest-path distances from the target station to all "
+        "other reachable stations in the global active timetable graph."
+    ),
+)
+def get_station_topological_farness(
+    station_code: Annotated[
+        str,
+        Path(
+            description="Canonical station code.",
+            min_length=1,
+            max_length=20,
+        ),
+    ],
+    db: Session = Depends(get_db),  # noqa: B008
+) -> schemas.NetworkStationTopologicalFarnessResponse:
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return schemas.NetworkStationTopologicalFarnessResponse(
+            **calculate_station_topological_farness(
+                db=db,
+                snapshot_id=timetable_snapshot_id,
+                station_code=station_code,
+            )
+        )
+    except ValueError as e:
+        if "not found" in str(e).lower():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(e),

@@ -7435,3 +7435,71 @@ def calculate_train_sequence_subgraph_wiener_index(
         "subgraph_connected": True,
         "component_count": components,
     }
+
+
+def calculate_station_topological_farness(
+    db: Session, snapshot_id: int, station_code: str
+) -> dict[str, typing.Any]:
+    """Calculate the topological farness of a station in the active global graph."""
+    import collections
+
+    from sqlalchemy import func, select
+
+    from railgati.models.graph import RailwayNetworkEdge
+    from railgati.models.station import Station
+
+    station = db.scalar(
+        select(Station).filter(
+            func.upper(Station.code) == station_code.upper()
+        )
+    )
+    if not station:
+        raise ValueError(f"Station '{station_code}' not found.")
+
+    # Fetch global edges for the active snapshot
+    edges = db.scalars(
+        select(RailwayNetworkEdge).filter_by(
+            timetable_snapshot_id=snapshot_id
+        )
+    ).all()
+
+    # Build undirected adjacency
+    adj: dict[int, set[int]] = collections.defaultdict(set)
+    for edge in edges:
+        u, v = edge.from_station_id, edge.to_station_id
+        if u != v:
+            adj[u].add(v)
+            adj[v].add(u)
+
+    s = station.id
+    farness = 0
+    reachable_count = 0
+
+    if s not in adj:
+        # Isolated station
+        return {
+            "station_code": station.code,
+            "timetable_snapshot_id": snapshot_id,
+            "topological_farness": 0,
+            "reachable_station_count": 1,
+        }
+
+    visited = {s}
+    q: collections.deque[tuple[int, int]] = collections.deque([(s, 0)])
+
+    while q:
+        curr, dist = q.popleft()
+        farness += dist
+        reachable_count += 1
+
+        for nxt in adj[curr]:
+            if nxt not in visited:
+                visited.add(nxt)
+                q.append((nxt, dist + 1))
+
+    return {
+        "station_code": station.code,
+        "timetable_snapshot_id": snapshot_id,
+        "topological_farness": farness,
+        "reachable_station_count": reachable_count,
+    }
