@@ -6716,3 +6716,76 @@ def calculate_station_junction_through_service(
         "through_service_pair_ratio": ratio,
         "served_pairs": served_pairs_out,
     }
+
+def calculate_train_topological_perimeter_expansion(
+    db: Session, timetable_snapshot_id: int, train_number: str
+) -> dict[str, typing.Any]:
+    import typing
+    from railgati.models.train import Train
+    from sqlalchemy import select, text
+    train = db.scalar(select(Train).filter(Train.number == train_number))
+    if not train:
+        raise ValueError(f"Train not found: '{train_number}'")
+
+    # Verify train exists in snapshot
+    route_count = db.scalar(
+        text("SELECT COUNT(DISTINCT station_id) FROM train_stop_observations WHERE train_id = :tr_id AND snapshot_id = :snap_id"),
+        {"tr_id": train.id, "snap_id": timetable_snapshot_id}
+    )
+
+    if not route_count or route_count == 0:
+        raise ValueError(f"Train not found: '{train_number}'")
+
+    query = text("""
+        WITH route_stations AS (
+            SELECT DISTINCT station_id
+            FROM train_stop_observations
+            WHERE train_id = :tr_id AND snapshot_id = :snap_id
+        ),
+        adjacent_stations AS (
+            SELECT to_station_id AS st_id
+            FROM railway_network_edges
+            WHERE timetable_snapshot_id = :snap_id
+              AND from_station_id IN (SELECT station_id FROM route_stations)
+            UNION
+            SELECT from_station_id AS st_id
+            FROM railway_network_edges
+            WHERE timetable_snapshot_id = :snap_id
+              AND to_station_id IN (SELECT station_id FROM route_stations)
+        ),
+        perimeter_stations AS (
+            SELECT st_id
+            FROM adjacent_stations
+            EXCEPT
+            SELECT station_id FROM route_stations
+        )
+        SELECT
+            p.st_id,
+            s.code,
+            so.name
+        FROM perimeter_stations p
+        JOIN stations s ON s.id = p.st_id
+        LEFT JOIN station_observations so ON so.station_id = p.st_id AND so.snapshot_id = :snap_id
+        ORDER BY s.code
+    """)
+
+    results = db.execute(
+        query,
+        {"tr_id": train.id, "snap_id": timetable_snapshot_id}
+    ).mappings().all()
+
+    perimeter_count = len(results)
+    ratio = perimeter_count / route_count
+
+    perimeter_items = [
+        {"station_code": row["code"], "station_name": row["name"] or row["code"]}
+        for row in results
+    ]
+
+    return {
+        "target_train_number": train.number,
+        "route_station_count": route_count,
+        "perimeter_station_count": perimeter_count,
+        "perimeter_expansion_ratio": float(ratio),
+        "perimeter_stations": perimeter_items
+    }

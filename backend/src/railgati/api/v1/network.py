@@ -2506,3 +2506,38 @@ def get_network_station_junction_through_service(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/trains/{train_number}/topological-perimeter-expansion",
+    response_model=schemas.TrainTopologicalPerimeterExpansionResponse,
+    summary="Train Route Topological Perimeter Expansion",
+)
+def get_network_train_topological_perimeter_expansion(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """
+    Get Phase 64: Train Route Topological Perimeter Expansion.
+
+    Evaluates the structural 1-hop boundary of an entire train route,
+    excluding stations visited by the train itself.
+    """
+    try:
+        from railgati.services.network import calculate_train_topological_perimeter_expansion
+        from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+
+        snapshot_id = get_active_timetable_snapshot_id(db)
+        if not snapshot_id:
+            raise HTTPException(status_code=503, detail="No active timetable snapshot available.")
+
+        res = calculate_train_topological_perimeter_expansion(db, snapshot_id, train_number)
+        return schemas.TrainTopologicalPerimeterExpansionResponse(**res)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        if "not found" in str(e).lower() and "train" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

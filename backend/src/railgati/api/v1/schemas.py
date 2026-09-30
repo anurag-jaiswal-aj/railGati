@@ -1125,3 +1125,18 @@ class StationJunctionThroughServiceResponse(BaseModel):
     served_neighbor_pairs: int
     through_service_pair_ratio: float | None
     served_pairs: list[StationJunctionServedPair]
+
+
+class PerimeterStationItem(BaseModel):
+    station_code: str = Field(..., description="Canonical station code")
+    station_name: str = Field(..., description="Canonical station name")
+
+
+class TrainTopologicalPerimeterExpansionResponse(BaseModel):
+    """Train Route Topological Perimeter Expansion."""
+
+    target_train_number: str
+    route_station_count: int
+    perimeter_station_count: int
+    perimeter_expansion_ratio: float
+    perimeter_stations: list[PerimeterStationItem]
