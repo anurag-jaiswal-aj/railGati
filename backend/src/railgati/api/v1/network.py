@@ -34,6 +34,7 @@ from railgati.api.v1.schemas import (
     TerminusResponse,
     TrainSimilarityResponse,
     TravelTimeResponse,
+    TrainSequenceSubgraphTrianglesResponse,
 )
 from railgati.api.v1.snapshots import (
     get_active_station_snapshot_id,
@@ -47,6 +48,7 @@ from railgati.services.network import (
     calculate_network_edge_asymmetry,
     calculate_network_temporal_concentration,
     calculate_station_pair_route_boundary_confinement,
+    calculate_train_sequence_subgraph_triangles,
     find_network_paths,
     find_reachable_stations,
 )
@@ -2765,3 +2767,42 @@ def get_network_edge_topological_biconnected_component_endpoint(
         )
 
     return res
+
+
+@router.get(
+    "/trains/{train_number}/subgraph-triangles",
+    response_model=TrainSequenceSubgraphTrianglesResponse,
+    summary="Get topological subgraph triangles for a train's sequence",
+    description="Returns the exact number of distinct 3-cliques (triangles) in the subgraph induced by the train's sequence of stops.",
+)
+def get_train_subgraph_triangles(
+    train_number: Annotated[
+        str,
+        Path(
+            description="Canonical train number.",
+            min_length=1,
+            max_length=20,
+        ),
+    ],
+    db: Session = Depends(get_db),  # noqa: B008
+) -> TrainSequenceSubgraphTrianglesResponse:
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+    
+    try:
+        return schemas.TrainSequenceSubgraphTrianglesResponse(
+            **calculate_train_sequence_subgraph_triangles(
+                db=db,
+                snapshot_id=timetable_snapshot_id,
+                train_number=train_number,
+            )
+        )
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )

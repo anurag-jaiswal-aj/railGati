@@ -1202,3 +1202,9 @@ class NetworkEdgeTopologicalBiconnectedComponentResponse(BaseModel):
     block_edge_count: int = Field(
         ..., description="The number of edges in the maximal biconnected component containing this edge."
     )
+
+class TrainSequenceSubgraphTrianglesResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    route_length: int
+    subgraph_triangles: int

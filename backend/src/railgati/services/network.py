@@ -7141,3 +7141,69 @@ def get_edge_topological_biconnected_component(
         "to_station_code": to_station_code,
         "block_edge_count": bcc_record.block_edge_count,
     }
+
+
+def calculate_train_sequence_subgraph_triangles(
+    db: Session, snapshot_id: int, train_number: str
+) -> dict[str, typing.Any]:
+    """Calculate the number of undirected triangles in the subgraph induced by a train's sequence."""
+    from sqlalchemy import func, select
+    from railgati.models.train import Train, TrainStopObservation
+    from railgati.models.graph import RailwayNetworkEdge
+
+    train = db.scalar(select(Train).filter(func.upper(Train.number) == train_number.upper()))
+    if not train:
+        raise ValueError(f"Train '{train_number}' not found.")
+
+    # 1. Fetch distinct station identities visited by the target train
+    route_stations = set(
+        db.scalars(
+            select(TrainStopObservation.station_id)
+            .filter_by(train_id=train.id, snapshot_id=snapshot_id)
+        ).all()
+    )
+    
+    if len(route_stations) < 3:
+        return {
+            "train_number": train.number,
+            "timetable_snapshot_id": snapshot_id,
+            "route_length": len(route_stations),
+            "subgraph_triangles": 0,
+        }
+
+    # 2. Fetch canonical edges where BOTH endpoints are in the route
+    edges = db.scalars(
+        select(RailwayNetworkEdge)
+        .filter_by(timetable_snapshot_id=snapshot_id)
+        .filter(RailwayNetworkEdge.from_station_id.in_(route_stations))
+        .filter(RailwayNetworkEdge.to_station_id.in_(route_stations))
+    ).all()
+
+    # 3. Build adjacency list for V_T
+    adj = {s: set() for s in route_stations}
+    for edge in edges:
+        u, v = edge.from_station_id, edge.to_station_id
+        if u != v:  # Ignore self-loops just in case
+            adj[u].add(v)
+            adj[v].add(u)
+
+    # 4. Count triangles
+    triangles = 0
+    route_list = list(route_stations)
+    n = len(route_list)
+    for i in range(n):
+        u = route_list[i]
+        for j in range(i + 1, n):
+            v = route_list[j]
+            if v in adj[u]:
+                for k in range(j + 1, n):
+                    w = route_list[k]
+                    if w in adj[u] and w in adj[v]:
+                        triangles += 1
+
+    return {
+        "train_number": train.number,
+        "timetable_snapshot_id": snapshot_id,
+        "route_length": len(route_stations),
+        "subgraph_triangles": triangles,
+    }
