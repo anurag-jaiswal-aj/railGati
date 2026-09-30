@@ -1991,7 +1991,7 @@ def api_get_station_pair_route_extension(
         if not timetable_snapshot_id:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="No active timetable snapshot"
+                detail="No active timetable snapshot",
             )
 
         result = calculate_station_pair_route_extension(
@@ -2000,7 +2000,7 @@ def api_get_station_pair_route_extension(
         if not result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No direct valid traversal found or stations missing"
+                detail="No direct valid traversal found or stations missing",
             )
         return result
     except ValueError as e:
@@ -2012,6 +2012,7 @@ def api_get_station_pair_route_extension(
         raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
 
 @router.get(
     "/station-pairs/{origin_code}/{destination_code}/temporal-order-inversions",
@@ -2033,20 +2034,25 @@ def get_station_pair_temporal_order_inversions(
         )
 
     from railgati.services.network import calculate_station_pair_temporal_order_inversions
+
     try:
         timetable_snapshot_id = get_active_timetable_snapshot_id(db)
         if not timetable_snapshot_id:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="No active timetable snapshot"
+                detail="No active timetable snapshot",
             )
 
         from sqlalchemy import func, select
 
         from railgati.models.station import Station
 
-        origin_station = db.scalar(select(Station).filter(func.lower(Station.code) == origin_code.lower()))
-        dest_station = db.scalar(select(Station).filter(func.lower(Station.code) == destination_code.lower()))
+        origin_station = db.scalar(
+            select(Station).filter(func.lower(Station.code) == origin_code.lower())
+        )
+        dest_station = db.scalar(
+            select(Station).filter(func.lower(Station.code) == destination_code.lower())
+        )
 
         if not origin_station:
             raise HTTPException(
@@ -2190,6 +2196,7 @@ def get_station_pair_return_service_adherence(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+
 @router.get(
     "/stations/{station_code}/simultaneous-presence",
     response_model=schemas.NetworkStationSimultaneousPresenceResponse,
@@ -2205,9 +2212,8 @@ def get_station_peak_simultaneous_presence(
             raise HTTPException(status_code=503, detail="No active timetable snapshot available.")
 
         from railgati.services.network import calculate_station_peak_simultaneous_presence
-        result = calculate_station_peak_simultaneous_presence(
-            db, snapshot_id, station_code
-        )
+
+        result = calculate_station_peak_simultaneous_presence(db, snapshot_id, station_code)
         return result
     except ValueError as e:
         if "not found" in str(e).lower() and "station" in str(e).lower():
@@ -2215,6 +2221,7 @@ def get_station_peak_simultaneous_presence(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get(
     "/trains/{train_number}/stop-temporal-skew",
@@ -2227,6 +2234,7 @@ def get_train_stop_temporal_skew(
 ):
     try:
         from railgati.services.network import calculate_train_stop_temporal_skew
+
         res = calculate_train_stop_temporal_skew(db, snapshot_id, train_number)
         return schemas.TrainStopTemporalSkewResponse(**res)
     except ValueError as e:
@@ -2275,9 +2283,13 @@ def get_train_sequence_topological_transition_continuity(
         if not snapshot_id:
             raise HTTPException(status_code=503, detail="No active timetable snapshot available.")
 
-        from railgati.services.network import calculate_train_sequence_topological_transition_continuity
+        from railgati.services.network import (
+            calculate_train_sequence_topological_transition_continuity,
+        )
 
-        res = calculate_train_sequence_topological_transition_continuity(db, snapshot_id, train_number)
+        res = calculate_train_sequence_topological_transition_continuity(
+            db, snapshot_id, train_number
+        )
         return schemas.TrainSequenceTopologicalTransitionContinuityResponse(**res)
     except HTTPException:
         raise
@@ -2308,9 +2320,13 @@ def get_train_sequence_disjoint_subpath_reconvergences(
         if not snapshot_id:
             raise HTTPException(status_code=503, detail="No active timetable snapshot available.")
 
-        from railgati.services.network import calculate_train_sequence_disjoint_subpath_reconvergences
+        from railgati.services.network import (
+            calculate_train_sequence_disjoint_subpath_reconvergences,
+        )
 
-        res = calculate_train_sequence_disjoint_subpath_reconvergences(db, snapshot_id, train_number)
+        res = calculate_train_sequence_disjoint_subpath_reconvergences(
+            db, snapshot_id, train_number
+        )
         return schemas.TrainSequenceDisjointSubpathReconvergencesResponse(**res)
     except HTTPException:
         raise
@@ -2320,6 +2336,7 @@ def get_train_sequence_disjoint_subpath_reconvergences(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get(
     "/trains/{train_number}/topological-degree-extremes",
@@ -2353,6 +2370,7 @@ def get_train_sequence_topological_degree_extremes(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get(
     "/stations/{station_code}/neighborhood-subsumption",
@@ -2428,8 +2446,8 @@ def get_network_train_single_station_intersections(
     Identifies other trains that intersect the target train at exactly one station identity.
     """
     try:
-        from railgati.services.network import calculate_train_single_station_intersections
         from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+        from railgati.services.network import calculate_train_single_station_intersections
 
         snapshot_id = get_active_timetable_snapshot_id(db)
         res = calculate_train_single_station_intersections(db, snapshot_id, train_number)
@@ -2442,6 +2460,7 @@ def get_network_train_single_station_intersections(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get(
     "/trains/{train_number}/structural-shortest-path-divergence",
@@ -2459,8 +2478,8 @@ def get_network_train_structural_shortest_path_divergence(
     against the minimum unweighted structural network hops between start and end.
     """
     try:
-        from railgati.services.network import calculate_train_structural_shortest_path_divergence
         from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+        from railgati.services.network import calculate_train_structural_shortest_path_divergence
 
         snapshot_id = get_active_timetable_snapshot_id(db)
         res = calculate_train_structural_shortest_path_divergence(db, snapshot_id, train_number)
@@ -2492,8 +2511,8 @@ def get_network_station_junction_through_service(
     traversed by a continuous through-service sequence.
     """
     try:
-        from railgati.services.network import calculate_station_junction_through_service
         from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+        from railgati.services.network import calculate_station_junction_through_service
 
         snapshot_id = get_active_timetable_snapshot_id(db)
         res = calculate_station_junction_through_service(db, snapshot_id, station_code)
@@ -2524,8 +2543,8 @@ def get_network_train_topological_perimeter_expansion(
     excluding stations visited by the train itself.
     """
     try:
-        from railgati.services.network import calculate_train_topological_perimeter_expansion
         from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+        from railgati.services.network import calculate_train_topological_perimeter_expansion
 
         snapshot_id = get_active_timetable_snapshot_id(db)
         if not snapshot_id:
@@ -2541,6 +2560,7 @@ def get_network_train_topological_perimeter_expansion(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get(
     "/edges/{from_station_code}/{to_station_code}/topological-resilience-detour",
@@ -2562,6 +2582,7 @@ def get_edge_resilience_detour(
 
     try:
         from railgati.services.network import get_edge_resilience_detour as get_resilience
+
         res = get_resilience(db, from_station_code.upper(), to_station_code.upper())
     except ValueError as e:
         if "unavailable" in str(e).lower():
@@ -2578,6 +2599,38 @@ def get_edge_resilience_detour(
         raise HTTPException(
             status_code=404,
             detail=f"Edge {from_station_code.upper()} -> {to_station_code.upper()} not found in the active topological graph",
+        )
+
+    return res
+
+
+@router.get(
+    "/stations/{station_code}/topological-coreness",
+    response_model=schemas.StationTopologicalCorenessResponse,
+    summary="Get Station Topological Coreness",
+    description="Returns the structural k-core number for the station in the active graph.",
+)
+def get_station_coreness_endpoint(
+    station_code: str = Path(..., description="Station Code (e.g., NDLS)"),
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    try:
+        from railgati.services.network import get_station_topological_coreness
+
+        res = get_station_topological_coreness(db, station_code)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=404, detail=msg)
+        raise HTTPException(
+            status_code=503,
+            detail=msg,
+        )
+
+    if res is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Station {station_code.upper()} has no topological coreness in the active graph",
         )
 
     return res

@@ -1,9 +1,8 @@
 """Service for materializing the railway network graph."""
 
-from datetime import UTC, datetime
-
-from collections import defaultdict, deque
 import sys
+from collections import defaultdict, deque
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.orm import Session
@@ -11,8 +10,9 @@ from sqlalchemy.orm import Session
 from railgati.models.graph import (
     RailwayGraphBuild,
     RailwayNetworkEdge,
+    RailwayNetworkEdgeResilience,
     RailwayServiceEdge,
-    RailwayNetworkEdgeResilience
+    RailwayStationTopologicalCoreness,
 )
 from railgati.models.train import TrainStopObservation
 from railgati.services.journey import _parse_time_to_minutes
@@ -73,6 +73,7 @@ def build_graph_for_timetable_snapshot(
         db.flush()
 
         import time
+
         t_start = time.time()
 
         # 3. Generate ServiceEdges
@@ -223,15 +224,17 @@ def build_graph_for_timetable_snapshot(
 
         # Generate bridge rows
         for u, v in bridges:
-            resilience_rows.append({
-                "timetable_snapshot_id": timetable_snapshot_id,
-                "graph_build_id": build_record.id,
-                "station_a_id": u,
-                "station_b_id": v,
-                "detour_distance": None,
-                "detour_exists": False,
-                "is_structural_bridge": True
-            })
+            resilience_rows.append(
+                {
+                    "timetable_snapshot_id": timetable_snapshot_id,
+                    "graph_build_id": build_record.id,
+                    "station_a_id": u,
+                    "station_b_id": v,
+                    "detour_distance": None,
+                    "detour_exists": False,
+                    "is_structural_bridge": True,
+                }
+            )
 
         # Run BFS for non-bridges strictly inside the 2-ECC
         for u, v in non_bridge_edges:
@@ -253,18 +256,89 @@ def build_graph_for_timetable_snapshot(
                 if found_dist is not None:
                     break
 
-            resilience_rows.append({
-                "timetable_snapshot_id": timetable_snapshot_id,
-                "graph_build_id": build_record.id,
-                "station_a_id": u,
-                "station_b_id": v,
-                "detour_distance": found_dist,
-                "detour_exists": True,
-                "is_structural_bridge": False
-            })
+            resilience_rows.append(
+                {
+                    "timetable_snapshot_id": timetable_snapshot_id,
+                    "graph_build_id": build_record.id,
+                    "station_a_id": u,
+                    "station_b_id": v,
+                    "detour_distance": found_dist,
+                    "detour_exists": True,
+                    "is_structural_bridge": False,
+                }
+            )
 
         if resilience_rows:
             db.execute(insert(RailwayNetworkEdgeResilience), resilience_rows)
+            db.flush()
+
+        # 4.6 Precompute Phase 66 Station Topological Coreness
+        db.execute(
+            delete(RailwayStationTopologicalCoreness).where(
+                RailwayStationTopologicalCoreness.timetable_snapshot_id == timetable_snapshot_id
+            )
+        )
+        db.flush()
+
+        deg = {v: len(adj[v]) for v in vertices}
+        max_deg = max(deg.values()) if deg else 0
+        bins = [0] * (max_deg + 1)
+        for v in vertices:
+            bins[deg[v]] += 1
+
+        start = 0
+        for d in range(max_deg + 1):
+            num = bins[d]
+            bins[d] = start
+            start += num
+
+        pos = {}
+        vert = [0] * len(vertices)
+        for v in vertices:
+            pos[v] = bins[deg[v]]
+            vert[pos[v]] = v
+            bins[deg[v]] += 1
+
+        for d in range(max_deg, 0, -1):
+            bins[d] = bins[d - 1]
+        bins[0] = 0
+
+        coreness_dict = {}
+        original_deg = dict(deg)
+
+        for i in range(len(vertices)):
+            v = vert[i]
+            coreness_dict[v] = deg[v]
+            for u in adj[v]:
+                if deg[u] > deg[v]:
+                    du = deg[u]
+                    pu = pos[u]
+                    pw = bins[du]
+                    w = vert[pw]
+
+                    if u != w:
+                        pos[u] = pw
+                        vert[pu] = w
+                        pos[w] = pu
+                        vert[pw] = u
+
+                    bins[du] += 1
+                    deg[u] -= 1
+
+        coreness_rows = []
+        for v in vertices:
+            coreness_rows.append(
+                {
+                    "timetable_snapshot_id": timetable_snapshot_id,
+                    "graph_build_id": build_record.id,
+                    "station_id": v,
+                    "coreness": coreness_dict[v],
+                    "degree": original_deg[v],
+                }
+            )
+
+        if coreness_rows:
+            db.execute(insert(RailwayStationTopologicalCoreness), coreness_rows)
             db.flush()
 
         # 5. Finalize

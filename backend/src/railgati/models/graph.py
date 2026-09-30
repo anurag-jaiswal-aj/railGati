@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from railgati.db import Base
@@ -117,7 +117,13 @@ class RailwayNetworkEdgeResilience(Base):
     __tablename__ = "railway_network_edge_resilience"
     __table_args__ = (
         Index("ix_edge_resilience_build", "graph_build_id"),
-        Index("ix_edge_resilience_lookup", "graph_build_id", "station_a_id", "station_b_id", unique=True),
+        Index(
+            "ix_edge_resilience_lookup",
+            "graph_build_id",
+            "station_a_id",
+            "station_b_id",
+            unique=True,
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -148,4 +154,38 @@ class RailwayNetworkEdgeResilience(Base):
         return (
             f"<RailwayNetworkEdgeResilience(build={self.graph_build_id}, "
             f"{self.station_a_id}-{self.station_b_id}, bridge={self.is_structural_bridge})>"
+        )
+
+
+class RailwayStationTopologicalCoreness(Base):
+    __tablename__ = "railway_station_topological_coreness"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    graph_build_id: Mapped[int] = mapped_column(ForeignKey("railway_graph_builds.id"))
+    timetable_snapshot_id: Mapped[int] = mapped_column(ForeignKey("dataset_snapshots.id"))
+    station_id: Mapped[int] = mapped_column(ForeignKey("stations.id"))
+
+    coreness: Mapped[int] = mapped_column()
+    degree: Mapped[int] = mapped_column()
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "graph_build_id",
+            "station_id",
+            name="uq_railway_station_topological_coreness_build_station",
+        ),
+        Index("ix_railway_station_coreness_build_station", "graph_build_id", "station_id"),
+        Index("ix_railway_station_coreness_snapshot", "timetable_snapshot_id"),
+    )
+
+    graph_build: Mapped["RailwayGraphBuild"] = relationship()
+    timetable_snapshot: Mapped["DatasetSnapshot"] = relationship()
+    station: Mapped["Station"] = relationship()
+
+    def __repr__(self) -> str:
+        return (
+            f"<RailwayStationTopologicalCoreness(build={self.graph_build_id}, "
+            f"station={self.station_id}, core={self.coreness})>"
         )

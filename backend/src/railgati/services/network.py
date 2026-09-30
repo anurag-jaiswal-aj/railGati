@@ -5197,10 +5197,7 @@ def calculate_train_route_terminal_incidence(
 
 
 def calculate_station_pair_route_extension(
-    db: Session,
-    origin_code: str,
-    destination_code: str,
-    timetable_snapshot_id: int
+    db: Session, origin_code: str, destination_code: str, timetable_snapshot_id: int
 ) -> dict[str, object]:
     """
     Calculate the Phase 49 Network Station Pair Route Extension Analytics metric.
@@ -5263,11 +5260,9 @@ def calculate_station_pair_route_extension(
             (SELECT COUNT(*) FROM combined_extension) as total_extension_station_count
     """)
 
-    res = db.execute(query, {
-        "snapshot_id": timetable_snapshot_id,
-        "orig_id": orig_st.id,
-        "dest_id": dest_st.id
-    }).fetchone()
+    res = db.execute(
+        query, {"snapshot_id": timetable_snapshot_id, "orig_id": orig_st.id, "dest_id": dest_st.id}
+    ).fetchone()
 
     # If no valid traversals were found, it means the O->D direct path does not exist.
     # Return empty to signal 404 per API convention.
@@ -5280,7 +5275,7 @@ def calculate_station_pair_route_extension(
         "traversal_occurrence_count": res[0],
         "pre_origin_station_count": res[1],
         "post_destination_station_count": res[2],
-        "total_extension_station_count": res[3]
+        "total_extension_station_count": res[3],
     }
 
 
@@ -5359,7 +5354,9 @@ def calculate_station_pair_temporal_order_inversions(
     FROM inversions
     """)
 
-    res = db.execute(query, {"snapshot_id": snapshot_id, "o_code": origin_code, "d_code": destination_code}).fetchone()
+    res = db.execute(
+        query, {"snapshot_id": snapshot_id, "o_code": origin_code, "d_code": destination_code}
+    ).fetchone()
     if not res:
         return {
             "origin_station_code": origin_code,
@@ -5451,6 +5448,8 @@ def calculate_station_pair_intermediate_halt_stratification(
         "distinct_halt_strata_count": strata_count,
         "is_perfectly_homogeneous": is_homogeneous,
     }
+
+
 def calculate_station_pair_return_service_adherence(
     db: Session, origin_code: str, destination_code: str, snapshot_id: int
 ) -> dict[str, Any]:
@@ -5553,6 +5552,7 @@ def calculate_station_pair_return_service_adherence(
         "non_adherent_ratio": non_adherent_ratio,
     }
 
+
 def calculate_station_peak_simultaneous_presence(
     db: Session,
     timetable_snapshot_id: int,
@@ -5648,6 +5648,7 @@ def calculate_station_peak_simultaneous_presence(
         "peak_simultaneous_presence": peak_concurrent,
     }
 
+
 def calculate_train_stop_temporal_skew(
     session: Session, snapshot_id: int, train_number: str
 ) -> dict[str, typing.Any]:
@@ -5658,9 +5659,12 @@ def calculate_train_stop_temporal_skew(
     if not train:
         raise ValueError(f"Train with number {train_number} not found")
 
-    stops = session.query(TrainStopObservation).filter_by(
-        snapshot_id=snapshot_id, train_id=train.id
-    ).order_by(TrainStopObservation.stop_sequence.asc()).all()
+    stops = (
+        session.query(TrainStopObservation)
+        .filter_by(snapshot_id=snapshot_id, train_id=train.id)
+        .order_by(TrainStopObservation.stop_sequence.asc())
+        .all()
+    )
 
     if not stops or len(stops) < 2:
         return {
@@ -5677,7 +5681,12 @@ def calculate_train_stop_temporal_skew(
     origin = stops[0]
     dest = stops[-1]
 
-    if not origin.departure_time or not dest.arrival_time or origin.source_day is None or dest.source_day is None:
+    if (
+        not origin.departure_time
+        or not dest.arrival_time
+        or origin.source_day is None
+        or dest.source_day is None
+    ):
         return {
             "train_number": train_number,
             "timetable_snapshot_id": snapshot_id,
@@ -5826,6 +5835,7 @@ def calculate_train_sequence_topological_transition_continuity(
 ) -> dict[str, Any]:
     """Calculate the sequence topological transition continuity (Phase 56)."""
     from sqlalchemy import func, select, text
+
     from railgati.models.train import Train
 
     train = db.scalar(select(Train).filter(func.upper(Train.number) == train_number.upper()))
@@ -5881,7 +5891,7 @@ def calculate_train_sequence_topological_transition_continuity(
             "average_continuity_ratio": None,
             "minimum_continuity_ratio": None,
             "maximum_continuity_ratio": None,
-            "transitions": []
+            "transitions": [],
         }
 
     transitions = []
@@ -5896,17 +5906,19 @@ def calculate_train_sequence_topological_transition_continuity(
             ratio = float(n_path) / float(n_in)
 
         ratios.append(ratio)
-        transitions.append({
-            "from_station_code": r.code1,
-            "via_station_code": r.code2,
-            "to_station_code": r.code3,
-            "from_sequence": r.seq1,
-            "via_sequence": r.seq2,
-            "to_sequence": r.seq3,
-            "first_edge_occurrence_count": n_in,
-            "transition_occurrence_count": n_path,
-            "continuity_ratio": ratio
-        })
+        transitions.append(
+            {
+                "from_station_code": r.code1,
+                "via_station_code": r.code2,
+                "to_station_code": r.code3,
+                "from_sequence": r.seq1,
+                "via_sequence": r.seq2,
+                "to_sequence": r.seq3,
+                "first_edge_occurrence_count": n_in,
+                "transition_occurrence_count": n_path,
+                "continuity_ratio": ratio,
+            }
+        )
 
     return {
         "train_number": train.number,
@@ -5915,7 +5927,7 @@ def calculate_train_sequence_topological_transition_continuity(
         "average_continuity_ratio": sum(ratios) / len(ratios),
         "minimum_continuity_ratio": min(ratios),
         "maximum_continuity_ratio": max(ratios),
-        "transitions": transitions
+        "transitions": transitions,
     }
 
 
@@ -5923,8 +5935,9 @@ def calculate_train_sequence_disjoint_subpath_reconvergences(
     db: Session, snapshot_id: int, train_number: str
 ) -> dict[str, typing.Any]:
     """Calculate Train Sequence Disjoint Sub-Path Reconvergences."""
+    from sqlalchemy import func, select, text
+
     from railgati.models.train import Train
-    from sqlalchemy import text, select, func
 
     train = db.scalar(select(Train).filter(func.upper(Train.number) == train_number.upper()))
     if not train:
@@ -6061,20 +6074,22 @@ def calculate_train_sequence_disjoint_subpath_reconvergences(
         for row in rows:
             target_interior = list(row.target_interior_codes)
             candidate_interior = list(row.candidate_interior_codes)
-            reconvergences.append({
-                "anchor_from_station_code": row.anchor_from_code,
-                "anchor_to_station_code": row.anchor_to_code,
-                "target_from_sequence": row.t_seq_a,
-                "target_to_sequence": row.t_seq_b,
-                "candidate_train_number": row.candidate_number,
-                "candidate_from_sequence": row.c_seq_a,
-                "candidate_to_sequence": row.c_seq_b,
-                "target_interior_station_count": len(target_interior),
-                "candidate_interior_station_count": len(candidate_interior),
-                "shared_interior_station_count": 0,
-                "target_interior_station_codes": target_interior,
-                "candidate_interior_station_codes": candidate_interior
-            })
+            reconvergences.append(
+                {
+                    "anchor_from_station_code": row.anchor_from_code,
+                    "anchor_to_station_code": row.anchor_to_code,
+                    "target_from_sequence": row.t_seq_a,
+                    "target_to_sequence": row.t_seq_b,
+                    "candidate_train_number": row.candidate_number,
+                    "candidate_from_sequence": row.c_seq_a,
+                    "candidate_to_sequence": row.c_seq_b,
+                    "target_interior_station_count": len(target_interior),
+                    "candidate_interior_station_count": len(candidate_interior),
+                    "shared_interior_station_count": 0,
+                    "target_interior_station_codes": target_interior,
+                    "candidate_interior_station_codes": candidate_interior,
+                }
+            )
     else:
         rows = db.execute(query, {"train_id": train.id, "snap_id": snapshot_id}).fetchall()
 
@@ -6099,44 +6114,60 @@ def calculate_train_sequence_disjoint_subpath_reconvergences(
         """)
 
         for row in rows:
-            t_res = db.execute(target_codes_query, {
-                "t_id": train.id, "snap_id": snapshot_id, "t_seq_A": row.t_seq_a, "t_seq_B": row.t_seq_b
-            }).fetchall()
+            t_res = db.execute(
+                target_codes_query,
+                {
+                    "t_id": train.id,
+                    "snap_id": snapshot_id,
+                    "t_seq_A": row.t_seq_a,
+                    "t_seq_B": row.t_seq_b,
+                },
+            ).fetchall()
             target_interior = [r[0] for r in t_res]
 
-            c_res = db.execute(candidate_codes_query, {
-                "c_id": row.c_id, "snap_id": snapshot_id, "c_seq_A": row.c_seq_a, "c_seq_B": row.c_seq_b
-            }).fetchall()
+            c_res = db.execute(
+                candidate_codes_query,
+                {
+                    "c_id": row.c_id,
+                    "snap_id": snapshot_id,
+                    "c_seq_A": row.c_seq_a,
+                    "c_seq_B": row.c_seq_b,
+                },
+            ).fetchall()
             candidate_interior = [r[0] for r in c_res]
 
-            reconvergences.append({
-                "anchor_from_station_code": row.anchor_from_code,
-                "anchor_to_station_code": row.anchor_to_code,
-                "target_from_sequence": row.t_seq_a,
-                "target_to_sequence": row.t_seq_b,
-                "candidate_train_number": row.candidate_number,
-                "candidate_from_sequence": row.c_seq_a,
-                "candidate_to_sequence": row.c_seq_b,
-                "target_interior_station_count": len(target_interior),
-                "candidate_interior_station_count": len(candidate_interior),
-                "shared_interior_station_count": 0,
-                "target_interior_station_codes": target_interior,
-                "candidate_interior_station_codes": candidate_interior
-            })
+            reconvergences.append(
+                {
+                    "anchor_from_station_code": row.anchor_from_code,
+                    "anchor_to_station_code": row.anchor_to_code,
+                    "target_from_sequence": row.t_seq_a,
+                    "target_to_sequence": row.t_seq_b,
+                    "candidate_train_number": row.candidate_number,
+                    "candidate_from_sequence": row.c_seq_a,
+                    "candidate_to_sequence": row.c_seq_b,
+                    "target_interior_station_count": len(target_interior),
+                    "candidate_interior_station_count": len(candidate_interior),
+                    "shared_interior_station_count": 0,
+                    "target_interior_station_codes": target_interior,
+                    "candidate_interior_station_codes": candidate_interior,
+                }
+            )
 
     return {
         "train_number": train.number,
         "timetable_snapshot_id": snapshot_id,
         "total_reconvergence_count": len(reconvergences),
-        "reconvergences": reconvergences
+        "reconvergences": reconvergences,
     }
+
 
 def calculate_train_sequence_topological_degree_extremes(
     db: Session, snapshot_id: int, train_number: str
 ) -> dict[str, typing.Any]:
     """Calculate Train Sequence Topological Degree Extremes."""
-    from railgati.models.train import Train
     from sqlalchemy import func, select, text
+
+    from railgati.models.train import Train
 
     train = db.scalar(select(Train).filter(func.upper(Train.number) == train_number.upper()))
     if not train:
@@ -6206,12 +6237,14 @@ def calculate_train_sequence_topological_degree_extremes(
         elif classification == "TRANSIT":
             transit_count += 1
 
-        sequence_classification.append({
-            "stop_sequence": row.stop_sequence,
-            "station_code": row.station_code,
-            "global_degree": row.global_degree,
-            "classification_type": classification
-        })
+        sequence_classification.append(
+            {
+                "stop_sequence": row.stop_sequence,
+                "station_code": row.station_code,
+                "global_degree": row.global_degree,
+                "classification_type": classification,
+            }
+        )
 
     return {
         "train_number": train.number,
@@ -6220,17 +6253,19 @@ def calculate_train_sequence_topological_degree_extremes(
         "local_maxima_count": local_maxima_count,
         "local_minima_count": local_minima_count,
         "transit_count": transit_count,
-        "sequence_classification": sequence_classification
+        "sequence_classification": sequence_classification,
     }
+
 
 def calculate_station_neighborhood_subsumption(
     db: Session, station_code: str
 ) -> dict[str, typing.Any]:
     """Calculate Station Neighborhood Topological Subsumption."""
-    from railgati.models.station import Station
-    from sqlalchemy import func, select, text
-    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
     from fastapi import HTTPException
+    from sqlalchemy import func, select, text
+
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.models.station import Station
 
     snapshot_id = get_active_timetable_snapshot_id(db)
     target = db.scalar(select(Station).filter(func.lower(Station.code) == station_code.lower()))
@@ -6315,7 +6350,9 @@ def calculate_station_neighborhood_subsumption(
 
     rows = db.execute(query, {"target_id": target.id, "snap_id": snapshot_id}).fetchall()
 
-    total_neighbors = db.scalar(text("""
+    total_neighbors = (
+        db.scalar(
+            text("""
         WITH edge_pairs AS (
             SELECT o1.station_id as u, o2.station_id as v
             FROM train_stop_observations o1
@@ -6331,30 +6368,33 @@ def calculate_station_neighborhood_subsumption(
             SELECT v as u, u as v FROM edge_pairs WHERE u != v
         )
         SELECT COUNT(*) FROM undirected_edges WHERE u = :target_id
-    """), {"target_id": target.id, "snap_id": snapshot_id}) or 0
+    """),
+            {"target_id": target.id, "snap_id": snapshot_id},
+        )
+        or 0
+    )
 
     subsuming_neighbors = []
     for row in rows:
-        subsuming_neighbors.append({
-            "station_code": row.neighbor_code,
-            "neighbor_degree": row.neighbor_degree
-        })
+        subsuming_neighbors.append(
+            {"station_code": row.neighbor_code, "neighbor_degree": row.neighbor_degree}
+        )
 
     return {
         "station_code": target.code,
         "timetable_snapshot_id": snapshot_id,
         "total_neighbors": total_neighbors,
-        "subsuming_neighbors": subsuming_neighbors
+        "subsuming_neighbors": subsuming_neighbors,
     }
 
-def calculate_station_strict_local_bridges(
-    db: Session, station_code: str
-) -> dict[str, typing.Any]:
+
+def calculate_station_strict_local_bridges(db: Session, station_code: str) -> dict[str, typing.Any]:
     """Calculate Station Neighborhood Strict Local Bridge Pairs."""
-    from railgati.models.station import Station
-    from sqlalchemy import func, select, text
-    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
     from fastapi import HTTPException
+    from sqlalchemy import func, select, text
+
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.models.station import Station
 
     snapshot_id = get_active_timetable_snapshot_id(db)
     target = db.scalar(select(Station).filter(func.lower(Station.code) == station_code.lower()))
@@ -6428,28 +6468,28 @@ def calculate_station_strict_local_bridges(
         alt_count = int(row.alt_count)
         is_strict = (not has_direct) and (alt_count == 0)
 
-        evaluated_pairs.append({
-            "neighbor_a": row.neighbor_a,
-            "neighbor_b": row.neighbor_b,
-            "has_direct_adjacency": has_direct,
-            "alternative_bridge_count": alt_count,
-            "is_strict_local_bridge": is_strict
-        })
+        evaluated_pairs.append(
+            {
+                "neighbor_a": row.neighbor_a,
+                "neighbor_b": row.neighbor_b,
+                "has_direct_adjacency": has_direct,
+                "alternative_bridge_count": alt_count,
+                "is_strict_local_bridge": is_strict,
+            }
+        )
 
     return {
         "station_code": target.code,
         "timetable_snapshot_id": snapshot_id,
         "total_neighbor_pairs": len(evaluated_pairs),
-        "evaluated_pairs": evaluated_pairs
+        "evaluated_pairs": evaluated_pairs,
     }
 
 
 def calculate_train_single_station_intersections(
-    db: Session,
-    snapshot_id: int,
-    target_train_number: str
+    db: Session, snapshot_id: int, target_train_number: str
 ) -> dict:
-    from sqlalchemy import select, text, func
+    from sqlalchemy import func, select, text
 
     from railgati.models.train import Train, TrainObservation
 
@@ -6501,25 +6541,26 @@ def calculate_train_single_station_intersections(
         ORDER BY t.number ASC
     """)
 
-    rows = db.execute(query, {
-        "snapshot_id": snapshot_id,
-        "target_train_id": target_train_id
-    }).fetchall()
+    rows = db.execute(
+        query, {"snapshot_id": snapshot_id, "target_train_id": target_train_id}
+    ).fetchall()
 
     items = []
     for row in rows:
-        items.append({
-            "other_train_number": row.other_train_number,
-            "other_train_name": row.other_train_name,
-            "shared_station_code": row.shared_station_code,
-            "shared_station_name": row.shared_station_name
-        })
+        items.append(
+            {
+                "other_train_number": row.other_train_number,
+                "other_train_name": row.other_train_name,
+                "shared_station_code": row.shared_station_code,
+                "shared_station_name": row.shared_station_name,
+            }
+        )
 
     return {
         "target_train_number": target_train_number_resolved,
         "timetable_snapshot_id": snapshot_id,
         "total_intersecting_trains": len(items),
-        "items": items
+        "items": items,
     }
 
 
@@ -6529,7 +6570,7 @@ def calculate_train_structural_shortest_path_divergence(
     """Calculate Train Route Structural Shortest-Path Divergence."""
     from sqlalchemy import select
 
-    from railgati.models.graph import RailwayGraphBuild, RailwayNetworkEdge
+    from railgati.models.graph import RailwayGraphBuild
     from railgati.models.station import Station
     from railgati.models.train import Train, TrainStopObservation
 
@@ -6545,14 +6586,18 @@ def calculate_train_structural_shortest_path_divergence(
     if not train:
         raise ValueError(f"Train '{train_number}' not found")
 
-    stops = db.execute(
-        select(TrainStopObservation.station_id)
-        .filter(
-            TrainStopObservation.snapshot_id == timetable_snapshot_id,
-            TrainStopObservation.train_id == train.id
+    stops = (
+        db.execute(
+            select(TrainStopObservation.station_id)
+            .filter(
+                TrainStopObservation.snapshot_id == timetable_snapshot_id,
+                TrainStopObservation.train_id == train.id,
+            )
+            .order_by(TrainStopObservation.stop_sequence)
         )
-        .order_by(TrainStopObservation.stop_sequence)
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     if not stops:
         raise ValueError(f"Train '{train_number}' has no scheduled stops in this snapshot")
@@ -6582,12 +6627,15 @@ def calculate_train_structural_shortest_path_divergence(
             SELECT depth FROM search_graph WHERE station_id = :end_id ORDER BY depth LIMIT 1;
         """)
 
-        res = db.execute(query, {
-            "start_id": start_id,
-            "end_id": end_id,
-            "snapshot_id": timetable_snapshot_id,
-            "max_edges": actual_edges
-        }).scalar()
+        res = db.execute(
+            query,
+            {
+                "start_id": start_id,
+                "end_id": end_id,
+                "snapshot_id": timetable_snapshot_id,
+                "max_edges": actual_edges,
+            },
+        ).scalar()
 
         if res is not None:
             shortest_edges = int(res)
@@ -6618,17 +6666,18 @@ def calculate_train_structural_shortest_path_divergence(
 def calculate_station_junction_through_service(
     db: Session, timetable_snapshot_id: int, station_code: str
 ) -> dict[str, typing.Any]:
-    import typing
     from railgati.models.station import Station, StationObservation
 
     station = db.scalar(select(Station).filter(Station.code == station_code))
     if not station:
         raise ValueError(f"Station not found: '{station_code}'")
 
-    obs = db.scalar(select(StationObservation.name).filter(
-        StationObservation.station_id == station.id,
-        StationObservation.snapshot_id == timetable_snapshot_id
-    ))
+    obs = db.scalar(
+        select(StationObservation.name).filter(
+            StationObservation.station_id == station.id,
+            StationObservation.snapshot_id == timetable_snapshot_id,
+        )
+    )
     station_name = obs if obs else station_code
 
     # Step 1: Find topological neighbors in active snapshot
@@ -6637,11 +6686,18 @@ def calculate_station_junction_through_service(
         FROM railway_network_edges
         WHERE timetable_snapshot_id = :snap_id AND (from_station_id = :st_id OR to_station_id = :st_id)
     """)
-    neighbor_ids = [row[0] for row in db.execute(neighbors_query, {"st_id": station.id, "snap_id": timetable_snapshot_id}).fetchall()]
+    neighbor_ids = [
+        row[0]
+        for row in db.execute(
+            neighbors_query, {"st_id": station.id, "snap_id": timetable_snapshot_id}
+        ).fetchall()
+    ]
     k = len(neighbor_ids)
 
     if k < 2:
-        raise ValueError(f"Station '{station_code}' is not a structural junction (degree = {k}) in this snapshot")
+        raise ValueError(
+            f"Station '{station_code}' is not a structural junction (degree = {k}) in this snapshot"
+        )
 
     possible_pairs = k * (k - 1) // 2
 
@@ -6665,7 +6721,9 @@ def calculate_station_junction_through_service(
         FROM sequence_visits
         WHERE station_id = :st_id AND prev_stn IS NOT NULL AND next_stn IS NOT NULL AND prev_stn != next_stn
     """)
-    visits = db.execute(bridged_query, {"snap_id": timetable_snapshot_id, "st_id": station.id}).fetchall()
+    visits = db.execute(
+        bridged_query, {"snap_id": timetable_snapshot_id, "st_id": station.id}
+    ).fetchall()
 
     neighbor_set = set(neighbor_ids)
     served_pairs_map: dict[tuple[int, int], set[int]] = {}
@@ -6679,13 +6737,15 @@ def calculate_station_junction_through_service(
             served_pairs_map[pair].add(train_id)
 
     relevant_ids = set()
-    for (a, b) in served_pairs_map.keys():
+    for a, b in served_pairs_map:
         relevant_ids.add(a)
         relevant_ids.add(b)
 
     st_codes = {}
     if relevant_ids:
-        rows = db.execute(select(Station.id, Station.code).where(Station.id.in_(relevant_ids))).fetchall()
+        rows = db.execute(
+            select(Station.id, Station.code).where(Station.id.in_(relevant_ids))
+        ).fetchall()
         st_codes = {r[0]: r[1] for r in rows}
 
     served_pairs_out = []
@@ -6696,11 +6756,9 @@ def calculate_station_junction_through_service(
         if code_a > code_b:
             code_a, code_b = code_b, code_a
 
-        served_pairs_out.append({
-            "neighbor_a": code_a,
-            "neighbor_b": code_b,
-            "qualifying_train_count": len(train_ids)
-        })
+        served_pairs_out.append(
+            {"neighbor_a": code_a, "neighbor_b": code_b, "qualifying_train_count": len(train_ids)}
+        )
 
     served_pairs_out.sort(key=lambda x: (x["neighbor_a"], x["neighbor_b"]))
 
@@ -6717,20 +6775,24 @@ def calculate_station_junction_through_service(
         "served_pairs": served_pairs_out,
     }
 
+
 def calculate_train_topological_perimeter_expansion(
     db: Session, timetable_snapshot_id: int, train_number: str
 ) -> dict[str, typing.Any]:
-    import typing
-    from railgati.models.train import Train
     from sqlalchemy import select, text
+
+    from railgati.models.train import Train
+
     train = db.scalar(select(Train).filter(Train.number == train_number))
     if not train:
         raise ValueError(f"Train not found: '{train_number}'")
 
     # Verify train exists in snapshot
     route_count = db.scalar(
-        text("SELECT COUNT(DISTINCT station_id) FROM train_stop_observations WHERE train_id = :tr_id AND snapshot_id = :snap_id"),
-        {"tr_id": train.id, "snap_id": timetable_snapshot_id}
+        text(
+            "SELECT COUNT(DISTINCT station_id) FROM train_stop_observations WHERE train_id = :tr_id AND snapshot_id = :snap_id"
+        ),
+        {"tr_id": train.id, "snap_id": timetable_snapshot_id},
     )
 
     if not route_count or route_count == 0:
@@ -6769,17 +6831,15 @@ def calculate_train_topological_perimeter_expansion(
         ORDER BY s.code
     """)
 
-    results = db.execute(
-        query,
-        {"tr_id": train.id, "snap_id": timetable_snapshot_id}
-    ).mappings().all()
+    results = (
+        db.execute(query, {"tr_id": train.id, "snap_id": timetable_snapshot_id}).mappings().all()
+    )
 
     perimeter_count = len(results)
     ratio = perimeter_count / route_count
 
     perimeter_items = [
-        {"station_code": row["code"], "station_name": row["name"] or row["code"]}
-        for row in results
+        {"station_code": row["code"], "station_name": row["name"] or row["code"]} for row in results
     ]
 
     return {
@@ -6787,17 +6847,14 @@ def calculate_train_topological_perimeter_expansion(
         "route_station_count": route_count,
         "perimeter_station_count": perimeter_count,
         "perimeter_expansion_ratio": float(ratio),
-        "perimeter_stations": perimeter_items
+        "perimeter_stations": perimeter_items,
     }
 
 
-def get_edge_resilience_detour(
-    db: Session, from_station_code: str, to_station_code: str
-) -> dict:
+def get_edge_resilience_detour(db: Session, from_station_code: str, to_station_code: str) -> dict:
     from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
     from railgati.models.graph import (
         RailwayGraphBuild,
-        RailwayNetworkEdge,
         RailwayNetworkEdgeResilience,
     )
     from railgati.models.station import Station
@@ -6850,4 +6907,52 @@ def get_edge_resilience_detour(
         "to_station_code": to_station_code,
         "detour_distance": resilience_record.detour_distance,
         "is_structural_bridge": resilience_record.is_structural_bridge,
+    }
+
+
+def get_station_topological_coreness(
+    db: Session, station_code: str
+) -> dict[str, typing.Any] | None:
+
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.models.graph import RailwayGraphBuild, RailwayStationTopologicalCoreness
+    from railgati.models.station import Station
+
+    station_code = station_code.upper()
+    snap_id = get_active_timetable_snapshot_id(db)
+    if not snap_id:
+        raise ValueError("No active timetable snapshot found")
+
+    station = db.query(Station).filter(Station.code == station_code).first()
+    if not station:
+        raise ValueError(f"Station {station_code} not found")
+
+    build = (
+        db.query(RailwayGraphBuild)
+        .filter(
+            RailwayGraphBuild.timetable_snapshot_id == snap_id,
+            RailwayGraphBuild.status == "ACTIVE",
+        )
+        .first()
+    )
+
+    if not build:
+        raise ValueError("No active completed graph build found for current snapshot")
+
+    core_record = (
+        db.query(RailwayStationTopologicalCoreness)
+        .filter(
+            RailwayStationTopologicalCoreness.graph_build_id == build.id,
+            RailwayStationTopologicalCoreness.station_id == station.id,
+        )
+        .first()
+    )
+
+    if not core_record:
+        return None
+
+    return {
+        "station_code": station_code,
+        "coreness": core_record.coreness,
+        "degree": core_record.degree,
     }

@@ -509,7 +509,6 @@ class TrainSingleStationIntersectionResponse(BaseModel):
     items: list[TrainSingleStationIntersectionItem]
 
 
-
 class StationSimilarityItem(BaseModel):
     """Historical timetable service-set similarity for a compared station."""
 
@@ -904,6 +903,7 @@ class TrainRouteTerminalIncidenceResponse(BaseModel):
     distinct_terminal_station_count: int
     incidence_ratio: float
 
+
 class StationPairRouteExtensionResponse(BaseModel):
     origin_station: str
     destination_station: str
@@ -947,9 +947,7 @@ class StationPairReturnServiceAdherenceResponse(BaseModel):
     origin_station_code: str = Field(..., description="Origin station code")
     destination_station_code: str = Field(..., description="Destination station code")
     timetable_snapshot_id: int = Field(..., description="ID of the active timetable snapshot")
-    total_forward_traversal_count: int = Field(
-        ..., description="Count of valid O->D traversals"
-    )
+    total_forward_traversal_count: int = Field(..., description="Count of valid O->D traversals")
     unpaired_traversal_count: int = Field(
         ..., description="Count where return_train_number is absent"
     )
@@ -969,12 +967,14 @@ class StationPairReturnServiceAdherenceResponse(BaseModel):
         None, description="non_adherent_traversal_count / total_forward_traversal_count"
     )
 
+
 class NetworkStationSimultaneousPresenceResponse(BaseModel):
     station_code: str
     station_name: str | None
     timetable_snapshot_id: int
     qualifying_occurrence_count: int
     peak_simultaneous_presence: int | None
+
 
 class TrainStopTemporalSkewResponse(BaseModel):
     train_number: str
@@ -1009,6 +1009,7 @@ class TopologicalTransitionRecord(BaseModel):
     first_edge_occurrence_count: int
     transition_occurrence_count: int
     continuity_ratio: float
+
 
 class TrainSequenceTopologicalTransitionContinuityResponse(BaseModel):
     train_number: str
@@ -1094,6 +1095,8 @@ class StationStrictLocalBridgesResponse(BaseModel):
     timetable_snapshot_id: int
     total_neighbor_pairs: int
     evaluated_pairs: list[NeighborPairEvaluation]
+
+
 class TrainStructuralShortestPathDivergence(BaseModel):
     """Network Train Route Structural Shortest-Path Divergence."""
 
@@ -1101,12 +1104,18 @@ class TrainStructuralShortestPathDivergence(BaseModel):
     timetable_snapshot_id: int = Field(..., description="ID of the timetable snapshot used")
     start_station_code: str = Field(..., description="First station visited by the train")
     end_station_code: str = Field(..., description="Last station visited by the train")
-    actual_structural_edges: int = Field(..., description="Actual number of structural edges traversed")
+    actual_structural_edges: int = Field(
+        ..., description="Actual number of structural edges traversed"
+    )
     shortest_structural_edges: int | None = Field(
         ..., description="Minimum structural hops between terminals in the global network graph"
     )
-    divergence_absolute: int | None = Field(..., description="Difference between actual and shortest path length")
-    divergence_ratio: float | None = Field(..., description="Ratio of actual to shortest path length")
+    divergence_absolute: int | None = Field(
+        ..., description="Difference between actual and shortest path length"
+    )
+    divergence_ratio: float | None = Field(
+        ..., description="Ratio of actual to shortest path length"
+    )
 
 
 class StationJunctionServedPair(BaseModel):
@@ -1140,11 +1149,11 @@ class NetworkEdgeTopologicalResilienceDetourResponse(BaseModel):
 
     detour_distance: int | None = Field(
         ...,
-        description="The exact shortest unweighted alternative path length strictly strictly in G-e. Null if disconnected."
+        description="The exact shortest unweighted alternative path length strictly strictly in G-e. Null if disconnected.",
     )
     is_structural_bridge: bool = Field(
         ...,
-        description="True if removing this undirected structural adjacency completely disconnects the two stations."
+        description="True if removing this undirected structural adjacency completely disconnects the two stations.",
     )
 
 
@@ -1156,3 +1165,11 @@ class TrainTopologicalPerimeterExpansionResponse(BaseModel):
     perimeter_station_count: int
     perimeter_expansion_ratio: float
     perimeter_stations: list[PerimeterStationItem]
+
+
+class StationTopologicalCorenessResponse(BaseModel):
+    """Station Topological Coreness metrics."""
+
+    station_code: str = Field(..., description="Station Code")
+    coreness: int = Field(..., description="The topological k-core number of the station.")
+    degree: int = Field(..., description="The undirected structural degree of the station.")
