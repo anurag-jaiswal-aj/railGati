@@ -42,11 +42,9 @@ def _setup_graph(db_session: Session, edges: list[tuple[str, str]]) -> int:
 
     # We populate TrainStopObservation
     stops = []
-    seq = 1
-    t = db_session.query(Train).first()
 
-    # Wait, graph_builder logic:
-    # A->B->C is a train route. If we have [("A", "B"), ("B", "C")], we can just create one train route A->B->C.
+    # A->B->C is a train route. If we have [("A", "B"), ("B", "C")],
+    # we can just create one train route A->B->C.
     # To keep it generic for edges, we can create a separate train for each edge!
     for i, (u, v) in enumerate(edges):
         t_edge = Train(number=f"T{i}")
@@ -82,10 +80,12 @@ def test_coreness_simple_chain(db_session: Session) -> None:
     from railgati.services.network import get_station_topological_coreness
 
     res_a = get_station_topological_coreness(db_session, "A")
+    assert res_a is not None
     assert res_a["coreness"] == 1
     assert res_a["degree"] == 1
 
     res_b = get_station_topological_coreness(db_session, "B")
+    assert res_b is not None
     assert res_b["coreness"] == 1
     assert res_b["degree"] == 2
 
@@ -98,6 +98,7 @@ def test_coreness_triangle(db_session: Session) -> None:
 
     for s in ["A", "B", "C"]:
         res = get_station_topological_coreness(db_session, s)
+        assert res is not None
         assert res["coreness"] == 2
         assert res["degree"] == 2
 
@@ -108,11 +109,19 @@ def test_coreness_triangle_with_leaf(db_session: Session) -> None:
 
     from railgati.services.network import get_station_topological_coreness
 
-    assert get_station_topological_coreness(db_session, "A")["coreness"] == 2
-    assert get_station_topological_coreness(db_session, "C")["coreness"] == 2
-    assert get_station_topological_coreness(db_session, "C")["degree"] == 3
-    assert get_station_topological_coreness(db_session, "D")["coreness"] == 1
-    assert get_station_topological_coreness(db_session, "D")["degree"] == 1
+    res_a = get_station_topological_coreness(db_session, "A")
+    assert res_a is not None
+    assert res_a["coreness"] == 2
+
+    res_c = get_station_topological_coreness(db_session, "C")
+    assert res_c is not None
+    assert res_c["coreness"] == 2
+    assert res_c["degree"] == 3
+
+    res_d = get_station_topological_coreness(db_session, "D")
+    assert res_d is not None
+    assert res_d["coreness"] == 1
+    assert res_d["degree"] == 1
 
 
 def test_coreness_dense_core(db_session: Session) -> None:
@@ -123,13 +132,15 @@ def test_coreness_dense_core(db_session: Session) -> None:
     from railgati.services.network import get_station_topological_coreness
 
     for s in ["A", "B", "C", "D"]:
-        assert get_station_topological_coreness(db_session, s)["coreness"] == 3
-        assert get_station_topological_coreness(db_session, s)["degree"] == 3
+        res = get_station_topological_coreness(db_session, s)
+        assert res is not None
+        assert res["coreness"] == 3
+        assert res["degree"] == 3
 
 
 def test_coreness_isolated_station(db_session: Session) -> None:
     # Just one edge A-B and C isolated
-    snap_id = _setup_graph(db_session, [("A", "B")])
+    _setup_graph(db_session, [("A", "B")])
     db_session.add(Station(code="C"))
     db_session.commit()
 
@@ -150,5 +161,6 @@ def test_coreness_self_loop(db_session: Session) -> None:
 
     # The self loop is discarded. So degree is 1.
     res_a = get_station_topological_coreness(db_session, "A")
+    assert res_a is not None
     assert res_a["coreness"] == 1
     assert res_a["degree"] == 1
