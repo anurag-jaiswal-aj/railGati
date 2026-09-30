@@ -109,3 +109,43 @@ class RailwayNetworkEdge(Base):
             f"<RailwayNetworkEdge(snapshot_id={self.timetable_snapshot_id}, "
             f"{self.from_station_id}->{self.to_station_id})>"
         )
+
+
+class RailwayNetworkEdgeResilience(Base):
+    """Precomputed exact unweighted topological resilience metrics for a canonical undirected structural edge."""
+
+    __tablename__ = "railway_network_edge_resilience"
+    __table_args__ = (
+        Index("ix_edge_resilience_build", "graph_build_id"),
+        Index("ix_edge_resilience_lookup", "graph_build_id", "station_a_id", "station_b_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    graph_build_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("railway_graph_builds.id"), nullable=False
+    )
+    timetable_snapshot_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("dataset_snapshots.id"), nullable=False
+    )
+
+    station_a_id: Mapped[int] = mapped_column(Integer, ForeignKey("stations.id"), nullable=False)
+    station_b_id: Mapped[int] = mapped_column(Integer, ForeignKey("stations.id"), nullable=False)
+
+    detour_distance: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    detour_exists: Mapped[bool] = mapped_column(nullable=False)
+    is_structural_bridge: Mapped[bool] = mapped_column(nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    graph_build: Mapped["RailwayGraphBuild"] = relationship()
+    timetable_snapshot: Mapped["DatasetSnapshot"] = relationship()
+    station_a: Mapped["Station"] = relationship(foreign_keys=[station_a_id])
+    station_b: Mapped["Station"] = relationship(foreign_keys=[station_b_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"<RailwayNetworkEdgeResilience(build={self.graph_build_id}, "
+            f"{self.station_a_id}-{self.station_b_id}, bridge={self.is_structural_bridge})>"
+        )

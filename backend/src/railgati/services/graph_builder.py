@@ -2,10 +2,18 @@
 
 from datetime import UTC, datetime
 
+from collections import defaultdict, deque
+import sys
+
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.orm import Session
 
-from railgati.models.graph import RailwayGraphBuild, RailwayNetworkEdge, RailwayServiceEdge
+from railgati.models.graph import (
+    RailwayGraphBuild,
+    RailwayNetworkEdge,
+    RailwayServiceEdge,
+    RailwayNetworkEdgeResilience
+)
 from railgati.models.train import TrainStopObservation
 from railgati.services.journey import _parse_time_to_minutes
 
@@ -56,6 +64,16 @@ def build_graph_for_timetable_snapshot(
             )
         )
         db.flush()
+
+        db.execute(
+            delete(RailwayNetworkEdgeResilience).where(
+                RailwayNetworkEdgeResilience.timetable_snapshot_id == timetable_snapshot_id
+            )
+        )
+        db.flush()
+
+        import time
+        t_start = time.time()
 
         # 3. Generate ServiceEdges
         # Fetch all stops for the snapshot, ordered by train and sequence
@@ -139,6 +157,114 @@ def build_graph_for_timetable_snapshot(
 
         if network_edges:
             db.execute(insert(RailwayNetworkEdge), network_edges)
+            db.flush()
+
+        t_graph_extraction = time.time()
+        print(f"Graph extraction (Service/Network edges) took {t_graph_extraction - t_start:.2f}s")
+
+        # 4.5 Precompute Phase 65 Edge Resilience
+        sys.setrecursionlimit(20000)
+
+        # Build adjacency
+        adj = defaultdict(set)
+        vertices = set()
+        edges = set()
+        for ne in network_edges:
+            u, v = ne["from_station_id"], ne["to_station_id"]
+            if u != v:
+                adj[u].add(v)
+                adj[v].add(u)
+                vertices.add(u)
+                vertices.add(v)
+                if u < v:
+                    edges.add((u, v))
+                else:
+                    edges.add((v, u))
+
+        # Tarjan's Bridge Finding
+        timer = 0
+        tin = {}
+        low = {}
+        visited = set()
+        bridges = set()
+
+        def dfs(v, p=-1):
+            nonlocal timer
+            visited.add(v)
+            tin[v] = low[v] = timer
+            timer += 1
+            for to in adj[v]:
+                if to == p:
+                    continue
+                if to in visited:
+                    low[v] = min(low[v], tin[to])
+                else:
+                    dfs(to, v)
+                    low[v] = min(low[v], low[to])
+                    if low[to] > tin[v]:
+                        if v < to:
+                            bridges.add((v, to))
+                        else:
+                            bridges.add((to, v))
+
+        for v in vertices:
+            if v not in visited:
+                dfs(v)
+
+        non_bridge_edges = edges - bridges
+
+        # 2-Edge-Connected Component mapping
+        ecc_adj = defaultdict(set)
+        for u, v in non_bridge_edges:
+            ecc_adj[u].add(v)
+            ecc_adj[v].add(u)
+
+        resilience_rows = []
+
+        # Generate bridge rows
+        for u, v in bridges:
+            resilience_rows.append({
+                "timetable_snapshot_id": timetable_snapshot_id,
+                "graph_build_id": build_record.id,
+                "station_a_id": u,
+                "station_b_id": v,
+                "detour_distance": None,
+                "detour_exists": False,
+                "is_structural_bridge": True
+            })
+
+        # Run BFS for non-bridges strictly inside the 2-ECC
+        for u, v in non_bridge_edges:
+            q = deque([(u, 0)])
+            visited_bfs = {u}
+            found_dist = None
+
+            while q:
+                curr, dist = q.popleft()
+                for neighbor in ecc_adj[curr]:
+                    if (curr == u and neighbor == v) or (curr == v and neighbor == u):
+                        continue
+                    if neighbor == v:
+                        found_dist = dist + 1
+                        break
+                    if neighbor not in visited_bfs:
+                        visited_bfs.add(neighbor)
+                        q.append((neighbor, dist + 1))
+                if found_dist is not None:
+                    break
+
+            resilience_rows.append({
+                "timetable_snapshot_id": timetable_snapshot_id,
+                "graph_build_id": build_record.id,
+                "station_a_id": u,
+                "station_b_id": v,
+                "detour_distance": found_dist,
+                "detour_exists": True,
+                "is_structural_bridge": False
+            })
+
+        if resilience_rows:
+            db.execute(insert(RailwayNetworkEdgeResilience), resilience_rows)
             db.flush()
 
         # 5. Finalize

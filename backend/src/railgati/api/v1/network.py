@@ -2541,3 +2541,43 @@ def get_network_train_topological_perimeter_expansion(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get(
+    "/edges/{from_station_code}/{to_station_code}/topological-resilience-detour",
+    response_model=schemas.NetworkEdgeTopologicalResilienceDetourResponse,
+)
+def get_edge_resilience_detour(
+    from_station_code: str,
+    to_station_code: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Get the exact minimum unweighted alternative path length strictly in G-e.
+    """
+    if from_station_code.upper() == to_station_code.upper():
+        raise HTTPException(
+            status_code=400,
+            detail="Self-loops are not valid network edges.",
+        )
+
+    try:
+        from railgati.services.network import get_edge_resilience_detour as get_resilience
+        res = get_resilience(db, from_station_code.upper(), to_station_code.upper())
+    except ValueError as e:
+        if "unavailable" in str(e).lower():
+            raise HTTPException(
+                status_code=503,
+                detail=str(e),
+            )
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+    if res is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Edge {from_station_code.upper()} -> {to_station_code.upper()} not found in the active topological graph",
+        )
+
+    return res

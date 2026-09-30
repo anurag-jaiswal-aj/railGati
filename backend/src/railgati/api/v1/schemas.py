@@ -1132,6 +1132,22 @@ class PerimeterStationItem(BaseModel):
     station_name: str = Field(..., description="Canonical station name")
 
 
+class NetworkEdgeTopologicalResilienceDetourResponse(BaseModel):
+    """Network Edge Topological Resilience Detour analytics for the active graph build."""
+
+    from_station_code: str = Field(..., description="From station code")
+    to_station_code: str = Field(..., description="To station code")
+
+    detour_distance: int | None = Field(
+        ...,
+        description="The exact shortest unweighted alternative path length strictly strictly in G-e. Null if disconnected."
+    )
+    is_structural_bridge: bool = Field(
+        ...,
+        description="True if removing this undirected structural adjacency completely disconnects the two stations."
+    )
+
+
 class TrainTopologicalPerimeterExpansionResponse(BaseModel):
     """Train Route Topological Perimeter Expansion."""
 

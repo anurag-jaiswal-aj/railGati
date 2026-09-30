@@ -6789,3 +6789,65 @@ def calculate_train_topological_perimeter_expansion(
         "perimeter_expansion_ratio": float(ratio),
         "perimeter_stations": perimeter_items
     }
+
+
+def get_edge_resilience_detour(
+    db: Session, from_station_code: str, to_station_code: str
+) -> dict:
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.models.graph import (
+        RailwayGraphBuild,
+        RailwayNetworkEdge,
+        RailwayNetworkEdgeResilience,
+    )
+    from railgati.models.station import Station
+
+    if from_station_code == to_station_code:
+        raise ValueError("Invalid target: self-loops are not structural network edges.")
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    # Resolve stations
+    stations = db.scalars(
+        select(Station).filter(Station.code.in_([from_station_code, to_station_code]))
+    ).all()
+
+    if len(stations) != 2:
+        return None
+
+    st_dict = {s.code: s for s in stations}
+    from_station = st_dict.get(from_station_code)
+    to_station = st_dict.get(to_station_code)
+
+    canonical_a = min(from_station.id, to_station.id)
+    canonical_b = max(from_station.id, to_station.id)
+
+    # Resolve active Graph Build
+    graph_build = db.scalar(
+        select(RailwayGraphBuild).filter(
+            RailwayGraphBuild.timetable_snapshot_id == timetable_snapshot_id,
+            RailwayGraphBuild.status == "ACTIVE",
+        )
+    )
+    if not graph_build:
+        raise ValueError(
+            f"No ACTIVE RailwayGraphBuild found for timetable snapshot {timetable_snapshot_id}"
+        )
+
+    resilience_record = db.scalar(
+        select(RailwayNetworkEdgeResilience).filter(
+            RailwayNetworkEdgeResilience.graph_build_id == graph_build.id,
+            RailwayNetworkEdgeResilience.station_a_id == canonical_a,
+            RailwayNetworkEdgeResilience.station_b_id == canonical_b,
+        )
+    )
+
+    if not resilience_record:
+        return None
+
+    return {
+        "from_station_code": from_station_code,
+        "to_station_code": to_station_code,
+        "detour_distance": resilience_record.detour_distance,
+        "is_structural_bridge": resilience_record.is_structural_bridge,
+    }
