@@ -1192,3 +1192,13 @@ class NetworkEdgeTopologicalQuadrangleSupportResponse(BaseModel):
     quadrangle_support: int = Field(
         ..., description="The exact count of distinct chordless 4-cycles containing this edge."
     )
+
+
+class NetworkEdgeTopologicalBiconnectedComponentResponse(BaseModel):
+    """Network Edge Topological Biconnected Component metrics."""
+
+    from_station_code: str = Field(..., description="From station code")
+    to_station_code: str = Field(..., description="To station code")
+    block_edge_count: int = Field(
+        ..., description="The number of edges in the maximal biconnected component containing this edge."
+    )

@@ -75,6 +75,7 @@ def build_graph_for_timetable_snapshot(
         from railgati.models.graph import (
             RailwayNetworkEdgeTopologicalQuadrangleSupport,
             RailwayNetworkEdgeTopologicalTrussness,
+            RailwayNetworkEdgeTopologicalBiconnectedComponent,
         )
 
         db.execute(
@@ -86,6 +87,12 @@ def build_graph_for_timetable_snapshot(
         db.execute(
             delete(RailwayNetworkEdgeTopologicalQuadrangleSupport).where(
                 RailwayNetworkEdgeTopologicalQuadrangleSupport.timetable_snapshot_id
+                == timetable_snapshot_id
+            )
+        )
+        db.execute(
+            delete(RailwayNetworkEdgeTopologicalBiconnectedComponent).where(
+                RailwayNetworkEdgeTopologicalBiconnectedComponent.timetable_snapshot_id
                 == timetable_snapshot_id
             )
         )
@@ -477,7 +484,83 @@ def build_graph_for_timetable_snapshot(
             db.execute(insert(RailwayNetworkEdgeTopologicalQuadrangleSupport), quad_support_rows)
             db.flush()
 
-        # 6. Finalize
+        # 6. Phase 69: Edge Topological Biconnected Component (Block) Size
+        discovery = {}
+        low = {}
+        time_count = 0
+        stack = []
+        blocks = []
+
+        for start_node in adj_full:
+            if start_node in discovery:
+                continue
+
+            dfs_stack = [(start_node, None, iter(adj_full[start_node]))]
+            time_count += 1
+            discovery[start_node] = low[start_node] = time_count
+
+            while dfs_stack:
+                u, parent, n_iter = dfs_stack[-1]
+                try:
+                    v = next(n_iter)
+                    if v == parent:
+                        continue
+                    if v in discovery:
+                        low[u] = min(low[u], discovery[v])
+                        if discovery[v] < discovery[u]:
+                            stack.append((u, v))
+                    else:
+                        time_count += 1
+                        discovery[v] = low[v] = time_count
+                        stack.append((u, v))
+                        dfs_stack.append((v, u, iter(adj_full[v])))
+                except StopIteration:
+                    dfs_stack.pop()
+                    if dfs_stack:
+                        p, _, _ = dfs_stack[-1]
+                        low[p] = min(low[p], low[u])
+                        if low[u] >= discovery[p]:
+                            component = []
+                            while stack:
+                                edge = stack.pop()
+                                component.append(edge)
+                                if (edge[0] == p and edge[1] == u) or (edge[0] == u and edge[1] == p):
+                                    break
+                            blocks.append(component)
+            if stack:
+                blocks.append(list(stack))
+                stack.clear()
+
+        edge_to_block_size = {}
+        for block in blocks:
+            canonical_edges_in_block = {
+                (min(u, v), max(u, v)) for u, v in block
+            }
+            size = len(canonical_edges_in_block)
+            for ce in canonical_edges_in_block:
+                edge_to_block_size[ce] = size
+
+        biconnected_rows = []
+        for u, v in edges:
+            size = edge_to_block_size.get((u, v))
+            if size is None:
+                raise ValueError(f"Edge ({u}, {v}) did not receive a block assignment.")
+            biconnected_rows.append(
+                {
+                    "timetable_snapshot_id": timetable_snapshot_id,
+                    "graph_build_id": build_record.id,
+                    "station_a_id": u,
+                    "station_b_id": v,
+                    "block_edge_count": size,
+                }
+            )
+
+        if biconnected_rows:
+            from railgati.models.graph import RailwayNetworkEdgeTopologicalBiconnectedComponent
+            db.execute(insert(RailwayNetworkEdgeTopologicalBiconnectedComponent), biconnected_rows)
+            db.flush()
+
+        # 7. Finalize
         build_record.status = "ACTIVE"
         build_record.completed_at = datetime.now(UTC)
         db.commit()

@@ -283,3 +283,44 @@ class RailwayNetworkEdgeTopologicalQuadrangleSupport(Base):
 
     def __repr__(self) -> str:
         return f"<RailwayNetworkEdgeTopologicalQuadrangleSupport(a={self.station_a_id}, b={self.station_b_id}, support={self.quadrangle_support})>"
+
+
+class RailwayNetworkEdgeTopologicalBiconnectedComponent(Base):
+    """Phase 69: Edge Topological Biconnected Component (Block) Size materialized analytics."""
+
+    __tablename__ = "railway_network_edge_topological_biconnected_component"
+    __table_args__ = (
+        UniqueConstraint(
+            "graph_build_id",
+            "station_a_id",
+            "station_b_id",
+            name="uq_edge_biconnected_comp_graph_a_b",
+        ),
+        CheckConstraint(
+            "station_a_id < station_b_id", name="ck_edge_biconnected_comp_station_order"
+        ),
+        Index(
+            "ix_edge_biconnected_comp_graph_a_b", "graph_build_id", "station_a_id", "station_b_id"
+        ),
+        Index("ix_edge_biconnected_comp_snapshot", "timetable_snapshot_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    graph_build_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("railway_graph_builds.id"), nullable=False
+    )
+    timetable_snapshot_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("dataset_snapshots.id"), nullable=False
+    )
+    station_a_id: Mapped[int] = mapped_column(Integer, ForeignKey("stations.id"), nullable=False)
+    station_b_id: Mapped[int] = mapped_column(Integer, ForeignKey("stations.id"), nullable=False)
+
+    block_edge_count: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    graph_build: Mapped["RailwayGraphBuild"] = relationship()
+    timetable_snapshot: Mapped["DatasetSnapshot"] = relationship()
+    station_a: Mapped["Station"] = relationship(foreign_keys=[station_a_id])
+    station_b: Mapped["Station"] = relationship(foreign_keys=[station_b_id])
+
+    def __repr__(self) -> str:
+        return f"<RailwayNetworkEdgeTopologicalBiconnectedComponent(a={self.station_a_id}, b={self.station_b_id}, size={self.block_edge_count})>"

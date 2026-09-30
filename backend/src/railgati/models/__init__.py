@@ -9,6 +9,7 @@ from railgati.models.graph import (
     RailwayStationTopologicalCoreness,
     RailwayNetworkEdgeTopologicalTrussness,
     RailwayNetworkEdgeTopologicalQuadrangleSupport,
+    RailwayNetworkEdgeTopologicalBiconnectedComponent,
 )
 from railgati.models.provenance import DatasetSnapshot, DataSource
 from railgati.models.station import Station, StationObservation
@@ -25,6 +26,7 @@ __all__ = [
     "RailwayStationTopologicalCoreness",
     "RailwayNetworkEdgeTopologicalTrussness",
     "RailwayNetworkEdgeTopologicalQuadrangleSupport",
+    "RailwayNetworkEdgeTopologicalBiconnectedComponent",
     "Station",
     "StationObservation",
     "Train",

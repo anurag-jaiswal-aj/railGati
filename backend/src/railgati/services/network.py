@@ -7081,3 +7081,63 @@ def get_edge_topological_quadrangle_support(
         "to_station_code": to_station_code,
         "quadrangle_support": quad_record.quadrangle_support,
     }
+
+
+def get_edge_topological_biconnected_component(
+    db: Session,
+    timetable_snapshot_id: int,
+    from_station_code: str,
+    to_station_code: str,
+) -> dict[str, typing.Any] | None:
+    """Retrieve Phase 69: Edge Topological Biconnected Component (Block) Size materialization."""
+    from sqlalchemy import func
+
+    from railgati.models.graph import (
+        RailwayGraphBuild,
+        RailwayNetworkEdgeTopologicalBiconnectedComponent,
+    )
+    from railgati.models.station import Station
+
+    if from_station_code.upper() == to_station_code.upper():
+        raise ValueError("Self-loops are structurally invalid in canonical topological graph.")
+
+    from_station = db.scalar(
+        select(Station).where(func.lower(Station.code) == from_station_code.lower())
+    )
+    to_station = db.scalar(
+        select(Station).where(func.lower(Station.code) == to_station_code.lower())
+    )
+
+    if not from_station or not to_station:
+        return None
+
+    canonical_a = min(from_station.id, to_station.id)
+    canonical_b = max(from_station.id, to_station.id)
+
+    graph_build = db.scalar(
+        select(RailwayGraphBuild).filter(
+            RailwayGraphBuild.timetable_snapshot_id == timetable_snapshot_id,
+            RailwayGraphBuild.status == "ACTIVE",
+        )
+    )
+    if not graph_build:
+        raise ValueError(
+            f"No ACTIVE RailwayGraphBuild found for timetable snapshot {timetable_snapshot_id}"
+        )
+
+    bcc_record = db.scalar(
+        select(RailwayNetworkEdgeTopologicalBiconnectedComponent).filter(
+            RailwayNetworkEdgeTopologicalBiconnectedComponent.graph_build_id == graph_build.id,
+            RailwayNetworkEdgeTopologicalBiconnectedComponent.station_a_id == canonical_a,
+            RailwayNetworkEdgeTopologicalBiconnectedComponent.station_b_id == canonical_b,
+        )
+    )
+
+    if not bcc_record:
+        return None
+
+    return {
+        "from_station_code": from_station_code,
+        "to_station_code": to_station_code,
+        "block_edge_count": bcc_record.block_edge_count,
+    }

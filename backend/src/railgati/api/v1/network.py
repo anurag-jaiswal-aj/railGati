@@ -2720,3 +2720,48 @@ def get_network_edge_topological_quadrangle_support_endpoint(
         )
 
     return res
+
+
+@router.get(
+    "/edges/{from_station_code}/{to_station_code}/biconnected-component",
+    response_model=schemas.NetworkEdgeTopologicalBiconnectedComponentResponse,
+)
+def get_network_edge_topological_biconnected_component_endpoint(
+    from_station_code: str,
+    to_station_code: str,
+    timetable_snapshot_id: int,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """
+    Get the Phase 69 Edge Topological Biconnected Component (Block) Size for the canonical undirected edge.
+    """
+    if from_station_code.upper() == to_station_code.upper():
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid target: self-loops are not structural network edges.",
+        )
+
+    try:
+        from railgati.services.network import get_edge_topological_biconnected_component
+
+        res = get_edge_topological_biconnected_component(
+            db, timetable_snapshot_id, from_station_code.upper(), to_station_code.upper()
+        )
+    except ValueError as e:
+        if "unavailable" in str(e).lower() or "no active" in str(e).lower():
+            raise HTTPException(
+                status_code=503,
+                detail=str(e),
+            )
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+    if res is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Edge {from_station_code.upper()} -> {to_station_code.upper()} not found in the active topological graph",
+        )
+
+    return res
