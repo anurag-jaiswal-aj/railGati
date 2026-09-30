@@ -13,6 +13,7 @@ from railgati.models.graph import (
     RailwayNetworkEdgeResilience,
     RailwayServiceEdge,
     RailwayStationTopologicalCoreness,
+    RailwayNetworkEdgeTopologicalTrussness,
 )
 from railgati.models.train import TrainStopObservation
 from railgati.services.journey import _parse_time_to_minutes
@@ -339,6 +340,88 @@ def build_graph_for_timetable_snapshot(
 
         if coreness_rows:
             db.execute(insert(RailwayStationTopologicalCoreness), coreness_rows)
+            db.flush()
+
+        # 4.7 Precompute Phase 67 Edge Topological Trussness
+        db.execute(
+            delete(RailwayNetworkEdgeTopologicalTrussness).where(
+                RailwayNetworkEdgeTopologicalTrussness.timetable_snapshot_id
+                == timetable_snapshot_id
+            )
+        )
+        db.flush()
+
+        # Find initial triangle support for all canonical edges
+        support = {}
+        original_support = {}
+        for u, v in edges:
+            support[(u, v)] = 0
+
+        for u, v in edges:
+            common = adj[u] & adj[v]
+            support[(u, v)] = len(common)
+            original_support[(u, v)] = len(common)
+
+        max_sup = max(support.values()) if support else 0
+        buckets: list[set[tuple[int, int]]] = [set() for _ in range(max_sup + 1)]
+        for e, sup in support.items():
+            buckets[sup].add(e)
+
+        trussness = {}
+        k = 2
+
+        remaining = set(support.keys())
+
+        while remaining:
+            min_sup = min(support[e] for e in remaining)
+            k = max(k, min_sup + 2)
+
+            to_remove = deque([e for e in remaining if support[e] <= k - 2])
+            in_queue = set(to_remove)
+
+            while to_remove:
+                e = to_remove.popleft()
+                in_queue.remove(e)
+                if e not in remaining:
+                    continue
+
+                remaining.remove(e)
+                trussness[e] = k
+
+                u, v = e
+                common = adj[u] & adj[v]
+                for w in common:
+                    e1 = (u, w) if u < w else (w, u)
+                    e2 = (v, w) if v < w else (w, v)
+
+                    if e1 in remaining and e2 in remaining:
+                        support[e1] -= 1
+                        support[e2] -= 1
+                        if support[e1] <= k - 2 and e1 not in in_queue:
+                            to_remove.append(e1)
+                            in_queue.add(e1)
+                        if support[e2] <= k - 2 and e2 not in in_queue:
+                            to_remove.append(e2)
+                            in_queue.add(e2)
+
+                adj[u].remove(v)
+                adj[v].remove(u)
+
+        trussness_rows = []
+        for u, v in edges:
+            trussness_rows.append(
+                {
+                    "timetable_snapshot_id": timetable_snapshot_id,
+                    "graph_build_id": build_record.id,
+                    "station_a_id": u,
+                    "station_b_id": v,
+                    "trussness": trussness[(u, v)],
+                    "triangle_support": original_support[(u, v)],
+                }
+            )
+
+        if trussness_rows:
+            db.execute(insert(RailwayNetworkEdgeTopologicalTrussness), trussness_rows)
             db.flush()
 
         # 5. Finalize

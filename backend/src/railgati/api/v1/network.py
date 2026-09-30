@@ -2634,3 +2634,45 @@ def get_station_coreness_endpoint(
         )
 
     return res
+
+
+@router.get(
+    "/edges/{from_station_code}/{to_station_code}/topological-trussness",
+    response_model=schemas.NetworkEdgeTopologicalTrussnessResponse,
+)
+def get_network_edge_topological_trussness_endpoint(
+    from_station_code: str,
+    to_station_code: str,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """
+    Get the exact k-truss decomposition topological trussness for the canonical undirected edge.
+    """
+    if from_station_code.upper() == to_station_code.upper():
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid target: self-loops are not structural network edges.",
+        )
+
+    try:
+        from railgati.services.network import get_edge_topological_trussness
+
+        res = get_edge_topological_trussness(db, from_station_code.upper(), to_station_code.upper())
+    except ValueError as e:
+        if "unavailable" in str(e).lower() or "no active" in str(e).lower():
+            raise HTTPException(
+                status_code=503,
+                detail=str(e),
+            )
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+    if res is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Edge {from_station_code.upper()} -> {to_station_code.upper()} not found in the active topological graph",
+        )
+
+    return res

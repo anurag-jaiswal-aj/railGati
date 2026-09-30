@@ -1173,3 +1173,12 @@ class StationTopologicalCorenessResponse(BaseModel):
     station_code: str = Field(..., description="Station Code")
     coreness: int = Field(..., description="The topological k-core number of the station.")
     degree: int = Field(..., description="The undirected structural degree of the station.")
+
+
+class NetworkEdgeTopologicalTrussnessResponse(BaseModel):
+    """Network Edge Topological Trussness metrics."""
+
+    from_station_code: str = Field(..., description="From station code")
+    to_station_code: str = Field(..., description="To station code")
+    trussness: int = Field(..., description="The topological k-truss number of the edge.")
+    triangle_support: int = Field(..., description="The initial triangle support of the edge.")

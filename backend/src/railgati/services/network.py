@@ -6956,3 +6956,62 @@ def get_station_topological_coreness(
         "coreness": core_record.coreness,
         "degree": core_record.degree,
     }
+
+
+def get_edge_topological_trussness(db: Session, from_station_code: str, to_station_code: str) -> dict[str, typing.Any] | None:
+    from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
+    from railgati.models.graph import RailwayGraphBuild, RailwayNetworkEdgeTopologicalTrussness
+    from railgati.models.station import Station
+
+    if from_station_code == to_station_code:
+        raise ValueError("Invalid target: self-loops are not structural network edges.")
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+    if not timetable_snapshot_id:
+        raise ValueError("No active timetable snapshot found")
+
+    stations = db.scalars(
+        select(Station).filter(Station.code.in_([from_station_code, to_station_code]))
+    ).all()
+
+    if len(stations) != 2:
+        return None
+
+    st_dict = {s.code: s for s in stations}
+    from_station = st_dict.get(from_station_code)
+    to_station = st_dict.get(to_station_code)
+
+    if not from_station or not to_station:
+        return None
+
+    canonical_a = min(from_station.id, to_station.id)
+    canonical_b = max(from_station.id, to_station.id)
+
+    graph_build = db.scalar(
+        select(RailwayGraphBuild).filter(
+            RailwayGraphBuild.timetable_snapshot_id == timetable_snapshot_id,
+            RailwayGraphBuild.status == "ACTIVE",
+        )
+    )
+    if not graph_build:
+        raise ValueError(
+            f"No ACTIVE RailwayGraphBuild found for timetable snapshot {timetable_snapshot_id}"
+        )
+
+    trussness_record = db.scalar(
+        select(RailwayNetworkEdgeTopologicalTrussness).filter(
+            RailwayNetworkEdgeTopologicalTrussness.graph_build_id == graph_build.id,
+            RailwayNetworkEdgeTopologicalTrussness.station_a_id == canonical_a,
+            RailwayNetworkEdgeTopologicalTrussness.station_b_id == canonical_b,
+        )
+    )
+
+    if not trussness_record:
+        return None
+
+    return {
+        "from_station_code": from_station_code,
+        "to_station_code": to_station_code,
+        "trussness": trussness_record.trussness,
+        "triangle_support": trussness_record.triangle_support,
+    }

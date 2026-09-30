@@ -7,6 +7,7 @@ from railgati.models.graph import (
     RailwayNetworkEdgeResilience,
     RailwayServiceEdge,
     RailwayStationTopologicalCoreness,
+    RailwayNetworkEdgeTopologicalTrussness,
 )
 from railgati.models.provenance import DatasetSnapshot, DataSource
 from railgati.models.station import Station, StationObservation
@@ -21,6 +22,7 @@ __all__ = [
     "RailwayNetworkEdgeResilience",
     "RailwayServiceEdge",
     "RailwayStationTopologicalCoreness",
+    "RailwayNetworkEdgeTopologicalTrussness",
     "Station",
     "StationObservation",
     "Train",

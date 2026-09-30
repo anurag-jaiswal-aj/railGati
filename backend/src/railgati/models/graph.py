@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from railgati.db import Base
@@ -188,4 +188,42 @@ class RailwayStationTopologicalCoreness(Base):
         return (
             f"<RailwayStationTopologicalCoreness(build={self.graph_build_id}, "
             f"station={self.station_id}, core={self.coreness})>"
+        )
+
+
+class RailwayNetworkEdgeTopologicalTrussness(Base):
+    __tablename__ = "railway_network_edge_topological_trussness"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    graph_build_id: Mapped[int] = mapped_column(ForeignKey("railway_graph_builds.id"))
+    timetable_snapshot_id: Mapped[int] = mapped_column(ForeignKey("dataset_snapshots.id"))
+    station_a_id: Mapped[int] = mapped_column(ForeignKey("stations.id"))
+    station_b_id: Mapped[int] = mapped_column(ForeignKey("stations.id"))
+
+    trussness: Mapped[int] = mapped_column()
+    triangle_support: Mapped[int] = mapped_column()
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "graph_build_id",
+            "station_a_id",
+            "station_b_id",
+            name="uq_railway_network_edge_trussness_build_stations",
+        ),
+        CheckConstraint("station_a_id < station_b_id", name="ck_edge_trussness_station_order"),
+        Index("ix_railway_edge_trussness_build_stations", "graph_build_id", "station_a_id", "station_b_id"),
+        Index("ix_railway_edge_trussness_snapshot", "timetable_snapshot_id"),
+    )
+
+    graph_build: Mapped["RailwayGraphBuild"] = relationship()
+    timetable_snapshot: Mapped["DatasetSnapshot"] = relationship()
+    station_a: Mapped["Station"] = relationship(foreign_keys=[station_a_id])
+    station_b: Mapped["Station"] = relationship(foreign_keys=[station_b_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"<RailwayNetworkEdgeTopologicalTrussness(build={self.graph_build_id}, "
+            f"{self.station_a_id}-{self.station_b_id}, truss={self.trussness})>"
         )
