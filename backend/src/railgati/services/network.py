@@ -7146,10 +7146,11 @@ def get_edge_topological_biconnected_component(
 def calculate_train_sequence_subgraph_triangles(
     db: Session, snapshot_id: int, train_number: str
 ) -> dict[str, typing.Any]:
-    """Calculate the number of undirected triangles in the subgraph induced by a train's sequence."""
+    """Calculate undirected triangles in the subgraph induced by a train's sequence."""
     from sqlalchemy import func, select
-    from railgati.models.train import Train, TrainStopObservation
+
     from railgati.models.graph import RailwayNetworkEdge
+    from railgati.models.train import Train, TrainStopObservation
 
     train = db.scalar(select(Train).filter(func.upper(Train.number) == train_number.upper()))
     if not train:
@@ -7162,7 +7163,7 @@ def calculate_train_sequence_subgraph_triangles(
             .filter_by(train_id=train.id, snapshot_id=snapshot_id)
         ).all()
     )
-    
+
     if len(route_stations) < 3:
         return {
             "train_number": train.number,
@@ -7180,7 +7181,7 @@ def calculate_train_sequence_subgraph_triangles(
     ).all()
 
     # 3. Build adjacency list for V_T
-    adj = {s: set() for s in route_stations}
+    adj: dict[int, set[int]] = {s: set() for s in route_stations}
     for edge in edges:
         u, v = edge.from_station_id, edge.to_station_id
         if u != v:  # Ignore self-loops just in case
