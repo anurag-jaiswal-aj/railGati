@@ -1182,3 +1182,13 @@ class NetworkEdgeTopologicalTrussnessResponse(BaseModel):
     to_station_code: str = Field(..., description="To station code")
     trussness: int = Field(..., description="The topological k-truss number of the edge.")
     triangle_support: int = Field(..., description="The initial triangle support of the edge.")
+
+
+class NetworkEdgeTopologicalQuadrangleSupportResponse(BaseModel):
+    """Network Edge Topological Quadrangle Support metrics."""
+
+    from_station_code: str = Field(..., description="From station code")
+    to_station_code: str = Field(..., description="To station code")
+    quadrangle_support: int = Field(
+        ..., description="The exact count of distinct chordless 4-cycles containing this edge."
+    )

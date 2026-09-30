@@ -13,7 +13,6 @@ from railgati.models.graph import (
     RailwayNetworkEdgeResilience,
     RailwayServiceEdge,
     RailwayStationTopologicalCoreness,
-    RailwayNetworkEdgeTopologicalTrussness,
 )
 from railgati.models.train import TrainStopObservation
 from railgati.services.journey import _parse_time_to_minutes
@@ -69,6 +68,25 @@ def build_graph_for_timetable_snapshot(
         db.execute(
             delete(RailwayNetworkEdgeResilience).where(
                 RailwayNetworkEdgeResilience.timetable_snapshot_id == timetable_snapshot_id
+            )
+        )
+        db.flush()
+
+        from railgati.models.graph import (
+            RailwayNetworkEdgeTopologicalQuadrangleSupport,
+            RailwayNetworkEdgeTopologicalTrussness,
+        )
+
+        db.execute(
+            delete(RailwayNetworkEdgeTopologicalTrussness).where(
+                RailwayNetworkEdgeTopologicalTrussness.timetable_snapshot_id
+                == timetable_snapshot_id
+            )
+        )
+        db.execute(
+            delete(RailwayNetworkEdgeTopologicalQuadrangleSupport).where(
+                RailwayNetworkEdgeTopologicalQuadrangleSupport.timetable_snapshot_id
+                == timetable_snapshot_id
             )
         )
         db.flush()
@@ -424,7 +442,42 @@ def build_graph_for_timetable_snapshot(
             db.execute(insert(RailwayNetworkEdgeTopologicalTrussness), trussness_rows)
             db.flush()
 
-        # 5. Finalize
+        # 5. Phase 68: Edge Topological Quadrangle Support
+        adj_full: defaultdict[int, set[int]] = defaultdict(set)
+        for u, v in edges:
+            adj_full[u].add(v)
+            adj_full[v].add(u)
+
+        quad_support_rows = []
+        for u, v in edges:
+            n_u = adj_full[u] - adj_full[v] - {v}
+            n_v = adj_full[v] - adj_full[u] - {u}
+
+            c4_count = 0
+            if len(n_u) <= len(n_v):
+                for x in n_u:
+                    c4_count += len(adj_full[x] & n_v)
+            else:
+                for y in n_v:
+                    c4_count += len(adj_full[y] & n_u)
+
+            quad_support_rows.append(
+                {
+                    "timetable_snapshot_id": timetable_snapshot_id,
+                    "graph_build_id": build_record.id,
+                    "station_a_id": u,
+                    "station_b_id": v,
+                    "quadrangle_support": c4_count,
+                }
+            )
+
+        if quad_support_rows:
+            from railgati.models.graph import RailwayNetworkEdgeTopologicalQuadrangleSupport
+
+            db.execute(insert(RailwayNetworkEdgeTopologicalQuadrangleSupport), quad_support_rows)
+            db.flush()
+
+        # 6. Finalize
         build_record.status = "ACTIVE"
         build_record.completed_at = datetime.now(UTC)
         db.commit()
