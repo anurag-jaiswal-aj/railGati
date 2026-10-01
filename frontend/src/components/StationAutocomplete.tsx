@@ -85,6 +85,10 @@ export function StationAutocomplete({
         <input
           id={id}
           type="text"
+          role="combobox"
+          aria-expanded={isOpen && value.trim().length > 0 && results.length > 0}
+          aria-controls={`${id}-listbox`}
+          aria-autocomplete="list"
           className="w-full rounded-md border border-foreground/20 bg-background px-4 py-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
           placeholder={placeholder}
           value={value}
@@ -108,10 +112,11 @@ export function StationAutocomplete({
           ) : results.length === 0 && !loading ? (
             <div className="px-4 py-2 text-sm text-foreground/50">No stations found</div>
           ) : (
-            <ul role="listbox">
+            <ul role="listbox" id={`${id}-listbox`}>
               {results.map((station) => (
                 <li
                   key={station.code}
+                  id={`${id}-option-${station.code}`}
                   className="cursor-pointer px-4 py-2 hover:bg-foreground/5 transition-colors group flex items-center justify-between"
                   onClick={() => {
                     onChange(station.name);

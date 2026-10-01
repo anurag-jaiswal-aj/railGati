@@ -136,7 +136,7 @@ export default async function TrainPage({ params }: { params: { train_number: st
              </div>
           </div>
           <div className="bg-card px-8 py-6">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground/50 mb-1">Total Stops</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground/50 mb-1" title="Number of scheduled timetable routing nodes traversed">Timetable Nodes</h3>
             <p className="text-2xl font-medium text-foreground">{profile.total_stops}</p>
           </div>
           <div className="bg-card px-8 py-6">

@@ -11,16 +11,28 @@ export default function Home() {
   const [toQuery, setToQuery] = useState("");
   const [fromStation, setFromStation] = useState<string | null>(null);
   const [toStation, setToStation] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const handleSearch = () => {
+    setSearchError(null);
     if (!fromStation || !toStation) return;
     
     if (fromStation === toStation) {
-      alert("Source and destination stations cannot be the same.");
+      setSearchError("Origin and destination must be different stations.");
       return;
     }
 
     router.push(`/journeys?source=${fromStation}&destination=${toStation}`);
+  };
+
+  const handleFromChange = (station: string | null) => {
+    setFromStation(station);
+    setSearchError(null);
+  };
+
+  const handleToChange = (station: string | null) => {
+    setToStation(station);
+    setSearchError(null);
   };
 
   return (
@@ -42,7 +54,7 @@ export default function Home() {
             placeholder="Search departure station..."
             value={fromQuery}
             onChange={setFromQuery}
-            onSelectStation={setFromStation}
+            onSelectStation={handleFromChange}
           />
           
           <div className="hidden md:flex h-12 w-12 items-center justify-center rounded-full bg-foreground/5 text-foreground/40 mb-1">
@@ -58,11 +70,20 @@ export default function Home() {
             placeholder="Search arrival station..."
             value={toQuery}
             onChange={setToQuery}
-            onSelectStation={setToStation}
+            onSelectStation={handleToChange}
           />
         </div>
 
-        <div className="mt-8 flex justify-center">
+        <div className="mt-8 flex flex-col items-center gap-4">
+          {searchError && (
+            <div
+              role="alert"
+              className="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-600 dark:text-red-400 flex items-center gap-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              {searchError}
+            </div>
+          )}
           <button
             onClick={handleSearch}
             disabled={!fromStation || !toStation}

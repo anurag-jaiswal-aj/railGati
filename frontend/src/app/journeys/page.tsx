@@ -228,8 +228,8 @@ function JourneysContent() {
                 {renderLeg(journey, 0)}
                 <div className="mt-4 pt-4 border-t border-foreground/10 flex justify-between text-xs text-foreground/50">
                   <span>Total Duration: {formatDuration(journey.total_duration_minutes)}</span>
-                  <span>{journey.number_of_stops} stops</span>
-                  {journey.timing_confidence === "MISSING_DATA" && <span className="text-yellow-600">Timing Missing Data</span>}
+                  <span title="Number of scheduled timetable routing nodes traversed">{journey.number_of_stops} timetable nodes</span>
+                  {journey.timing_confidence === "MISSING_DATA" && <span className="text-yellow-600 dark:text-yellow-400">Timing Missing Data</span>}
                 </div>
               </div>
             ))}
@@ -259,8 +259,8 @@ function JourneysContent() {
 
                 <div className="mt-4 pt-4 border-t border-foreground/10 flex justify-between text-xs text-foreground/50">
                   <span>Total Duration: {formatDuration(journey.total_duration_minutes)}</span>
-                  <span>{journey.number_of_stops} total stops</span>
-                  {journey.timing_confidence === "MISSING_DATA" && <span className="text-yellow-600">Timing Missing Data</span>}
+                  <span title="Number of scheduled timetable routing nodes traversed">{journey.number_of_stops} total timetable nodes</span>
+                  {journey.timing_confidence === "MISSING_DATA" && <span className="text-yellow-600 dark:text-yellow-400">Timing Missing Data</span>}
                 </div>
               </div>
             ))}
