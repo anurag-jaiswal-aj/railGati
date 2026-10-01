@@ -839,6 +839,16 @@ class TrainMaxSharedSubRouteResponse(BaseModel):
     top_shared_sub_routes: list[TrainMaxSharedSubRouteItem]
 
 
+class TrainRouteEdgeExclusivityResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    route_length: int
+    route_edge_count: int
+    exclusive_edge_count: int
+    shared_edge_count: int
+    exclusivity_ratio: float | None
+
+
 class TrainODExclusivityPairItem(BaseModel):
     origin_station_code: str
     destination_station_code: str

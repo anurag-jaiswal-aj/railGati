@@ -1862,6 +1862,37 @@ def get_train_max_shared_sub_route(
 
 
 @router.get(
+    "/trains/{train_number}/route-edge-exclusivity",
+    response_model=schemas.TrainRouteEdgeExclusivityResponse,
+)
+def get_train_route_edge_exclusivity(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """Calculate Train Route Edge Exclusivity (Phase 40)."""
+    from railgati.services.network import calculate_train_route_edge_exclusivity
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return calculate_train_route_edge_exclusivity(
+            db=db,
+            timetable_snapshot_id=timetable_snapshot_id,
+            train_number=train_number,
+        )
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+
+@router.get(
     "/trains/{train_number}/od-exclusivity",
     response_model=schemas.TrainODExclusivityResponse,
     summary="Calculate Train Route O-D Structural Exclusivity Analytics",
