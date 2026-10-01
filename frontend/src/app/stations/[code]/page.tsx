@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { getServerApiUrl } from "@/lib/api";
 
 interface StationDetail {
   id: number;
@@ -57,7 +58,7 @@ interface OutboundEdgeTransitResponse {
 
 async function getStationData(code: string) {
   const fetchOptions = { next: { revalidate: 60 } };
-  const baseUrl = "http://127.0.0.1:8000/api/v1";
+  const baseUrl = getServerApiUrl() + "/api/v1";
 
   const [stationRes, trainsRes, reachRes, outboundRes] = await Promise.all([
     fetch(`${baseUrl}/stations/${code}`, fetchOptions),

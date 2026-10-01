@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { getServerApiUrl } from "@/lib/api";
 
 interface TrainDetail {
   train_number: string;
@@ -36,10 +37,11 @@ interface TrainRouteProfileResponse {
 async function getTrainData(train_number: string) {
   const fetchOptions = { next: { revalidate: 60 } };
   
+  const baseUrl = getServerApiUrl();
   const [detailRes, routeRes, profileRes] = await Promise.all([
-    fetch(`http://127.0.0.1:8000/api/v1/trains/${train_number}`, fetchOptions),
-    fetch(`http://127.0.0.1:8000/api/v1/trains/${train_number}/route`, fetchOptions),
-    fetch(`http://127.0.0.1:8000/api/v1/network/trains/${train_number}/profile`, fetchOptions)
+    fetch(`${baseUrl}/api/v1/trains/${train_number}`, fetchOptions),
+    fetch(`${baseUrl}/api/v1/trains/${train_number}/route`, fetchOptions),
+    fetch(`${baseUrl}/api/v1/network/trains/${train_number}/profile`, fetchOptions)
   ]);
 
   if (!detailRes.ok) {

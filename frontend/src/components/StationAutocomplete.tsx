@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { getClientApiUrl } from "@/lib/api";
 
 interface Station {
   code: string;
@@ -55,7 +56,8 @@ export function StationAutocomplete({
       setError(null);
       
       try {
-        const res = await fetch(`http://localhost:8000/api/v1/stations/search?q=${encodeURIComponent(value)}&size=5`);
+        const baseUrl = getClientApiUrl();
+        const res = await fetch(`${baseUrl}/api/v1/stations/search?q=${encodeURIComponent(value)}&size=5`);
         if (!res.ok) {
           throw new Error("Failed to search stations");
         }

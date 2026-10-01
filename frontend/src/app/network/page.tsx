@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getServerApiUrl } from "@/lib/api";
 
 interface HubCentralityItem {
   station_code: string;
@@ -44,7 +45,7 @@ interface TerminusResponse {
 
 async function getNetworkData() {
   const fetchOptions = { next: { revalidate: 300 } };
-  const baseUrl = "http://127.0.0.1:8000/api/v1";
+  const baseUrl = getServerApiUrl() + "/api/v1";
 
   const [hubsRes, edgesRes, terminiRes] = await Promise.all([
     fetch(`${baseUrl}/network/hubs`, fetchOptions).catch(() => null),

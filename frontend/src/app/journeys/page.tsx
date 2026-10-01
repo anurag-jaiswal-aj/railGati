@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { getClientApiUrl } from "@/lib/api";
 
 interface JourneyLeg {
   train_number: string;
@@ -57,7 +58,8 @@ function JourneysContent() {
       setError(null);
       
       try {
-        const res = await fetch(`http://127.0.0.1:8000/api/v1/journeys/compare?source=${source}&destination=${destination}&max_transfers=${maxTransfers}`);
+        const baseUrl = getClientApiUrl();
+        const res = await fetch(`${baseUrl}/api/v1/journeys/compare?source=${source}&destination=${destination}&max_transfers=${maxTransfers}`);
         
         if (!res.ok) {
           if (res.status === 400 || res.status === 404 || res.status === 422) {
