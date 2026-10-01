@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { StationAutocomplete } from "@/components/StationAutocomplete";
 
 export default function Home() {
@@ -70,6 +71,12 @@ export default function Home() {
             Search Trains
           </button>
         </div>
+      </div>
+      <div className="mt-8">
+        <Link href="/network" className="text-blue-600 hover:underline font-medium text-sm flex items-center gap-1">
+          Explore Network Discovery
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </Link>
       </div>
     </main>
   );
