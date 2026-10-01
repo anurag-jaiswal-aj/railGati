@@ -1233,3 +1233,27 @@ class NetworkStationTopologicalFarnessResponse(BaseModel):
     timetable_snapshot_id: int
     topological_farness: int
     reachable_station_count: int
+
+
+class NetworkEdgeTopologicalBridgeBipartitionSizeResponse(BaseModel):
+    """Network Edge Topological Bridge Bipartition Size metrics."""
+    
+    from_station_code: str = Field(..., description="From station code")
+    to_station_code: str = Field(..., description="To station code")
+    timetable_snapshot_id: int = Field(..., description="The ID of the active timetable snapshot.")
+    is_bridge: bool = Field(..., description="True if the edge is a structural cut-edge.")
+    bridge_bipartition_size: int = Field(..., description="The number of vertices in the smaller component isolated by the bridge, or 0 if not a bridge.")
+
+
+class TrainTopologicalBiconnectedBlockTraversalCountResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    biconnected_block_traversal_count: int
+    total_route_edges: int
+
+
+class TrainTopologicalGlobalDegreeAssortativityResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    route_assortativity_coefficient: float | None
+    distinct_route_edges: int

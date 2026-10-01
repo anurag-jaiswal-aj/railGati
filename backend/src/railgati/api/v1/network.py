@@ -43,6 +43,7 @@ from railgati.api.v1.snapshots import (
 from railgati.db import get_db
 from railgati.models.station import Station, StationObservation
 from railgati.services.network import (
+    calculate_bridge_bipartition_size,
     calculate_edge_volume,
     calculate_network_complexities,
     calculate_network_edge_asymmetry,
@@ -2921,6 +2922,112 @@ def get_station_topological_farness(
                 snapshot_id=timetable_snapshot_id,
                 station_code=station_code,
             )
+        )
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+
+@router.get(
+    "/edges/{from_station_code}/{to_station_code}/topological-bridge-bipartition-size",
+    response_model=schemas.NetworkEdgeTopologicalBridgeBipartitionSizeResponse,
+    summary="Get topological bridge bipartition size for an edge",
+    description=(
+        "Returns the topological bridge bipartition size for an undirected structural edge. "
+        "If the edge is a bridge, returns the size of the smaller component. "
+        "Otherwise, returns 0."
+    ),
+)
+def get_network_edge_topological_bridge_bipartition_size(
+    from_station_code: Annotated[
+        str,
+        Path(description="From canonical station code.", min_length=1, max_length=20),
+    ],
+    to_station_code: Annotated[
+        str,
+        Path(description="To canonical station code.", min_length=1, max_length=20),
+    ],
+    db: Session = Depends(get_db),  # noqa: B008
+) -> schemas.NetworkEdgeTopologicalBridgeBipartitionSizeResponse:
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return schemas.NetworkEdgeTopologicalBridgeBipartitionSizeResponse(
+            **calculate_bridge_bipartition_size(
+                db=db,
+                snapshot_id=timetable_snapshot_id,
+                from_station_code=from_station_code,
+                to_station_code=to_station_code,
+            )
+        )
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+
+@router.get(
+    "/trains/{train_number}/topological-biconnected-block-traversal-count",
+    response_model=schemas.TrainTopologicalBiconnectedBlockTraversalCountResponse,
+)
+def get_train_topological_biconnected_block_traversal_count(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Calculate Train Route Topological Biconnected Block Traversal Count."""
+    from railgati.services.network import calculate_train_topological_biconnected_block_traversal_count
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return calculate_train_topological_biconnected_block_traversal_count(
+            db=db,
+            snapshot_id=timetable_snapshot_id,
+            target_train_number=train_number,
+        )
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+
+@router.get(
+    "/trains/{train_number}/topological-global-degree-assortativity",
+    response_model=schemas.TrainTopologicalGlobalDegreeAssortativityResponse,
+)
+def get_train_topological_global_degree_assortativity(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """Calculate Train Route Topological Global-Degree Assortativity."""
+    from railgati.services.network import calculate_train_topological_global_degree_assortativity
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return calculate_train_topological_global_degree_assortativity(
+            db=db,
+            snapshot_id=timetable_snapshot_id,
+            target_train_number=train_number,
         )
     except ValueError as e:
         if "not found" in str(e).lower():

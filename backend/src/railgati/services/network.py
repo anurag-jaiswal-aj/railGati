@@ -7503,3 +7503,327 @@ def calculate_station_topological_farness(
         "topological_farness": farness,
         "reachable_station_count": reachable_count,
     }
+
+
+def calculate_bridge_bipartition_size(
+    db: Session, snapshot_id: int, from_station_code: str, to_station_code: str
+) -> dict[str, typing.Any]:
+    """Calculate the bridge bipartition size for an edge in the active global graph."""
+    import collections
+
+    from sqlalchemy import func, select
+
+    from railgati.models.graph import RailwayNetworkEdge
+    from railgati.models.station import Station
+
+    if from_station_code.upper() == to_station_code.upper():
+        raise ValueError(
+            f"Self-loops are excluded: {from_station_code} -> {to_station_code}"
+        )
+
+    stations = db.scalars(
+        select(Station).filter(
+            func.upper(Station.code).in_(
+                [from_station_code.upper(), to_station_code.upper()]
+            )
+        )
+    ).all()
+
+    st_map = {s.code.upper(): s for s in stations}
+    if from_station_code.upper() not in st_map:
+        raise ValueError(f"Station '{from_station_code}' not found.")
+    if to_station_code.upper() not in st_map:
+        raise ValueError(f"Station '{to_station_code}' not found.")
+
+    u_id = st_map[from_station_code.upper()].id
+    v_id = st_map[to_station_code.upper()].id
+
+    edges = db.scalars(
+        select(RailwayNetworkEdge).filter_by(
+            timetable_snapshot_id=snapshot_id
+        )
+    ).all()
+
+    adj: dict[int, set[int]] = collections.defaultdict(set)
+    edge_exists = False
+    for edge in edges:
+        u, v = edge.from_station_id, edge.to_station_id
+        if u != v:
+            adj[u].add(v)
+            adj[v].add(u)
+            if (u == u_id and v == v_id) or (u == v_id and v == u_id):
+                edge_exists = True
+
+    if not edge_exists:
+        raise ValueError(
+            f"Edge from '{from_station_code}' to '{to_station_code}' not found in the active graph."
+        )
+
+    visited_comp = {u_id}
+    q: collections.deque[int] = collections.deque([u_id])
+    while q:
+        curr = q.popleft()
+        for nxt in adj[curr]:
+            if nxt not in visited_comp:
+                visited_comp.add(nxt)
+                q.append(nxt)
+
+    comp_size = len(visited_comp)
+
+    timer = 0
+    discovery: dict[int, int] = {}
+    low: dict[int, int] = {}
+    is_bridge = False
+    bipartition_size = 0
+
+    import typing
+    
+    stack: list[list[typing.Any]] = []
+    stack.append([u_id, -1, iter(adj[u_id]), 1])
+    timer += 1
+    discovery[u_id] = low[u_id] = timer
+
+    while stack:
+        curr, parent, children_iter, size = stack[-1]
+        
+        try:
+            nxt = next(children_iter)
+            if nxt == parent:
+                continue
+                
+            if nxt in discovery:
+                low[curr] = min(low[curr], discovery[nxt])
+            else:
+                timer += 1
+                discovery[nxt] = low[nxt] = timer
+                stack.append([nxt, curr, iter(adj[nxt]), 1])
+        except StopIteration:
+            stack.pop()
+            if parent != -1:
+                stack[-1][3] += size
+                low[parent] = min(low[parent], low[curr])
+                
+                if low[curr] > discovery[parent]:
+                    if (parent == u_id and curr == v_id) or (parent == v_id and curr == u_id):
+                        is_bridge = True
+                        bipartition_size = min(size, comp_size - size)
+
+    return {
+        "from_station_code": st_map[from_station_code.upper()].code,
+        "to_station_code": st_map[to_station_code.upper()].code,
+        "timetable_snapshot_id": snapshot_id,
+        "is_bridge": is_bridge,
+        "bridge_bipartition_size": bipartition_size,
+    }
+
+
+def calculate_train_topological_biconnected_block_traversal_count(
+    db: Session, snapshot_id: int, target_train_number: str
+) -> dict[str, typing.Any]:
+    import collections
+    from sqlalchemy import func, select, text
+
+    from railgati.models.train import Train, TrainObservation
+    from railgati.models.graph import RailwayNetworkEdge
+
+    target = db.execute(
+        select(Train.id, Train.number)
+        .join(TrainObservation, TrainObservation.train_id == Train.id)
+        .filter(
+            TrainObservation.snapshot_id == snapshot_id,
+            func.lower(Train.number) == target_train_number.lower(),
+        )
+    ).first()
+
+    if not target:
+        raise ValueError(f"Train {target_train_number} not found in snapshot {snapshot_id}")
+
+    target_train_id = target.id
+    target_train_number_resolved = target.number
+
+    # 1. Retrieve train route stations
+    query = text("""
+        SELECT station_id
+        FROM train_stop_observations
+        WHERE snapshot_id = :snapshot_id
+          AND train_id = :target_train_id
+        ORDER BY stop_sequence
+    """)
+    res = db.execute(query, {"snapshot_id": snapshot_id, "target_train_id": target_train_id}).fetchall()
+    path = [row[0] for row in res]
+    
+    total_route_edges = 0
+    route_edges_canonical = []
+    
+    for i in range(len(path) - 1):
+        u, v = path[i], path[i+1]
+        if u != v: # Exclude self loops
+            total_route_edges += 1
+            route_edges_canonical.append((min(u, v), max(u, v)))
+            
+    if total_route_edges == 0:
+        return {
+            "train_number": target_train_number_resolved,
+            "timetable_snapshot_id": snapshot_id,
+            "biconnected_block_traversal_count": 0,
+            "total_route_edges": 0,
+        }
+        
+    # 2. Build graph and compute blocks using Tarjan
+    edges = db.scalars(select(RailwayNetworkEdge).filter_by(timetable_snapshot_id=snapshot_id)).all()
+    
+    adj = collections.defaultdict(set)
+    for e in edges:
+        if e.from_station_id != e.to_station_id:
+            adj[e.from_station_id].add(e.to_station_id)
+            adj[e.to_station_id].add(e.from_station_id)
+            
+    timer = 0
+    discovery: dict[int, int] = {}
+    low: dict[int, int] = {}
+    stack: list[tuple[int, int]] = []
+    
+    edge_to_block: dict[tuple[int, int], int] = {}
+    block_id_counter = 0
+    
+    import typing
+    for start_node in adj:
+        if start_node not in discovery:
+            timer += 1
+            discovery[start_node] = low[start_node] = timer
+            dfs_stack: list[list[typing.Any]] = [[start_node, -1, iter(adj[start_node])]]
+            
+            while dfs_stack:
+                curr, parent, children_iter = dfs_stack[-1]
+                try:
+                    nxt = next(children_iter)
+                    if nxt == parent:
+                        continue
+                    if nxt in discovery:
+                        low[curr] = min(low[curr], discovery[nxt])
+                        if discovery[nxt] < discovery[curr]:
+                            stack.append((curr, nxt))
+                    else:
+                        timer += 1
+                        discovery[nxt] = low[nxt] = timer
+                        stack.append((curr, nxt))
+                        dfs_stack.append([nxt, curr, iter(adj[nxt])])
+                except StopIteration:
+                    dfs_stack.pop()
+                    if parent != -1:
+                        low[parent] = min(low[parent], low[curr])
+                        if low[curr] >= discovery[parent]:
+                            block_id_counter += 1
+                            while True:
+                                u, v = stack.pop()
+                                edge_to_block[(min(u, v), max(u, v))] = block_id_counter
+                                if (u, v) == (parent, curr) or (u, v) == (curr, parent):
+                                    break
+
+    # 3. Resolve block traversal
+    visited_blocks = set()
+    for route_edge in route_edges_canonical:
+        if route_edge in edge_to_block:
+            visited_blocks.add(edge_to_block[route_edge])
+            
+    return {
+        "train_number": target_train_number_resolved,
+        "timetable_snapshot_id": snapshot_id,
+        "biconnected_block_traversal_count": len(visited_blocks),
+        "total_route_edges": total_route_edges,
+    }
+
+
+def calculate_train_topological_global_degree_assortativity(
+    db: Session, snapshot_id: int, target_train_number: str
+) -> dict[str, typing.Any]:
+    import collections
+    from sqlalchemy import func, select, text
+
+    from railgati.models.train import Train, TrainObservation
+    from railgati.models.graph import RailwayNetworkEdge
+
+    # 1. Resolve train
+    target = db.execute(
+        select(Train.id, Train.number)
+        .join(TrainObservation, TrainObservation.train_id == Train.id)
+        .filter(
+            TrainObservation.snapshot_id == snapshot_id,
+            func.lower(Train.number) == target_train_number.lower(),
+        )
+    ).first()
+
+    if not target:
+        raise ValueError(f"Train {target_train_number} not found in snapshot {snapshot_id}")
+
+    target_train_id = target.id
+    target_train_number_resolved = target.number
+
+    # 2. Retrieve route and build canonical route edges
+    query = text("""
+        SELECT station_id
+        FROM train_stop_observations
+        WHERE snapshot_id = :snapshot_id
+          AND train_id = :target_train_id
+        ORDER BY stop_sequence
+    """)
+    res = db.execute(query, {"snapshot_id": snapshot_id, "target_train_id": target_train_id}).fetchall()
+    path = [row[0] for row in res]
+
+    route_edges_canonical = set()
+    for i in range(len(path) - 1):
+        u, v = path[i], path[i+1]
+        if u != v: # Exclude self loops
+            route_edges_canonical.add((min(u, v), max(u, v)))
+            
+    num_distinct_edges = len(route_edges_canonical)
+
+    if num_distinct_edges < 2:
+        return {
+            "train_number": target_train_number_resolved,
+            "timetable_snapshot_id": snapshot_id,
+            "route_assortativity_coefficient": None,
+            "distinct_route_edges": num_distinct_edges,
+        }
+
+    # 3. Build Global Graph Degrees
+    edges = db.scalars(select(RailwayNetworkEdge).filter_by(timetable_snapshot_id=snapshot_id)).all()
+    
+    adj: dict[int, set[int]] = collections.defaultdict(set)
+    for e in edges:
+        if e.from_station_id != e.to_station_id:
+            adj[e.from_station_id].add(e.to_station_id)
+            adj[e.to_station_id].add(e.from_station_id)
+            
+    global_degree = {u: len(neighbors) for u, neighbors in adj.items()}
+
+    # 4. Compute Assortativity (Symmetric Formulation)
+    N = 2 * num_distinct_edges
+    sum_X = 0
+    sum_X2 = 0
+    sum_XY = 0
+    
+    for u, v in route_edges_canonical:
+        du = global_degree.get(u, 0)
+        dv = global_degree.get(v, 0)
+        
+        # Each undirected edge contributes (du, dv) and (dv, du)
+        sum_X += (du + dv)
+        sum_X2 += (du*du + dv*dv)
+        sum_XY += 2 * du * dv
+        
+    mu = sum_X / N
+    variance = (sum_X2 / N) - (mu * mu)
+    covariance = (sum_XY / N) - (mu * mu)
+    
+    if variance <= 1e-9:
+        assortativity = None
+    else:
+        assortativity = covariance / variance
+
+    return {
+        "train_number": target_train_number_resolved,
+        "timetable_snapshot_id": snapshot_id,
+        "route_assortativity_coefficient": assortativity,
+        "distinct_route_edges": num_distinct_edges,
+    }
