@@ -1,7 +1,7 @@
 """Service for graph-based network traversal queries."""
 
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import select, tex
 from sqlalchemy.orm import Session
 
 from railgati.api.v1.schemas import (
@@ -15,26 +15,26 @@ from railgati.api.v1.schemas import (
     TerminusItem,
 )
 from railgati.models.graph import RailwayGraphBuild
-from railgati.models.provenance import DatasetSnapshot
+from railgati.models.provenance import DatasetSnapsho
 
 
 class CorridorItem(BaseModel):
     path: list[str]
-    occurrence_count: int
+    occurrence_count: in
     fastest_duration_minutes: int | None
 
 
 class StationReachability(BaseModel):
     """Result model for a topologically reachable station."""
 
-    station_id: int
-    min_hops: int
+    station_id: in
+    min_hops: in
 
 
 class NetworkPath(BaseModel):
     """Result model for a topologically discovered path."""
 
-    hop_count: int
+    hop_count: in
     station_ids: list[int]
 
 
@@ -42,12 +42,12 @@ class NetworkPathContinuousServiceItem(BaseModel):
     train_number: str
     train_name: str
     train_type: str | None
-    start_sequence: int
-    end_sequence: int
+    start_sequence: in
+    end_sequence: in
     departure_time: str | None
     arrival_time: str | None
-    start_day_offset: int
-    end_day_offset: int
+    start_day_offset: in
+    end_day_offset: in
     total_duration_minutes: int | None
 
 
@@ -211,8 +211,8 @@ class NetworkServiceOccurrence(BaseModel):
     train_name: str
     train_type: str | None
     return_train_number: str | None
-    from_stop_sequence: int
-    to_stop_sequence: int
+    from_stop_sequence: in
+    to_stop_sequence: in
     departure_time: str | None
     arrival_time: str | None
     duration_minutes: int | None
@@ -299,8 +299,8 @@ def find_network_service_occurrences(
 class NetworkPathAttributionSegmentData(BaseModel):
     """Internal model for a segment of a topological path."""
 
-    from_station_id: int
-    to_station_id: int
+    from_station_id: in
+    to_station_id: in
     occurrences: list[NetworkServiceOccurrence]
 
 
@@ -322,7 +322,7 @@ def find_network_path_service_occurrences(
 
     # Require an ACTIVE timetable snapshot and graph build
     from railgati.models.graph import RailwayGraphBuild
-    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.provenance import DatasetSnapsho
 
     snapshot = db.scalar(
         select(DatasetSnapshot).filter(
@@ -418,7 +418,7 @@ def find_network_path_service_occurrences(
 
     results = db.execute(query).all()
 
-    # Group by segment
+    # Group by segmen
     segment_map: dict[tuple[int, int], list[NetworkServiceOccurrence]] = {
         seg: [] for seg in segments
     }
@@ -464,7 +464,7 @@ def find_network_path_continuous_services(
             raise ValueError("Path cannot contain consecutive duplicate stations")
 
     from railgati.models.graph import RailwayGraphBuild
-    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.provenance import DatasetSnapsho
 
     snapshot = db.scalar(
         select(DatasetSnapshot).filter(
@@ -609,7 +609,7 @@ def find_network_corridors(
         raise ValueError("Origin and destination must not be the same")
 
     from railgati.models.graph import RailwayGraphBuild
-    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.provenance import DatasetSnapsho
 
     snapshot = db.scalar(
         select(DatasetSnapshot).filter(
@@ -642,9 +642,9 @@ def find_network_corridors(
                   ON o.train_id = d.train_id
                  AND o.snapshot_id = d.snapshot_id
                 WHERE o.station_id = :origin
-                  AND d.station_id = :dest
+                  AND d.station_id = :des
                   AND o.stop_sequence < d.stop_sequence
-                  AND o.snapshot_id = :snapshot
+                  AND o.snapshot_id = :snapsho
             ),
             occurrence_paths AS (
                 SELECT b.train_id,
@@ -656,7 +656,7 @@ def find_network_corridors(
                 FROM bounds b
                 JOIN train_stop_observations tso
                   ON tso.train_id = b.train_id
-                 AND tso.snapshot_id = :snapshot
+                 AND tso.snapshot_id = :snapsho
                 JOIN stations s ON tso.station_id = s.id
                 WHERE tso.stop_sequence >= b.start_seq
                   AND tso.stop_sequence <= b.end_seq
@@ -679,7 +679,7 @@ def find_network_corridors(
         ).all()
 
         # SQLite processing in Python
-        from collections import defaultdict
+        from collections import defaultdic
 
         corridors = defaultdict(lambda: {"count": 0, "durations": []})
         for row in results:
@@ -696,7 +696,7 @@ def find_network_corridors(
                     calc = dest_mins - orig_mins
                     if calc >= 0:
                         dur = calc
-            corridors[tuple(path)]["count"] += count
+            corridors[tuple(path)]["count"] += coun
             if dur is not None:
                 corridors[tuple(path)]["durations"].append(dur)
 
@@ -705,7 +705,7 @@ def find_network_corridors(
             fastest = min(data["durations"]) if data["durations"] else None
             items.append(
                 CorridorItem(
-                    path=list(p), occurrence_count=data["count"], fastest_duration_minutes=fastest
+                    path=list(p), occurrence_count=data["count"], fastest_duration_minutes=fastes
                 )
             )
 
@@ -734,9 +734,9 @@ def find_network_corridors(
               ON o.train_id = d.train_id
              AND o.snapshot_id = d.snapshot_id
             WHERE o.station_id = :origin
-              AND d.station_id = :dest
+              AND d.station_id = :des
               AND o.stop_sequence < d.stop_sequence
-              AND o.snapshot_id = :snapshot
+              AND o.snapshot_id = :snapsho
         ),
         occurrence_paths AS (
             SELECT b.train_id,
@@ -754,7 +754,7 @@ def find_network_corridors(
             FROM bounds b
             JOIN train_stop_observations tso
               ON tso.train_id = b.train_id
-             AND tso.snapshot_id = :snapshot
+             AND tso.snapshot_id = :snapsho
             JOIN stations s ON tso.station_id = s.id
             WHERE tso.stop_sequence >= b.start_seq
               AND tso.stop_sequence <= b.end_seq
@@ -806,7 +806,7 @@ def calculate_hub_centrality(
 
     from railgati.api.v1.snapshots import get_active_station_snapshot_id
     from railgati.models.graph import RailwayGraphBuild
-    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.provenance import DatasetSnapsho
 
     # 1. Active Timetable Snapshot check
     snapshot = db.scalar(
@@ -826,7 +826,7 @@ def calculate_hub_centrality(
     if not build or build.status != "ACTIVE":
         raise ValueError("Active graph build unavailable for this snapshot")
 
-    # 3. Active Station Snapshot
+    # 3. Active Station Snapsho
     station_snapshot_id = get_active_station_snapshot_id(db)
     if not station_snapshot_id:
         raise ValueError("Active station snapshot not found")
@@ -989,7 +989,7 @@ def calculate_edge_volume(
           AND fso.snapshot_id = :station_snapshot_id
           AND tso.snapshot_id = :station_snapshot_id
         ORDER BY e.train_count DESC, fs.code ASC, ts.code ASC
-        LIMIT :limit
+        LIMIT :limi
     """)
 
     results = db.execute(
@@ -1064,7 +1064,7 @@ def calculate_network_termini(
             SELECT
                 tso.station_id,
                 SUM(CASE WHEN tso.stop_sequence = tb.start_seq THEN 1 ELSE 0 END) as originating_count,
-                SUM(CASE WHEN tso.stop_sequence = tb.end_seq THEN 1 ELSE 0 END) as terminating_count
+                SUM(CASE WHEN tso.stop_sequence = tb.end_seq THEN 1 ELSE 0 END) as terminating_coun
             FROM train_stop_observations tso
             JOIN train_bounds tb ON tso.train_id = tb.train_id
             WHERE tso.snapshot_id = :timetable_snapshot_id
@@ -1077,7 +1077,7 @@ def calculate_network_termini(
             CAST(t.originating_count AS INTEGER) as originating_count,
             CAST(t.terminating_count AS INTEGER) as terminating_count,
             CAST(t.originating_count + t.terminating_count AS INTEGER) as total_terminus_volume
-        FROM termini t
+        FROM termini
         JOIN stations s ON t.station_id = s.id
         JOIN station_observations so ON so.station_id = s.id
         WHERE so.snapshot_id = :station_snapshot_id
@@ -1086,7 +1086,7 @@ def calculate_network_termini(
             t.originating_count DESC,
             t.terminating_count DESC,
             s.code ASC
-        LIMIT :limit
+        LIMIT :limi
     """)
 
     results = db.execute(
@@ -1160,7 +1160,7 @@ def calculate_network_flows(
                 t_end.station_id as dest_id,
                 COUNT(tb.train_id) as flow_volume
             FROM train_bounds tb
-            JOIN train_stop_observations t_start
+            JOIN train_stop_observations t_star
               ON tb.train_id = t_start.train_id
              AND tb.start_seq = t_start.stop_sequence
              AND t_start.snapshot_id = :timetable_snapshot_id
@@ -1187,7 +1187,7 @@ def calculate_network_flows(
             od.flow_volume DESC,
             s_org.code ASC,
             s_dest.code ASC
-        LIMIT :limit
+        LIMIT :limi
     """)
 
     results = db.execute(
@@ -1295,13 +1295,13 @@ def calculate_network_dwells(
                 AVG({time_diff_expr}) / 60.0 as avg_dwell_minutes
             FROM transit_stops
             GROUP BY station_id
-            HAVING COUNT(train_id) >= :min_transit_count
+            HAVING COUNT(train_id) >= :min_transit_coun
         )
         SELECT
             s.code as station_code,
             so.name as station_name,
             CAST(ds.avg_dwell_minutes AS FLOAT) as avg_dwell_minutes,
-            CAST(ds.transit_count AS INTEGER) as transit_count
+            CAST(ds.transit_count AS INTEGER) as transit_coun
         FROM dwell_stats ds
         JOIN stations s ON ds.station_id = s.id
         JOIN station_observations so ON so.station_id = s.id
@@ -1310,7 +1310,7 @@ def calculate_network_dwells(
             ds.avg_dwell_minutes DESC,
             ds.transit_count DESC,
             s.code ASC
-        LIMIT :limit
+        LIMIT :limi
     """)
 
     results = db.execute(
@@ -1365,13 +1365,13 @@ def calculate_network_complexities(
             JOIN train_lengths tl ON tso.train_id = tl.train_id
             WHERE tso.snapshot_id = :timetable_snapshot_id
             GROUP BY tso.station_id
-            HAVING COUNT(tso.train_id) >= :min_service_count
+            HAVING COUNT(tso.train_id) >= :min_service_coun
         )
         SELECT
             s.code as station_code,
             so.name as station_name,
             CAST(s_avg.avg_route_stops AS FLOAT) as avg_route_stops,
-            CAST(s_avg.service_count AS INTEGER) as service_count
+            CAST(s_avg.service_count AS INTEGER) as service_coun
         FROM station_avg_length s_avg
         JOIN stations s ON s_avg.station_id = s.id
         JOIN station_observations so ON so.station_id = s.id
@@ -1380,7 +1380,7 @@ def calculate_network_complexities(
             s_avg.avg_route_stops DESC,
             s_avg.service_count DESC,
             s.code ASC
-        LIMIT :limit
+        LIMIT :limi
     """)
 
     results = db.execute(
@@ -1448,7 +1448,7 @@ def calculate_network_temporal_concentration(
                 SUM(hour_volume) as total_volume
             FROM station_peak
             GROUP BY station_id
-            HAVING SUM(hour_volume) >= :min_service_count
+            HAVING SUM(hour_volume) >= :min_service_coun
         )
         SELECT
             s.code as station_code,
@@ -1472,7 +1472,7 @@ def calculate_network_temporal_concentration(
             concentration_pct DESC,
             sm.total_volume DESC,
             s.code ASC
-        LIMIT :limit
+        LIMIT :limi
     """)
 
     results = db.execute(
@@ -1547,7 +1547,7 @@ def calculate_network_edge_asymmetry(
                 CASE
                     WHEN (vol_ab + vol_ba) = 0 THEN 0
                     ELSE ROUND(CAST(ABS(vol_ab - vol_ba) AS FLOAT) / CAST(vol_ab + vol_ba AS FLOAT) * 100.0, 1)
-                END as asymmetry_pct
+                END as asymmetry_pc
             FROM paired
             WHERE (vol_ab + vol_ba) >= :min_total_volume
         )
@@ -1559,7 +1559,7 @@ def calculate_network_edge_asymmetry(
             CAST(CASE WHEN s1.code < s2.code THEN a.vol_ab ELSE a.vol_ba END AS INTEGER) as forward_volume,
             CAST(CASE WHEN s1.code < s2.code THEN a.vol_ba ELSE a.vol_ab END AS INTEGER) as reverse_volume,
             CAST(a.total_vol AS INTEGER) as total_volume,
-            CAST(a.asymmetry_pct AS FLOAT) as asymmetry_pct
+            CAST(a.asymmetry_pct AS FLOAT) as asymmetry_pc
         FROM asymmetry a
         JOIN stations s1 ON a.node_a = s1.id
         JOIN stations s2 ON a.node_b = s2.id
@@ -1572,7 +1572,7 @@ def calculate_network_edge_asymmetry(
             a.total_vol DESC,
             station_a_code ASC,
             station_b_code ASC
-        LIMIT :limit
+        LIMIT :limi
     """)
 
     results = db.execute(
@@ -1613,7 +1613,7 @@ def calculate_train_similarity(
     from railgati.api.v1.schemas import TrainSimilarityItem
     from railgati.models.train import Train, TrainObservation
 
-    # 1. Resolve target train ID and metadata in the active snapshot
+    # 1. Resolve target train ID and metadata in the active snapsho
     target_train = db.execute(
         select(Train.id, Train.number, TrainObservation.name)
         .join(TrainObservation, TrainObservation.train_id == Train.id)
@@ -1648,7 +1648,7 @@ def calculate_train_similarity(
             GROUP BY train_id
         ),
         intersection AS (
-            SELECT tso.train_id, COUNT(DISTINCT tso.station_id) as overlap_count
+            SELECT tso.train_id, COUNT(DISTINCT tso.station_id) as overlap_coun
             FROM train_stop_observations tso
             JOIN target_stations ts ON tso.station_id = ts.station_id
             WHERE tso.snapshot_id = :timetable_snapshot_id
@@ -1667,7 +1667,7 @@ def calculate_train_similarity(
                 (i.overlap_count * 100.0) /
                 (tc.c + ot.total_stations - i.overlap_count),
             1) AS similarity_pct,
-            tc.c AS target_station_count
+            tc.c AS target_station_coun
         FROM intersection i
         JOIN other_trains ot ON i.train_id = ot.train_id
         JOIN trains t ON t.id = i.train_id
@@ -1677,7 +1677,7 @@ def calculate_train_similarity(
         CROSS JOIN target_count tc
         WHERE i.overlap_count >= :min_overlap_stations
         ORDER BY similarity_pct DESC, i.overlap_count DESC, union_station_count ASC, t.number ASC
-        LIMIT :limit
+        LIMIT :limi
     """)
 
     results = db.execute(
@@ -1693,7 +1693,7 @@ def calculate_train_similarity(
     items = []
     target_station_count = 0
     if results:
-        target_station_count = results[0].target_station_count
+        target_station_count = results[0].target_station_coun
 
     for row in results:
         items.append(
@@ -1709,7 +1709,7 @@ def calculate_train_similarity(
             )
         )
 
-    # If no results, we still need target_station_count
+    # If no results, we still need target_station_coun
     if not results:
         count = db.execute(
             text("""
@@ -1737,7 +1737,7 @@ def calculate_station_similarity(
     from railgati.api.v1.schemas import StationSimilarityItem
     from railgati.models.station import Station, StationObservation
 
-    # 1. Resolve target station ID and metadata in the active snapshot
+    # 1. Resolve target station ID and metadata in the active snapsho
     target_station = db.execute(
         select(Station.id, Station.code, StationObservation.name)
         .outerjoin(
@@ -1773,7 +1773,7 @@ def calculate_station_similarity(
             GROUP BY station_id
         ),
         intersection AS (
-            SELECT tso.station_id, COUNT(DISTINCT tso.train_id) as overlap_count
+            SELECT tso.station_id, COUNT(DISTINCT tso.train_id) as overlap_coun
             FROM train_stop_observations tso
             JOIN target_trains tt ON tso.train_id = tt.train_id
             WHERE tso.snapshot_id = :timetable_snapshot_id
@@ -1790,7 +1790,7 @@ def calculate_station_similarity(
                 (i.overlap_count * 100.0) /
                 (tc.c + os.total_trains - i.overlap_count),
             1) AS similarity_pct,
-            tc.c AS target_train_count
+            tc.c AS target_train_coun
         FROM intersection i
         JOIN other_stations os ON i.station_id = os.station_id
         JOIN stations s ON s.id = i.station_id
@@ -1800,7 +1800,7 @@ def calculate_station_similarity(
         CROSS JOIN target_count tc
         WHERE i.overlap_count >= :min_overlap_trains
         ORDER BY similarity_pct DESC, i.overlap_count DESC, union_train_count ASC, s.code ASC
-        LIMIT :limit
+        LIMIT :limi
     """)
 
     results = db.execute(
@@ -1816,7 +1816,7 @@ def calculate_station_similarity(
     items = []
     target_train_count = 0
     if results:
-        target_train_count = results[0].target_train_count
+        target_train_count = results[0].target_train_coun
 
     for row in results:
         items.append(
@@ -1830,7 +1830,7 @@ def calculate_station_similarity(
             )
         )
 
-    # If no results, we still need target_train_count
+    # If no results, we still need target_train_coun
     if not results:
         count = db.execute(
             text("""
@@ -1887,7 +1887,7 @@ def calculate_network_od_travel_time(
     )
     dest_name = dest_obs.name if dest_obs else None
 
-    # Verify snapshot
+    # Verify snapsho
     snapshot = db.scalar(
         select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
     )
@@ -2043,10 +2043,10 @@ def calculate_station_paired_services(
     station_code: str,
 ) -> tuple[str, str | None, int, float | None, list[dict]]:
     """Calculate Network Station Paired-Service Analytics."""
-    from sqlalchemy import text
+    from sqlalchemy import tex
 
     from railgati.api.v1.snapshots import get_active_station_snapshot_id
-    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.provenance import DatasetSnapsho
     from railgati.models.station import Station, StationObservation
 
     station_code_upper = station_code.strip().upper()
@@ -2065,7 +2065,7 @@ def calculate_station_paired_services(
     )
     station_name = station_obs.name if station_obs else None
 
-    # Verify snapshot
+    # Verify snapsho
     snapshot = db.scalar(
         select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
     )
@@ -2087,14 +2087,14 @@ def calculate_station_paired_services(
             ),
             arrivals AS (
                 SELECT t.snapshot_id, t.train_id, t.station_id, t.arrival_time, tr.number as train_number, obs.return_train_number
-                FROM termini t
+                FROM termini
                 JOIN train_observations obs ON t.train_id = obs.train_id AND t.snapshot_id = obs.snapshot_id
                 JOIN trains tr ON t.train_id = tr.id
                 WHERE t.stop_sequence = t.max_seq AND t.arrival_time IS NOT NULL AND obs.return_train_number IS NOT NULL
             ),
             departures AS (
                 SELECT t.snapshot_id, t.train_id, t.station_id, t.departure_time, tr.number as train_number
-                FROM termini t
+                FROM termini
                 JOIN trains tr ON t.train_id = tr.id
                 WHERE t.stop_sequence = t.min_seq AND t.departure_time IS NOT NULL
             )
@@ -2165,14 +2165,14 @@ def calculate_station_paired_services(
         ),
         arrivals AS (
             SELECT t.snapshot_id, t.train_id, t.station_id, t.arrival_time, tr.number as train_number, obs.return_train_number
-            FROM termini t
+            FROM termini
             JOIN train_observations obs ON t.train_id = obs.train_id AND t.snapshot_id = obs.snapshot_id
             JOIN trains tr ON t.train_id = tr.id
             WHERE t.stop_sequence = t.max_seq AND t.arrival_time IS NOT NULL AND obs.return_train_number IS NOT NULL
         ),
         departures AS (
             SELECT t.snapshot_id, t.train_id, t.station_id, t.departure_time, tr.number as train_number
-            FROM termini t
+            FROM termini
             JOIN trains tr ON t.train_id = tr.id
             WHERE t.stop_sequence = t.min_seq AND t.departure_time IS NOT NULL
         )
@@ -2225,10 +2225,10 @@ def calculate_station_reversals(
     station_code: str,
 ) -> tuple[str, str | None, int, list[dict]]:
     """Calculate Network Station Directional Reversal Analytics."""
-    from sqlalchemy import text
+    from sqlalchemy import tex
 
     from railgati.api.v1.snapshots import get_active_station_snapshot_id
-    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.provenance import DatasetSnapsho
     from railgati.models.station import Station, StationObservation
 
     station_code_upper = station_code.strip().upper()
@@ -2247,7 +2247,7 @@ def calculate_station_reversals(
     )
     station_name = station_obs.name if station_obs else None
 
-    # Verify snapshot
+    # Verify snapsho
     snapshot = db.scalar(
         select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
     )
@@ -2305,10 +2305,10 @@ def calculate_station_outbound_transit(
     station_code: str,
 ) -> tuple[str, str | None, list[dict]]:
     """Calculate Network Station Outbound Edge Transit Analytics."""
-    from sqlalchemy import text
+    from sqlalchemy import tex
 
     from railgati.api.v1.snapshots import get_active_station_snapshot_id
-    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.provenance import DatasetSnapsho
     from railgati.models.station import Station, StationObservation
 
     station_code_upper = station_code.strip().upper()
@@ -2327,7 +2327,7 @@ def calculate_station_outbound_transit(
     )
     station_name = station_obs.name if station_obs else None
 
-    # Verify snapshot
+    # Verify snapsho
     snapshot = db.scalar(
         select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
     )
@@ -2349,7 +2349,7 @@ def calculate_station_outbound_transit(
         ),
         next_stops AS (
             SELECT tso.train_id, tso.station_id as dst_station, tso.arrival_time as dst_arrival, tso.source_day as dst_day
-            FROM target_trains tt
+            FROM target_trains
             JOIN train_stop_observations tso
               ON tso.train_id = tt.train_id
              AND tso.snapshot_id = :snapshot_id
@@ -2359,7 +2359,7 @@ def calculate_station_outbound_transit(
         valid_edges AS (
             SELECT tt.train_id, ns.dst_station,
                    {duration_calc} as duration_mins
-            FROM target_trains tt
+            FROM target_trains
             JOIN next_stops ns ON tt.train_id = ns.train_id
         )
         SELECT s.code as next_station_code, so.name as next_station_name, COUNT(*) as vol,
@@ -2401,12 +2401,12 @@ def calculate_train_profile(
     train_number: str,
 ) -> dict:
     """Calculate Network Train Route Profile Analytics."""
-    from sqlalchemy import text
+    from sqlalchemy import tex
 
-    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.provenance import DatasetSnapsho
     from railgati.models.train import Train
 
-    # Verify snapshot
+    # Verify snapsho
     snapshot = db.scalar(
         select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
     )
@@ -2443,7 +2443,7 @@ def calculate_train_profile(
             SELECT t.train_id, t.total_stops,
                    o.station_id as origin_id, o.departure_time as o_dep, o.source_day as o_day,
                    d.station_id as dest_id, d.arrival_time as d_arr, d.source_day as d_day
-            FROM termini t
+            FROM termini
             JOIN train_stops o ON o.train_id = t.train_id AND o.stop_sequence = t.min_seq
             JOIN train_stops d ON d.train_id = t.train_id AND d.stop_sequence = t.max_seq
         ),
@@ -2505,10 +2505,10 @@ def calculate_station_od_bridges(
     station_code: str,
 ) -> dict:
     """Calculate Network Station O-D Bridging Analytics."""
-    from sqlalchemy import text
+    from sqlalchemy import tex
 
     from railgati.api.v1.snapshots import get_active_station_snapshot_id
-    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.provenance import DatasetSnapsho
     from railgati.models.station import Station, StationObservation
 
     station_code_upper = station_code.strip().upper()
@@ -2527,7 +2527,7 @@ def calculate_station_od_bridges(
     )
     station_name = station_obs.name if station_obs else None
 
-    # Verify snapshot
+    # Verify snapsho
     snapshot = db.scalar(
         select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
     )
@@ -2544,7 +2544,7 @@ def calculate_station_od_bridges(
             SELECT tt.train_id,
                    (SELECT station_id FROM train_stop_observations WHERE snapshot_id = :snapshot_id AND train_id = tt.train_id ORDER BY stop_sequence ASC LIMIT 1) as origin_id,
                    (SELECT station_id FROM train_stop_observations WHERE snapshot_id = :snapshot_id AND train_id = tt.train_id ORDER BY stop_sequence DESC LIMIT 1) as dest_id
-            FROM target_trains tt
+            FROM target_trains
         ),
         counts AS (
             SELECT
@@ -2600,7 +2600,7 @@ def calculate_station_od_bridges(
                 SELECT tt.train_id,
                        (SELECT station_id FROM train_stop_observations WHERE snapshot_id = :snapshot_id AND train_id = tt.train_id ORDER BY stop_sequence ASC LIMIT 1) as origin_id,
                        (SELECT station_id FROM train_stop_observations WHERE snapshot_id = :snapshot_id AND train_id = tt.train_id ORDER BY stop_sequence DESC LIMIT 1) as dest_id
-                FROM target_trains tt
+                FROM target_trains
             ),
             counts AS (
                 SELECT
@@ -2686,10 +2686,10 @@ def calculate_station_temporal_gaps(
     station_code: str,
 ) -> dict:
     """Calculate Network Station Temporal Gap Analytics."""
-    from sqlalchemy import text
+    from sqlalchemy import tex
 
     from railgati.api.v1.snapshots import get_active_station_snapshot_id
-    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.provenance import DatasetSnapsho
     from railgati.models.station import Station, StationObservation
 
     station_code_upper = station_code.strip().upper()
@@ -2787,9 +2787,9 @@ def calculate_edge_temporal_bunching(
     destination_code: str,
 ) -> dict:
     """Calculate Network Edge Temporal Bunching Analytics."""
-    from sqlalchemy import text
+    from sqlalchemy import tex
 
-    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.provenance import DatasetSnapsho
     from railgati.models.station import Station
 
     origin_code_upper = origin_code.strip().upper()
@@ -2844,7 +2844,7 @@ def calculate_edge_temporal_bunching(
             SELECT e1.dep_mins,
                    (SELECT COUNT(*) FROM expanded_trains e2
                     WHERE e2.dep_mins >= e1.dep_mins
-                      AND e2.dep_mins < e1.dep_mins + 60) as window_count
+                      AND e2.dep_mins < e1.dep_mins + 60) as window_coun
             FROM edge_trains e1
         ) w;
     """)
@@ -2876,12 +2876,12 @@ def calculate_paired_service_symmetry(
     train_number: str,
 ) -> dict:
     """Calculate Network Train Paired-Service Temporal Symmetry Analytics."""
-    from sqlalchemy import text
+    from sqlalchemy import tex
 
-    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.provenance import DatasetSnapsho
     from railgati.models.train import Train, TrainObservation
 
-    # Verify snapshot
+    # Verify snapsho
     snapshot = db.scalar(
         select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
     )
@@ -2928,7 +2928,7 @@ def calculate_paired_service_symmetry(
         ),
         return_train_data AS (
             SELECT t.id as r_train_id
-            FROM trains t
+            FROM trains
             WHERE t.number = :return_train_number
         ),
         return_stops AS (
@@ -2998,12 +2998,12 @@ def calculate_train_topology_loops(
     train_number: str,
 ) -> dict[str, typing.Any]:
     """Calculate Network Train Topological Loop Analytics."""
-    from sqlalchemy import text
+    from sqlalchemy import tex
 
-    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.provenance import DatasetSnapsho
     from railgati.models.train import Train
 
-    # Verify snapshot
+    # Verify snapsho
     snapshot = db.scalar(
         select(DatasetSnapshot).filter(DatasetSnapshot.id == timetable_snapshot_id)
     )
@@ -3080,12 +3080,12 @@ def calculate_train_structural_halts(
     limit: int = 10,
 ) -> dict[str, typing.Any]:
     """Calculate Network Train Structural Halt Analytics."""
-    from sqlalchemy import text
+    from sqlalchemy import tex
 
-    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.provenance import DatasetSnapsho
     from railgati.models.train import Train
 
-    # Verify snapshot
+    # Verify snapsho
     snapshot = db.scalar(select(DatasetSnapshot).filter_by(id=timetable_snapshot_id))
     if not snapshot:
         raise ValueError("Timetable snapshot not found")
@@ -3131,7 +3131,7 @@ def calculate_train_structural_halts(
           AND tso.stop_sequence > tb.min_seq
           AND tso.stop_sequence < tb.max_seq
         ORDER BY dwell_minutes DESC, s.code ASC
-        LIMIT :limit
+        LIMIT :limi
     """)
 
     results = db.execute(
@@ -3233,7 +3233,7 @@ def calculate_train_relative_edge_slowness(
                 src_station_id,
                 dst_station_id,
                 AVG(duration) as avg_duration,
-                COUNT(*) as occurrence_count
+                COUNT(*) as occurrence_coun
             FROM network_edges
             GROUP BY src_station_id, dst_station_id
         )
@@ -3250,7 +3250,7 @@ def calculate_train_relative_edge_slowness(
           ON te.src_station_id = ns.src_station_id AND te.dst_station_id = ns.dst_station_id
         WHERE (te.target_duration / NULLIF(ns.avg_duration, 0)) > 1.0
         ORDER BY slowness_ratio DESC, te.target_seq ASC
-        LIMIT :limit
+        LIMIT :limi
     """)
 
     results = db.execute(
@@ -3341,7 +3341,7 @@ def calculate_train_relative_station_dwell(
             SELECT
                 station_id,
                 AVG(dwell) as avg_dwell,
-                COUNT(*) as occurrence_count
+                COUNT(*) as occurrence_coun
             FROM network_dwells
             GROUP BY station_id
         )
@@ -3356,7 +3356,7 @@ def calculate_train_relative_station_dwell(
         JOIN network_stats ns ON ns.station_id = td.station_id
         WHERE (td.target_dwell / NULLIF(ns.avg_dwell, 0)) > 1.0
         ORDER BY slowness_ratio DESC, td.target_seq ASC
-        LIMIT :limit
+        LIMIT :limi
     """)
 
     results = db.execute(
@@ -3393,7 +3393,7 @@ def calculate_train_relative_station_dwell(
 def calculate_station_outbound_dominance(
     db: Session, timetable_snapshot_id: int, station_code: str
 ) -> dict[str, typing.Any]:
-    from sqlalchemy import select, text
+    from sqlalchemy import select, tex
 
     from railgati.api.v1.snapshots import get_active_station_snapshot_id
     from railgati.models.station import Station, StationObservation
@@ -3451,7 +3451,7 @@ def calculate_station_outbound_dominance(
             st.max_outbound,
             rd.dest_code as dominant_destination,
             CAST(st.max_outbound AS FLOAT) / NULLIF(st.total_outbound, 0) as dominance_ratio
-        FROM station_totals st
+        FROM station_totals s
         LEFT JOIN ranked_destinations rd ON rd.rnk = 1
     """)
 
@@ -3487,7 +3487,7 @@ def calculate_edge_paired_route_symmetry(
     reciprocal adjacent timetable edge. It does not measure physical routing, passenger flow,
     actual operations, or operational continuity.
     """
-    from sqlalchemy import text
+    from sqlalchemy import tex
 
     from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
     from railgati.models.station import Station
@@ -3571,7 +3571,7 @@ def calculate_edge_paired_route_symmetry(
 def calculate_station_neighborhood_symmetry(
     db: Session, station_code: str
 ) -> dict[str, typing.Any]:
-    from sqlalchemy import select, text
+    from sqlalchemy import select, tex
 
     from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
     from railgati.models.station import Station, StationObservation
@@ -3615,7 +3615,7 @@ def calculate_station_neighborhood_symmetry(
             (SELECT COUNT(*) FROM outbound) AS out_count,
             (SELECT COUNT(*) FROM inbound) AS in_count,
             (SELECT COUNT(*) FROM outbound o JOIN inbound i ON o.station_id = i.station_id) AS intersection_count,
-            (SELECT COUNT(DISTINCT station_id) FROM (SELECT station_id FROM outbound UNION SELECT station_id FROM inbound) u) AS union_count
+            (SELECT COUNT(DISTINCT station_id) FROM (SELECT station_id FROM outbound UNION SELECT station_id FROM inbound) u) AS union_coun
     """)
 
     result = db.execute(
@@ -3709,7 +3709,7 @@ def calculate_station_neighborhood_triadic_closure(db: Session, station_code: st
         SELECT
             (SELECT COUNT(*) FROM outbound_neighbors) AS outbound_degree,
             (SELECT COUNT(*) FROM possible_pairs) AS possible_count,
-            (SELECT COUNT(*) FROM actual_edges) AS actual_count
+            (SELECT COUNT(*) FROM actual_edges) AS actual_coun
     """)
 
     result = db.execute(
@@ -3741,7 +3741,7 @@ def calculate_station_neighborhood_triadic_closure(db: Session, station_code: st
 
 def calculate_station_transit_articulation(db: Session, station_code: str) -> dict[str, typing.Any]:
     """Phase 34: Calculates Network Station Transit Articulation Analytics."""
-    from sqlalchemy import select, text
+    from sqlalchemy import select, tex
 
     from railgati.api.v1.snapshots import (
         get_active_station_snapshot_id,
@@ -3882,7 +3882,7 @@ def calculate_station_reachability_expansion(
     db: Session, timetable_snapshot_id: int, station_code: str
 ) -> dict[str, typing.Any]:
     """Calculate Network Station 2-Hop Reachability Expansion Analytics."""
-    from sqlalchemy import select, text
+    from sqlalchemy import select, tex
 
     from railgati.api.v1.snapshots import get_active_station_snapshot_id
     from railgati.models.station import Station, StationObservation
@@ -3929,7 +3929,7 @@ def calculate_station_reachability_expansion(
         )
         SELECT
             (SELECT COUNT(*) FROM n1) as n1_count,
-            (SELECT COUNT(*) FROM n2) as n2_count
+            (SELECT COUNT(*) FROM n2) as n2_coun
     """)
 
     result = db.execute(
@@ -3962,7 +3962,7 @@ def calculate_station_transfer_free_reach(
     db: Session, timetable_snapshot_id: int, station_code: str
 ) -> dict[str, typing.Any]:
     """Calculate Network Station Transfer-Free Reachability (TFR) Analytics."""
-    from sqlalchemy import select, text
+    from sqlalchemy import select, tex
 
     from railgati.api.v1.snapshots import get_active_station_snapshot_id
     from railgati.models.station import Station, StationObservation
@@ -4008,7 +4008,7 @@ def calculate_station_transfer_free_reach(
         )
         SELECT
             (SELECT COUNT(*) FROM n1) as n1_count,
-            (SELECT COUNT(*) FROM tfor) as tfor_count
+            (SELECT COUNT(*) FROM tfor) as tfor_coun
     """)
 
     res = db.execute(
@@ -4031,7 +4031,7 @@ def calculate_station_transfer_free_reach(
             f"Station {station_code.upper()} has n1_count == 0. Transfer-free reachability ratio is undefined."
         )
 
-    expansion_ratio = tfor_count / n1_count
+    expansion_ratio = tfor_count / n1_coun
 
     return {
         "station_code": station.code,
@@ -4046,7 +4046,7 @@ def calculate_train_structural_subsumption(
     db: Session, timetable_snapshot_id: int, train_number: str
 ) -> dict[str, typing.Any]:
     """Calculate Network Train Route Structural Subsumption Analytics."""
-    from sqlalchemy import select, text
+    from sqlalchemy import select, tex
 
     from railgati.models.train import Train
 
@@ -4148,7 +4148,7 @@ def calculate_train_topological_bypasses(
         )
         SELECT
             (SELECT COUNT(*) FROM target_seq) as route_length,
-            (SELECT COUNT(*) FROM bypasses) as bypass_count
+            (SELECT COUNT(*) FROM bypasses) as bypass_coun
         """
     )
 
@@ -4207,13 +4207,13 @@ def calculate_edge_traversal_dispersion(
         SELECT
             (SELECT COUNT(*) FROM edge_traversals) as edge_volume,
             (SELECT COUNT(DISTINCT t_prev.station_id)
-             FROM edge_traversals et
+             FROM edge_traversals e
              JOIN train_stop_observations t_prev
                ON t_prev.train_id = et.train_id
               AND t_prev.snapshot_id = :snapshot_id
               AND t_prev.stop_sequence = et.seq_o - 1) as convergence_count,
             (SELECT COUNT(*)
-             FROM edge_traversals et
+             FROM edge_traversals e
              WHERE NOT EXISTS (
                  SELECT 1 FROM train_stop_observations t_prev
                  WHERE t_prev.train_id = et.train_id
@@ -4221,19 +4221,19 @@ def calculate_edge_traversal_dispersion(
                    AND t_prev.stop_sequence = et.seq_o - 1
              )) as edge_originating_train_count,
             (SELECT COUNT(DISTINCT t_next.station_id)
-             FROM edge_traversals et
-             JOIN train_stop_observations t_next
+             FROM edge_traversals e
+             JOIN train_stop_observations t_nex
                ON t_next.train_id = et.train_id
               AND t_next.snapshot_id = :snapshot_id
               AND t_next.stop_sequence = et.seq_d + 1) as bifurcation_count,
             (SELECT COUNT(*)
-             FROM edge_traversals et
+             FROM edge_traversals e
              WHERE NOT EXISTS (
-                 SELECT 1 FROM train_stop_observations t_next
+                 SELECT 1 FROM train_stop_observations t_nex
                  WHERE t_next.train_id = et.train_id
                    AND t_next.snapshot_id = :snapshot_id
                    AND t_next.stop_sequence = et.seq_d + 1
-             )) as edge_terminating_train_count
+             )) as edge_terminating_train_coun
         """
     )
 
@@ -4345,7 +4345,7 @@ def calculate_train_route_edge_exclusivity(
         )
         SELECT
             (SELECT COUNT(*) FROM target_edges) as route_edge_count,
-            COUNT(CASE WHEN is_exclusive THEN 1 END) as exclusive_edge_count
+            COUNT(CASE WHEN is_exclusive THEN 1 END) as exclusive_edge_coun
         FROM edge_exclusivity
         """
     )
@@ -4376,11 +4376,11 @@ def calculate_train_route_edge_exclusivity(
         or 0
     )
 
-    shared_edge_count = route_edge_count - exclusive_edge_count
+    shared_edge_count = route_edge_count - exclusive_edge_coun
 
     exclusivity_ratio = None
     if route_edge_count > 0:
-        exclusivity_ratio = exclusive_edge_count / route_edge_count
+        exclusivity_ratio = exclusive_edge_count / route_edge_coun
 
     return {
         "train_number": train.number,
@@ -4401,7 +4401,7 @@ def calculate_edge_route_terminal_dispersion(
 ) -> dict[str, typing.Any]:
     """Calculate historical timetable-derived structural routing terminal dispersion for an edge."""
 
-    from sqlalchemy import select, text
+    from sqlalchemy import select, tex
 
     from railgati.models.station import Station
 
@@ -4456,7 +4456,7 @@ def calculate_edge_route_terminal_dispersion(
         SELECT
             COUNT(train_id) as traversing_train_count,
             COUNT(DISTINCT origin_id) as distinct_origin_count,
-            COUNT(DISTINCT dest_id) as distinct_destination_count
+            COUNT(DISTINCT dest_id) as distinct_destination_coun
         FROM train_terminals;
     """)
 
@@ -4497,7 +4497,7 @@ def calculate_edge_route_co_traversal_affinity(
 ) -> dict[str, typing.Any]:
     """Calculate historical timetable-derived edge co-traversal affinity."""
 
-    from sqlalchemy import select, text
+    from sqlalchemy import select, tex
 
     from railgati.models.station import Station
 
@@ -4612,7 +4612,7 @@ def calculate_train_max_shared_sub_route(
 ) -> dict[str, typing.Any]:
     """Calculate maximum shared contiguous sub-route analytics."""
 
-    from sqlalchemy import select, text
+    from sqlalchemy import select, tex
 
     from railgati.models.train import Train
 
@@ -4701,7 +4701,7 @@ def calculate_train_max_shared_sub_route(
 
 def calculate_train_route_od_exclusivity(db: Session, train_number: str) -> dict[str, typing.Any]:
     """Phase 44: Calculates Train Route O-D Structural Exclusivity Analytics."""
-    from sqlalchemy import select, text
+    from sqlalchemy import select, tex
 
     from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
     from railgati.models.train import Train, TrainObservation
@@ -4785,7 +4785,7 @@ def calculate_train_route_od_exclusivity(db: Session, train_number: str) -> dict
 def calculate_station_pair_route_diversity(
     db, from_station_code: str, to_station_code: str
 ) -> dict[str, typing.Any]:
-    from sqlalchemy import text
+    from sqlalchemy import tex
 
     from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
     from railgati.models.station import Station
@@ -4820,7 +4820,7 @@ def calculate_station_pair_route_diversity(
             tt.o_seq,
             tt.d_seq,
             s.code
-        FROM target_trains tt
+        FROM target_trains
         JOIN train_stop_observations ts
           ON ts.train_id = tt.train_id
          AND ts.snapshot_id = :snapshot_id
@@ -4872,7 +4872,7 @@ from sqlalchemy.orm import Session
 def calculate_station_pair_intermediate_hubs(
     db: Session, from_station_code: str, to_station_code: str
 ) -> dict[str, Any]:
-    from sqlalchemy import select
+    from sqlalchemy import selec
 
     from railgati.api.v1.snapshots import (
         get_active_station_snapshot_id,
@@ -4897,7 +4897,7 @@ def calculate_station_pair_intermediate_hubs(
 
     station_snapshot_id = get_active_station_snapshot_id(db)
 
-    # First get total traversal instance count
+    # First get total traversal instance coun
     total_query = text("""
         SELECT COUNT(*) FROM (
             SELECT DISTINCT t1.train_id, t1.stop_sequence as o_seq, t2.stop_sequence as d_seq
@@ -4945,7 +4945,7 @@ def calculate_station_pair_intermediate_hubs(
                 ts.train_id,
                 tt.o_seq,
                 tt.d_seq
-            FROM target_trains tt
+            FROM target_trains
             JOIN train_stop_observations ts
               ON ts.train_id = tt.train_id
              AND ts.snapshot_id = :snapshot_id
@@ -4963,7 +4963,7 @@ def calculate_station_pair_intermediate_hubs(
                     FROM hub_occurrences h2
                     WHERE h2.station_code = h1.station_code
                 ) q
-            ) as traversal_instance_count
+            ) as traversal_instance_coun
         FROM hub_occurrences h1
         GROUP BY station_code
         ORDER BY traversal_instance_count DESC, occurrence_count DESC, station_code ASC
@@ -5008,7 +5008,7 @@ def calculate_station_pair_route_boundary_confinement(
     db: Session, from_station_code: str, to_station_code: str
 ) -> dict[str, typing.Any]:
     from fastapi import HTTPException, status
-    from sqlalchemy import select
+    from sqlalchemy import selec
 
     from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
     from railgati.models.station import Station
@@ -5046,8 +5046,8 @@ def calculate_station_pair_route_boundary_confinement(
                 t.train_id,
                 MIN(t.stop_sequence) as t_min,
                 MAX(t.stop_sequence) as t_max
-            FROM target_traversals tt
-            JOIN train_stop_observations t
+            FROM target_traversals
+            JOIN train_stop_observations
               ON t.train_id = tt.train_id AND t.snapshot_id = :snap_id
             GROUP BY t.train_id
         ),
@@ -5064,12 +5064,12 @@ def calculate_station_pair_route_boundary_confinement(
                     WHEN tt.o_seq > tb.t_min AND tt.d_seq = tb.t_max THEN 'DESTINATION_BOUNDED'
                     ELSE 'UNBOUNDED_EMBEDDED'
                 END as boundary_state
-            FROM target_traversals tt
+            FROM target_traversals
             JOIN train_boundaries tb ON tt.train_id = tb.train_id
         )
         SELECT
             boundary_state,
-            COUNT(*) as traversal_count
+            COUNT(*) as traversal_coun
         FROM classified_traversals
         GROUP BY boundary_state
     """)
@@ -5092,15 +5092,15 @@ def calculate_station_pair_route_boundary_confinement(
     for row in rows:
         state = row[0]
         count = row[1]
-        total_traversal_count += count
+        total_traversal_count += coun
         if state == "STRICTLY_BOUNDED":
-            strictly_bounded_count += count
+            strictly_bounded_count += coun
         elif state == "ORIGIN_BOUNDED":
-            origin_bounded_count += count
+            origin_bounded_count += coun
         elif state == "DESTINATION_BOUNDED":
-            destination_bounded_count += count
+            destination_bounded_count += coun
         elif state == "UNBOUNDED_EMBEDDED":
-            unbounded_embedded_count += count
+            unbounded_embedded_count += coun
 
     return {
         "from_station_code": from_station_code,
@@ -5118,7 +5118,7 @@ def calculate_train_route_terminal_incidence(
     db: Session, train_number: str
 ) -> dict[str, typing.Any]:
     """Phase 48: Network Train Route Terminal Incidence Analytics."""
-    from sqlalchemy import select, text
+    from sqlalchemy import select, tex
 
     from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
     from railgati.models.train import Train, TrainObservation
@@ -5167,7 +5167,7 @@ def calculate_train_route_terminal_incidence(
             (SELECT COUNT(*) FROM target_stops) as route_stop_occurrence_count,
             (SELECT COUNT(DISTINCT station_id) FROM target_stops) as distinct_route_station_count,
             (SELECT COUNT(*) FROM target_stops WHERE station_id IN (SELECT station_id FROM global_terminals)) as terminal_occurrence_count,
-            (SELECT COUNT(DISTINCT station_id) FROM target_stops WHERE station_id IN (SELECT station_id FROM global_terminals)) as distinct_terminal_station_count
+            (SELECT COUNT(DISTINCT station_id) FROM target_stops WHERE station_id IN (SELECT station_id FROM global_terminals)) as distinct_terminal_station_coun
     """)
 
     res = db.execute(
@@ -5197,7 +5197,7 @@ def calculate_train_route_terminal_incidence(
 
 
 def calculate_station_pair_route_extension(
-    db: Session, origin_code: str, destination_code: str, timetable_snapshot_id: int
+    db: Session, origin_code: str, destination_code: str, timetable_snapshot_id: in
 ) -> dict[str, object]:
     """
     Calculate the Phase 49 Network Station Pair Route Extension Analytics metric.
@@ -5209,7 +5209,7 @@ def calculate_station_pair_route_extension(
     if origin_code == destination_code:
         raise ValueError("Origin and destination cannot be identical.")
 
-    from sqlalchemy import select
+    from sqlalchemy import selec
 
     from railgati.models.station import Station
 
@@ -5257,7 +5257,7 @@ def calculate_station_pair_route_extension(
             (SELECT COUNT(*) FROM valid_traversals) as traversal_occurrence_count,
             (SELECT COUNT(*) FROM pre_origin_stops) as pre_origin_station_count,
             (SELECT COUNT(*) FROM post_dest_stops) as post_destination_station_count,
-            (SELECT COUNT(*) FROM combined_extension) as total_extension_station_count
+            (SELECT COUNT(*) FROM combined_extension) as total_extension_station_coun
     """)
 
     res = db.execute(
@@ -5280,7 +5280,7 @@ def calculate_station_pair_route_extension(
 
 
 def calculate_station_pair_temporal_order_inversions(
-    db: Session, origin_code: str, destination_code: str, snapshot_id: int
+    db: Session, origin_code: str, destination_code: str, snapshot_id: in
 ) -> dict[str, Any]:
     """
     Calculate network station-pair temporal order inversion analytics.
@@ -5350,7 +5350,7 @@ def calculate_station_pair_temporal_order_inversions(
                 UNION
                 SELECT train_b as train_id FROM inversions
             ) as distinct_inverted
-        ) as distinct_inverted_train_count
+        ) as distinct_inverted_train_coun
     FROM inversions
     """)
 
@@ -5383,7 +5383,7 @@ def calculate_station_pair_temporal_order_inversions(
 
 
 def calculate_station_pair_intermediate_halt_stratification(
-    db: Session, origin_code: str, destination_code: str, snapshot_id: int
+    db: Session, origin_code: str, destination_code: str, snapshot_id: in
 ) -> dict[str, Any]:
     """
     Calculate the stratification of intermediate halt counts for
@@ -5396,7 +5396,7 @@ def calculate_station_pair_intermediate_halt_stratification(
     WITH traversals AS (
         SELECT
             t1.train_id,
-            (t2.stop_sequence - t1.stop_sequence - 1) as halt_count
+            (t2.stop_sequence - t1.stop_sequence - 1) as halt_coun
         FROM train_stop_observations t1
         JOIN train_stop_observations t2
           ON t1.train_id = t2.train_id
@@ -5410,7 +5410,7 @@ def calculate_station_pair_intermediate_halt_stratification(
         COUNT(*) as total_traversal_count,
         MIN(halt_count) as min_halts,
         MAX(halt_count) as max_halts,
-        COUNT(DISTINCT halt_count) as distinct_halt_strata_count
+        COUNT(DISTINCT halt_count) as distinct_halt_strata_coun
     FROM traversals
     """)
 
@@ -5451,7 +5451,7 @@ def calculate_station_pair_intermediate_halt_stratification(
 
 
 def calculate_station_pair_return_service_adherence(
-    db: Session, origin_code: str, destination_code: str, snapshot_id: int
+    db: Session, origin_code: str, destination_code: str, snapshot_id: in
 ) -> dict[str, Any]:
     """
     Calculate the structural adherence of published return services
@@ -5503,7 +5503,7 @@ def calculate_station_pair_return_service_adherence(
                 ELSE 'non_adherent'
             END as adherence_status
         FROM forward_traversals f
-        LEFT JOIN trains r_t
+        LEFT JOIN trains r_
           ON r_t.number = f.return_train_number
     )
     SELECT
@@ -5559,9 +5559,9 @@ def calculate_station_peak_simultaneous_presence(
     station_code: str,
 ) -> dict[str, typing.Any]:
     """Phase 53: Network Station Peak Simultaneous Presence Analytics."""
-    from sqlalchemy import select, text
+    from sqlalchemy import select, tex
 
-    from railgati.models.provenance import DatasetSnapshot
+    from railgati.models.provenance import DatasetSnapsho
     from railgati.models.station import Station, StationObservation
 
     snapshot = db.scalar(
@@ -5622,7 +5622,7 @@ def calculate_station_peak_simultaneous_presence(
         )
         SELECT
             COUNT(DISTINCT occurrence_id) as total_occurrences,
-            MAX(concurrent_trains) as peak_concurrent
+            MAX(concurrent_trains) as peak_concurren
         FROM running;
     """)
 
@@ -5776,7 +5776,7 @@ def calculate_train_sequence_subgraph_density(
     db: Session, snapshot_id: int, train_number: str
 ) -> dict[str, Any]:
     """Calculate the sequence-induced subgraph density for a target train (Phase 55)."""
-    from sqlalchemy import func, select, text
+    from sqlalchemy import func, select, tex
 
     from railgati.models.train import Train
 
@@ -5834,7 +5834,7 @@ def calculate_train_sequence_topological_transition_continuity(
     db: Session, snapshot_id: int, train_number: str
 ) -> dict[str, Any]:
     """Calculate the sequence topological transition continuity (Phase 56)."""
-    from sqlalchemy import func, select, text
+    from sqlalchemy import func, select, tex
 
     from railgati.models.train import Train
 
@@ -5873,8 +5873,8 @@ def calculate_train_sequence_topological_transition_continuity(
          JOIN train_stop_observations o3
            ON o2.train_id = o3.train_id AND o2.snapshot_id = o3.snapshot_id AND o3.stop_sequence = o2.stop_sequence + 1
          WHERE o1.snapshot_id = :snap_id AND o1.station_id = tt.st1 AND o2.station_id = tt.st2 AND o3.station_id = tt.st3
-        ) as transition_occurrence_count
-    FROM target_triplets tt
+        ) as transition_occurrence_coun
+    FROM target_triplets
     JOIN stations st1 ON st1.id = tt.st1
     JOIN stations st2 ON st2.id = tt.st2
     JOIN stations st3 ON st3.id = tt.st3
@@ -5898,8 +5898,8 @@ def calculate_train_sequence_topological_transition_continuity(
     ratios = []
 
     for r in results:
-        n_in = r.first_edge_occurrence_count
-        n_path = r.transition_occurrence_count
+        n_in = r.first_edge_occurrence_coun
+        n_path = r.transition_occurrence_coun
         if n_in == 0:
             ratio = 0.0
         else:
@@ -5935,7 +5935,7 @@ def calculate_train_sequence_disjoint_subpath_reconvergences(
     db: Session, snapshot_id: int, train_number: str
 ) -> dict[str, typing.Any]:
     """Calculate Train Sequence Disjoint Sub-Path Reconvergences."""
-    from sqlalchemy import func, select, text
+    from sqlalchemy import func, select, tex
 
     from railgati.models.train import Train
 
@@ -5975,12 +5975,12 @@ def calculate_train_sequence_disjoint_subpath_reconvergences(
         FROM candidate_trains c
         WHERE NOT EXISTS (
             SELECT 1
-            FROM train_stop_observations c_int
+            FROM train_stop_observations c_in
             WHERE c_int.train_id = c.train_id AND c_int.snapshot_id = :snap_id
               AND c_int.stop_sequence > c.c_seq_A AND c_int.stop_sequence < c.c_seq_B
               AND EXISTS (
                   SELECT 1
-                  FROM target_stops t_int
+                  FROM target_stops t_in
                   WHERE t_int.seq > c.t_seq_A AND t_int.seq < c.t_seq_B
                     AND t_int.station_id = c_int.station_id
               )
@@ -6032,12 +6032,12 @@ def calculate_train_sequence_disjoint_subpath_reconvergences(
             FROM candidate_trains c
             WHERE NOT EXISTS (
                 SELECT 1
-                FROM train_stop_observations c_int
+                FROM train_stop_observations c_in
                 WHERE c_int.train_id = c.train_id AND c_int.snapshot_id = :snap_id
                   AND c_int.stop_sequence > c.c_seq_A AND c_int.stop_sequence < c.c_seq_B
                   AND EXISTS (
                       SELECT 1
-                      FROM target_stops t_int
+                      FROM target_stops t_in
                       WHERE t_int.seq > c.t_seq_A AND t_int.seq < c.t_seq_B
                         AND t_int.station_id = c_int.station_id
                   )
@@ -6051,13 +6051,13 @@ def calculate_train_sequence_disjoint_subpath_reconvergences(
             d.c_seq_A as c_seq_a, d.c_seq_B as c_seq_b,
             (
                 SELECT COALESCE(array_agg(s.code ORDER BY t_int.seq), '{}')
-                FROM target_stops t_int
+                FROM target_stops t_in
                 JOIN stations s ON s.id = t_int.station_id
                 WHERE t_int.seq > d.t_seq_A AND t_int.seq < d.t_seq_B
             ) as target_interior_codes,
             (
                 SELECT COALESCE(array_agg(s.code ORDER BY c_int.stop_sequence), '{}')
-                FROM train_stop_observations c_int
+                FROM train_stop_observations c_in
                 JOIN stations s ON s.id = c_int.station_id
                 WHERE c_int.train_id = d.train_id AND c_int.snapshot_id = :snap_id
                   AND c_int.stop_sequence > d.c_seq_A AND c_int.stop_sequence < d.c_seq_B
@@ -6097,7 +6097,7 @@ def calculate_train_sequence_disjoint_subpath_reconvergences(
 
         target_codes_query = text("""
             SELECT s.code
-            FROM train_stop_observations t_int
+            FROM train_stop_observations t_in
             JOIN stations s ON s.id = t_int.station_id
             WHERE t_int.train_id = :t_id AND t_int.snapshot_id = :snap_id
               AND t_int.stop_sequence > :t_seq_A AND t_int.stop_sequence < :t_seq_B
@@ -6106,7 +6106,7 @@ def calculate_train_sequence_disjoint_subpath_reconvergences(
 
         candidate_codes_query = text("""
             SELECT s.code
-            FROM train_stop_observations c_int
+            FROM train_stop_observations c_in
             JOIN stations s ON s.id = c_int.station_id
             WHERE c_int.train_id = :c_id AND c_int.snapshot_id = :snap_id
               AND c_int.stop_sequence > :c_seq_A AND c_int.stop_sequence < :c_seq_B
@@ -6165,7 +6165,7 @@ def calculate_train_sequence_topological_degree_extremes(
     db: Session, snapshot_id: int, train_number: str
 ) -> dict[str, typing.Any]:
     """Calculate Train Sequence Topological Degree Extremes."""
-    from sqlalchemy import func, select, text
+    from sqlalchemy import func, select, tex
 
     from railgati.models.train import Train
 
@@ -6201,7 +6201,7 @@ def calculate_train_sequence_topological_degree_extremes(
             LAG(COALESCE(sd.global_degree, 0)) OVER (ORDER BY o.stop_sequence) as prev_deg,
             LEAD(COALESCE(sd.global_degree, 0)) OVER (ORDER BY o.stop_sequence) as next_deg,
             ROW_NUMBER() OVER (ORDER BY o.stop_sequence) as rnum,
-            COUNT(*) OVER () as total_count
+            COUNT(*) OVER () as total_coun
         FROM train_stop_observations o
         JOIN stations s ON s.id = o.station_id
         LEFT JOIN station_degrees sd ON sd.station_id = o.station_id
@@ -6262,7 +6262,7 @@ def calculate_station_neighborhood_subsumption(
 ) -> dict[str, typing.Any]:
     """Calculate Station Neighborhood Topological Subsumption."""
     from fastapi import HTTPException
-    from sqlalchemy import func, select, text
+    from sqlalchemy import func, select, tex
 
     from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
     from railgati.models.station import Station
@@ -6325,7 +6325,7 @@ def calculate_station_neighborhood_subsumption(
     SELECT
         s.code as neighbor_code,
         nd.deg as neighbor_degree
-    FROM target_neighbors_clean t
+    FROM target_neighbors_clean
     JOIN stations s ON s.id = t.v
     JOIN neighbor_degrees nd ON nd.u = t.v
     WHERE
@@ -6391,7 +6391,7 @@ def calculate_station_neighborhood_subsumption(
 def calculate_station_strict_local_bridges(db: Session, station_code: str) -> dict[str, typing.Any]:
     """Calculate Station Neighborhood Strict Local Bridge Pairs."""
     from fastapi import HTTPException
-    from sqlalchemy import func, select, text
+    from sqlalchemy import func, select, tex
 
     from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
     from railgati.models.station import Station
@@ -6446,14 +6446,14 @@ def calculate_station_strict_local_bridges(db: Session, station_code: str) -> di
                   AND x.v != :target_id
                   AND x.v != np.a_id
                   AND x.v != np.b_id
-            ) as alt_count
+            ) as alt_coun
         FROM neighbor_pairs np
     )
     SELECT
         sa.code as neighbor_a,
         sb.code as neighbor_b,
         pe.has_direct,
-        pe.alt_count
+        pe.alt_coun
     FROM pair_evals pe
     JOIN stations sa ON sa.id = pe.a_id
     JOIN stations sb ON sb.id = pe.b_id
@@ -6489,7 +6489,7 @@ def calculate_station_strict_local_bridges(db: Session, station_code: str) -> di
 def calculate_train_single_station_intersections(
     db: Session, snapshot_id: int, target_train_number: str
 ) -> dict:
-    from sqlalchemy import func, select, text
+    from sqlalchemy import func, select, tex
 
     from railgati.models.train import Train, TrainObservation
 
@@ -6533,7 +6533,7 @@ def calculate_train_single_station_intersections(
             t_obs.name AS other_train_name,
             s.code AS shared_station_code,
             s_obs.name AS shared_station_name
-        FROM qualifying_trains qt
+        FROM qualifying_trains q
         JOIN trains t ON t.id = qt.train_id
         JOIN train_observations t_obs ON t_obs.train_id = t.id AND t_obs.snapshot_id = :snapshot_id
         JOIN stations s ON s.id = qt.shared_station_id
@@ -6568,7 +6568,7 @@ def calculate_train_structural_shortest_path_divergence(
     db: Session, timetable_snapshot_id: int, train_number: str
 ) -> dict[str, typing.Any]:
     """Calculate Train Route Structural Shortest-Path Divergence."""
-    from sqlalchemy import select
+    from sqlalchemy import selec
 
     from railgati.models.graph import RailwayGraphBuild
     from railgati.models.station import Station
@@ -6680,7 +6680,7 @@ def calculate_station_junction_through_service(
     )
     station_name = obs if obs else station_code
 
-    # Step 1: Find topological neighbors in active snapshot
+    # Step 1: Find topological neighbors in active snapsho
     neighbors_query = text("""
         SELECT DISTINCT CASE WHEN from_station_id = :st_id THEN to_station_id ELSE from_station_id END
         FROM railway_network_edges
@@ -6779,7 +6779,7 @@ def calculate_station_junction_through_service(
 def calculate_train_topological_perimeter_expansion(
     db: Session, timetable_snapshot_id: int, train_number: str
 ) -> dict[str, typing.Any]:
-    from sqlalchemy import select, text
+    from sqlalchemy import select, tex
 
     from railgati.models.train import Train
 
@@ -6787,7 +6787,7 @@ def calculate_train_topological_perimeter_expansion(
     if not train:
         raise ValueError(f"Train not found: '{train_number}'")
 
-    # Verify train exists in snapshot
+    # Verify train exists in snapsho
     route_count = db.scalar(
         text(
             "SELECT COUNT(DISTINCT station_id) FROM train_stop_observations WHERE train_id = :tr_id AND snapshot_id = :snap_id"
@@ -6836,7 +6836,7 @@ def calculate_train_topological_perimeter_expansion(
     )
 
     perimeter_count = len(results)
-    ratio = perimeter_count / route_count
+    ratio = perimeter_count / route_coun
 
     perimeter_items = [
         {"station_code": row["code"], "station_name": row["name"] or row["code"]} for row in results
@@ -7147,7 +7147,7 @@ def calculate_train_sequence_subgraph_triangles(
     db: Session, snapshot_id: int, train_number: str
 ) -> dict[str, typing.Any]:
     """Calculate undirected triangles in the subgraph induced by a train's sequence."""
-    from sqlalchemy import func, select
+    from sqlalchemy import func, selec
 
     from railgati.models.graph import RailwayNetworkEdge
     from railgati.models.train import Train, TrainStopObservation
@@ -7216,7 +7216,7 @@ def calculate_train_sequence_subgraph_diameter(
     """Calculate the diameter of the undirected subgraph induced by a train's sequence."""
     import collections
 
-    from sqlalchemy import func, select
+    from sqlalchemy import func, selec
 
     from railgati.models.graph import RailwayNetworkEdge
     from railgati.models.train import Train, TrainStopObservation
@@ -7320,7 +7320,7 @@ def calculate_train_sequence_subgraph_wiener_index(
     """Calculate the Wiener index of the undirected subgraph induced by a train's sequence."""
     import collections
 
-    from sqlalchemy import func, select
+    from sqlalchemy import func, selec
 
     from railgati.models.graph import RailwayNetworkEdge
     from railgati.models.train import Train, TrainStopObservation
@@ -7421,7 +7421,7 @@ def calculate_train_sequence_subgraph_wiener_index(
         while q_dist:
             curr, dist = q_dist.popleft()
             if station_rank[curr] > s_rank:
-                wiener_index += dist
+                wiener_index += dis
             for nxt in adj[curr]:
                 if nxt not in local_visited:
                     local_visited.add(nxt)
@@ -7443,7 +7443,7 @@ def calculate_station_topological_farness(
     """Calculate the topological farness of a station in the active global graph."""
     import collections
 
-    from sqlalchemy import func, select
+    from sqlalchemy import func, selec
 
     from railgati.models.graph import RailwayNetworkEdge
     from railgati.models.station import Station
@@ -7456,7 +7456,7 @@ def calculate_station_topological_farness(
     if not station:
         raise ValueError(f"Station '{station_code}' not found.")
 
-    # Fetch global edges for the active snapshot
+    # Fetch global edges for the active snapsho
     edges = db.scalars(
         select(RailwayNetworkEdge).filter_by(
             timetable_snapshot_id=snapshot_id
@@ -7489,7 +7489,7 @@ def calculate_station_topological_farness(
 
     while q:
         curr, dist = q.popleft()
-        farness += dist
+        farness += dis
         reachable_count += 1
 
         for nxt in adj[curr]:
@@ -7511,7 +7511,7 @@ def calculate_bridge_bipartition_size(
     """Calculate the bridge bipartition size for an edge in the active global graph."""
     import collections
 
-    from sqlalchemy import func, select
+    from sqlalchemy import func, selec
 
     from railgati.models.graph import RailwayNetworkEdge
     from railgati.models.station import Station
@@ -7577,7 +7577,7 @@ def calculate_bridge_bipartition_size(
     bipartition_size = 0
 
     import typing
-    
+
     stack: list[list[typing.Any]] = []
     stack.append([u_id, -1, iter(adj[u_id]), 1])
     timer += 1
@@ -7585,12 +7585,12 @@ def calculate_bridge_bipartition_size(
 
     while stack:
         curr, parent, children_iter, size = stack[-1]
-        
+
         try:
             nxt = next(children_iter)
             if nxt == parent:
                 continue
-                
+
             if nxt in discovery:
                 low[curr] = min(low[curr], discovery[nxt])
             else:
@@ -7602,7 +7602,7 @@ def calculate_bridge_bipartition_size(
             if parent != -1:
                 stack[-1][3] += size
                 low[parent] = min(low[parent], low[curr])
-                
+
                 if low[curr] > discovery[parent]:
                     if (parent == u_id and curr == v_id) or (parent == v_id and curr == u_id):
                         is_bridge = True
@@ -7621,7 +7621,7 @@ def calculate_train_topological_biconnected_block_traversal_count(
     db: Session, snapshot_id: int, target_train_number: str
 ) -> dict[str, typing.Any]:
     import collections
-    from sqlalchemy import func, select, text
+    from sqlalchemy import func, select, tex
 
     from railgati.models.train import Train, TrainObservation
     from railgati.models.graph import RailwayNetworkEdge
@@ -7651,16 +7651,16 @@ def calculate_train_topological_biconnected_block_traversal_count(
     """)
     res = db.execute(query, {"snapshot_id": snapshot_id, "target_train_id": target_train_id}).fetchall()
     path = [row[0] for row in res]
-    
+
     total_route_edges = 0
     route_edges_canonical = []
-    
+
     for i in range(len(path) - 1):
         u, v = path[i], path[i+1]
         if u != v: # Exclude self loops
             total_route_edges += 1
             route_edges_canonical.append((min(u, v), max(u, v)))
-            
+
     if total_route_edges == 0:
         return {
             "train_number": target_train_number_resolved,
@@ -7668,31 +7668,31 @@ def calculate_train_topological_biconnected_block_traversal_count(
             "biconnected_block_traversal_count": 0,
             "total_route_edges": 0,
         }
-        
+
     # 2. Build graph and compute blocks using Tarjan
     edges = db.scalars(select(RailwayNetworkEdge).filter_by(timetable_snapshot_id=snapshot_id)).all()
-    
+
     adj = collections.defaultdict(set)
     for e in edges:
         if e.from_station_id != e.to_station_id:
             adj[e.from_station_id].add(e.to_station_id)
             adj[e.to_station_id].add(e.from_station_id)
-            
+
     timer = 0
     discovery: dict[int, int] = {}
     low: dict[int, int] = {}
     stack: list[tuple[int, int]] = []
-    
+
     edge_to_block: dict[tuple[int, int], int] = {}
     block_id_counter = 0
-    
+
     import typing
     for start_node in adj:
         if start_node not in discovery:
             timer += 1
             discovery[start_node] = low[start_node] = timer
             dfs_stack: list[list[typing.Any]] = [[start_node, -1, iter(adj[start_node])]]
-            
+
             while dfs_stack:
                 curr, parent, children_iter = dfs_stack[-1]
                 try:
@@ -7725,7 +7725,7 @@ def calculate_train_topological_biconnected_block_traversal_count(
     for route_edge in route_edges_canonical:
         if route_edge in edge_to_block:
             visited_blocks.add(edge_to_block[route_edge])
-            
+
     return {
         "train_number": target_train_number_resolved,
         "timetable_snapshot_id": snapshot_id,
@@ -7738,7 +7738,7 @@ def calculate_train_topological_global_degree_assortativity(
     db: Session, snapshot_id: int, target_train_number: str
 ) -> dict[str, typing.Any]:
     import collections
-    from sqlalchemy import func, select, text
+    from sqlalchemy import func, select, tex
 
     from railgati.models.train import Train, TrainObservation
     from railgati.models.graph import RailwayNetworkEdge
@@ -7775,7 +7775,7 @@ def calculate_train_topological_global_degree_assortativity(
         u, v = path[i], path[i+1]
         if u != v: # Exclude self loops
             route_edges_canonical.add((min(u, v), max(u, v)))
-            
+
     num_distinct_edges = len(route_edges_canonical)
 
     if num_distinct_edges < 2:
@@ -7788,13 +7788,13 @@ def calculate_train_topological_global_degree_assortativity(
 
     # 3. Build Global Graph Degrees
     edges = db.scalars(select(RailwayNetworkEdge).filter_by(timetable_snapshot_id=snapshot_id)).all()
-    
+
     adj: dict[int, set[int]] = collections.defaultdict(set)
     for e in edges:
         if e.from_station_id != e.to_station_id:
             adj[e.from_station_id].add(e.to_station_id)
             adj[e.to_station_id].add(e.from_station_id)
-            
+
     global_degree = {u: len(neighbors) for u, neighbors in adj.items()}
 
     # 4. Compute Assortativity (Symmetric Formulation)
@@ -7802,20 +7802,20 @@ def calculate_train_topological_global_degree_assortativity(
     sum_X = 0
     sum_X2 = 0
     sum_XY = 0
-    
+
     for u, v in route_edges_canonical:
         du = global_degree.get(u, 0)
         dv = global_degree.get(v, 0)
-        
+
         # Each undirected edge contributes (du, dv) and (dv, du)
         sum_X += (du + dv)
         sum_X2 += (du*du + dv*dv)
         sum_XY += 2 * du * dv
-        
+
     mu = sum_X / N
     variance = (sum_X2 / N) - (mu * mu)
     covariance = (sum_XY / N) - (mu * mu)
-    
+
     if variance <= 1e-9:
         assortativity = None
     else:
@@ -7826,4 +7826,101 @@ def calculate_train_topological_global_degree_assortativity(
         "timetable_snapshot_id": snapshot_id,
         "route_assortativity_coefficient": assortativity,
         "distinct_route_edges": num_distinct_edges,
+    }
+
+
+def calculate_train_topological_structural_gradient(
+    db: Session, snapshot_id: int, target_train_number: str
+) -> dict[str, typing.Any]:
+    import math
+    from sqlalchemy import func, select, tex
+
+    from railgati.models.train import Train, TrainObservation
+    from railgati.models.graph import RailwayGraphBuild
+
+    # 1. Resolve train
+    target = db.execute(
+        select(Train.id, Train.number)
+        .join(TrainObservation, TrainObservation.train_id == Train.id)
+        .filter(
+            TrainObservation.snapshot_id == snapshot_id,
+            func.lower(Train.number) == target_train_number.lower(),
+        )
+    ).first()
+
+    if not target:
+        raise ValueError(f"Train {target_train_number} not found in snapshot {snapshot_id}")
+
+    target_train_id = target.id
+    target_train_number_resolved = target.number
+
+    # 2. Resolve Active Graph Build (avoids repeated O(V+E) graph materialization)
+    build = (
+        db.query(RailwayGraphBuild)
+        .filter(
+            RailwayGraphBuild.timetable_snapshot_id == snapshot_id,
+            RailwayGraphBuild.status == "ACTIVE",
+        )
+        .first()
+    )
+    if not build:
+        raise ValueError(f"No active completed graph build found for snapshot {snapshot_id}")
+
+    # 3. Retrieve route and materialized global degrees efficiently
+    query = text("""
+        SELECT r.stop_sequence, COALESCE(c.degree, 0) as global_degree
+        FROM train_stop_observations r
+        LEFT JOIN railway_station_topological_coreness c
+          ON c.graph_build_id = :build_id AND c.station_id = r.station_id
+        WHERE r.snapshot_id = :snapshot_id
+          AND r.train_id = :target_train_id
+        ORDER BY r.stop_sequence
+    """)
+    res = db.execute(
+        query,
+        {"snapshot_id": snapshot_id, "target_train_id": target_train_id, "build_id": build.id}
+    ).fetchall()
+
+    total_sequence_stops = len(res)
+
+    if total_sequence_stops < 2:
+        return {
+            "train_number": target_train_number_resolved,
+            "timetable_snapshot_id": snapshot_id,
+            "topological_structural_gradient_tau": None,
+            "total_sequence_stops": total_sequence_stops,
+        }
+
+    # 4. Compute Kendall's Tau-b
+    y = [row.global_degree for row in res]
+    n = len(y)
+
+    concordant = 0
+    discordant = 0
+    ties_y = 0
+
+    for i in range(n - 1):
+        for j in range(i + 1, n):
+            if y[i] < y[j]:
+                concordant += 1
+            elif y[i] > y[j]:
+                discordant += 1
+            else:
+                ties_y += 1
+
+    total_pairs = n * (n - 1) // 2
+
+    # Since X is strictly increasing sequence indices (1, 2, ..., n), ties_x = 0
+    denom = total_pairs * (total_pairs - ties_y)
+
+    if denom == 0:
+        tau = None
+    else:
+        tau = (concordant - discordant) / math.sqrt(denom)
+
+    return {
+        "train_number": target_train_number_resolved,
+        "timetable_snapshot_id": snapshot_id,
+        "topological_structural_gradient_tau": tau,
+        "total_sequence_stops": total_sequence_stops,
     }

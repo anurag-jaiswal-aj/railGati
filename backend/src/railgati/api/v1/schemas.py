@@ -1257,3 +1257,10 @@ class TrainTopologicalGlobalDegreeAssortativityResponse(BaseModel):
     timetable_snapshot_id: int
     route_assortativity_coefficient: float | None
     distinct_route_edges: int
+
+
+class TrainTopologicalStructuralGradientResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    topological_structural_gradient_tau: float | None
+    total_sequence_stops: int
