@@ -8025,3 +8025,91 @@ def calculate_train_topological_degree_entropy(
         "topological_degree_entropy": entropy,
     }
 
+
+def calculate_train_topological_global_bridge_exposure(
+    db: Session, snapshot_id: int, target_train_number: str
+) -> dict[str, typing.Any]:
+    """
+    Calculate Train Route Topological Global Bridge Exposure.
+    (Phase 79)
+
+    Evaluates the distinct canonical undirected edges of the train route 
+    against the active canonical topological network to compute the fraction 
+    of the route that traverses global structural bridges.
+    """
+    from sqlalchemy import or_
+
+    from railgati.models.graph import RailwayGraphBuild, RailwayNetworkEdgeResilience
+    from railgati.models.train import Train, TrainObservation, TrainStopObservation
+
+    # 1. Resolve Train Identity
+    target = db.query(Train).join(
+        TrainObservation, TrainObservation.train_id == Train.id
+    ).filter(
+        TrainObservation.snapshot_id == snapshot_id,
+        Train.number == target_train_number
+    ).first()
+
+    if not target:
+        raise ValueError(f"Train {target_train_number} not found in timetable snapshot {snapshot_id}")
+
+    # 2. Extract Route Sequence Edges
+    stops = db.query(TrainStopObservation).filter(
+        TrainStopObservation.snapshot_id == snapshot_id,
+        TrainStopObservation.train_id == target.id
+    ).order_by(TrainStopObservation.stop_sequence).all()
+
+    canonical_edges = set()
+    for i in range(len(stops) - 1):
+        u = stops[i].station_id
+        v = stops[i+1].station_id
+        if u != v:
+            canonical_edges.add(tuple(sorted([u, v])))
+
+    if not canonical_edges:
+        return {
+            "train_number": target_train_number,
+            "timetable_snapshot_id": snapshot_id,
+            "total_route_distinct_edges": 0,
+            "global_bridge_edges_count": 0,
+            "global_bridge_exposure_fraction": None,
+        }
+
+    # 3. Resolve active graph build for bridge queries
+    build = db.query(RailwayGraphBuild).filter(
+        RailwayGraphBuild.timetable_snapshot_id == snapshot_id,
+        RailwayGraphBuild.status == "ACTIVE"
+    ).first()
+
+    if not build:
+        raise ValueError(f"No active RailwayGraphBuild found for snapshot {snapshot_id}")
+
+    # 4. Fetch bridge status from existing materialized RailwayNetworkEdgeResilience
+    bridge_edges_count = 0
+    clauses = []
+    for u, v in canonical_edges:
+        clauses.append(
+            (RailwayNetworkEdgeResilience.station_a_id == u) & 
+            (RailwayNetworkEdgeResilience.station_b_id == v)
+        )
+
+    if clauses:
+        # Querying with OR limits database overhead
+        # Max edges for a train is ~150, which is well within SQL expression limits.
+        resilience_records = db.query(RailwayNetworkEdgeResilience).filter(
+            RailwayNetworkEdgeResilience.graph_build_id == build.id,
+            or_(*clauses)
+        ).all()
+
+        for record in resilience_records:
+            if record.is_structural_bridge:
+                bridge_edges_count += 1
+
+    total_distinct = len(canonical_edges)
+    return {
+        "train_number": target_train_number,
+        "timetable_snapshot_id": snapshot_id,
+        "total_route_distinct_edges": total_distinct,
+        "global_bridge_edges_count": bridge_edges_count,
+        "global_bridge_exposure_fraction": bridge_edges_count / total_distinct,
+    }

@@ -1273,3 +1273,10 @@ class TrainTopologicalDegreeEntropyResponse(BaseModel):
     distinct_degree_count: int
     topological_degree_entropy: float | None
 
+
+class TrainTopologicalGlobalBridgeExposureResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    total_route_distinct_edges: int
+    global_bridge_edges_count: int
+    global_bridge_exposure_fraction: float | None

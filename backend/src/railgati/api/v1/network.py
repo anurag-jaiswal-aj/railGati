@@ -3101,3 +3101,34 @@ def get_train_topological_degree_entropy(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         ) from e
+
+
+@router.get(
+    "/trains/{train_number}/topological-global-bridge-exposure",
+    response_model=schemas.TrainTopologicalGlobalBridgeExposureResponse,
+)
+def get_train_topological_global_bridge_exposure(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """Calculate Train Route Topological Global Bridge Exposure (Phase 79)."""
+    from railgati.services.network import calculate_train_topological_global_bridge_exposure
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return calculate_train_topological_global_bridge_exposure(
+            db=db,
+            snapshot_id=timetable_snapshot_id,
+            target_train_number=train_number,
+        )
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
