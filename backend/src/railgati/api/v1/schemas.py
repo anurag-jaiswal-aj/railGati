@@ -1264,3 +1264,12 @@ class TrainTopologicalStructuralGradientResponse(BaseModel):
     timetable_snapshot_id: int
     topological_structural_gradient_tau: float | None
     total_sequence_stops: int
+
+
+class TrainTopologicalDegreeEntropyResponse(BaseModel):
+    train_number: str
+    timetable_snapshot_id: int
+    total_sequence_stops: int
+    distinct_degree_count: int
+    topological_degree_entropy: float | None
+

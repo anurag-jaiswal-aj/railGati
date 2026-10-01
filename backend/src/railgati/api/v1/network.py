@@ -3049,13 +3049,44 @@ def get_train_topological_structural_gradient(
     train_number: str,
     db: Session = Depends(get_db),
 ) -> typing.Any:
-    """Calculate Train Route Topological Structural Gradient."""
+    """Calculate Train Route Topological Structural Gradient (Phase 77)."""
     from railgati.services.network import calculate_train_topological_structural_gradient
 
     timetable_snapshot_id = get_active_timetable_snapshot_id(db)
 
     try:
         return calculate_train_topological_structural_gradient(
+            db=db,
+            snapshot_id=timetable_snapshot_id,
+            target_train_number=train_number,
+        )
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
+
+@router.get(
+    "/trains/{train_number}/topological-degree-entropy",
+    response_model=schemas.TrainTopologicalDegreeEntropyResponse,
+)
+def get_train_topological_degree_entropy(
+    train_number: str,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """Calculate Train Route Topological Degree Entropy (Phase 78)."""
+    from railgati.services.network import calculate_train_topological_degree_entropy
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return calculate_train_topological_degree_entropy(
             db=db,
             snapshot_id=timetable_snapshot_id,
             target_train_number=train_number,

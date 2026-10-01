@@ -1,9 +1,9 @@
 import typing
-import pytes
+import pytest
 import math
 from datetime import UTC, datetime
 
-from railgati.services.network import calculate_train_topological_structural_gradien
+from railgati.services.network import calculate_train_topological_structural_gradient
 from railgati.models.provenance import DatasetSnapshot, DataSource
 from railgati.models.station import Station
 from railgati.models.train import Train, TrainObservation, TrainStopObservation
