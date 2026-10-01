@@ -1,36 +1,25 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { StationAutocomplete } from "@/components/StationAutocomplete";
 
 export default function Home() {
+  const router = useRouter();
   const [fromQuery, setFromQuery] = useState("");
   const [toQuery, setToQuery] = useState("");
   const [fromStation, setFromStation] = useState<string | null>(null);
   const [toStation, setToStation] = useState<string | null>(null);
 
-  const [searchState, setSearchState] = useState<"idle" | "loading" | "empty">("idle");
-  const [emptyMessage, setEmptyMessage] = useState("");
-
-  const handleSearch = async () => {
+  const handleSearch = () => {
     if (!fromStation || !toStation) return;
     
-    setSearchState("loading");
-    try {
-      const res = await fetch(`http://localhost:8000/api/v1/trains/between?source=${fromStation}&destination=${toStation}`);
-      if (res.status === 501) {
-        const data = await res.json();
-        setEmptyMessage(data.message);
-        setSearchState("empty");
-      } else {
-        // Fallback for unexpected status
-        setSearchState("empty");
-        setEmptyMessage("Train search is currently unavailable.");
-      }
-    } catch {
-      setSearchState("empty");
-      setEmptyMessage("Failed to connect to the server.");
+    if (fromStation === toStation) {
+      alert("Source and destination stations cannot be the same.");
+      return;
     }
+
+    router.push(`/journeys?source=${fromStation}&destination=${toStation}`);
   };
 
   return (
@@ -75,36 +64,13 @@ export default function Home() {
         <div className="mt-8 flex justify-center">
           <button
             onClick={handleSearch}
-            disabled={!fromStation || !toStation || searchState === "loading"}
+            disabled={!fromStation || !toStation}
             className="rounded-full bg-blue-600 px-8 py-3 font-semibold text-white transition-all hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-background flex items-center gap-2"
           >
-            {searchState === "loading" ? (
-              <>
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                Searching...
-              </>
-            ) : (
-              "Search Trains"
-            )}
+            Search Trains
           </button>
         </div>
       </div>
-
-      {searchState === "empty" && (
-        <div className="mt-12 w-full max-w-3xl rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-8 text-center animate-in fade-in slide-in-from-bottom-4">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-yellow-500/10 text-yellow-600">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="12"/>
-              <line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-          </div>
-          <h3 className="text-lg font-semibold text-foreground mb-2">Train Discovery Unavailable</h3>
-          <p className="text-foreground/70 max-w-lg mx-auto leading-relaxed">
-            {emptyMessage}
-          </p>
-        </div>
-      )}
     </main>
   );
 }
