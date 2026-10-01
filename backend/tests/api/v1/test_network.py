@@ -100,7 +100,7 @@ def test_get_reachable_stations_success(
 
     monkeypatch.setattr("railgati.api.v1.network.find_reachable_stations", mock_find)
 
-    response = client.get(f"/api/v1/network/reachable?origin={network_api_data['org_code']}")
+    response = client.get(f"/api/v1/network/stations/{network_api_data['org_code']}/reachable-destinations")
     assert response.status_code == 200
     data = response.json()
 
@@ -123,7 +123,7 @@ def test_get_reachable_stations_success(
 
 def test_get_reachable_stations_unknown_origin(client: TestClient) -> None:
     """Test 404 for unknown origin station."""
-    response = client.get("/api/v1/network/reachable?origin=UNKNOWN_XXX")
+    response = client.get("/api/v1/network/stations/UNKNOWN_XXX/reachable-destinations")
     assert response.status_code == 404
     assert "UNKNOWN_XXX" in response.json()["detail"]
 
@@ -135,7 +135,7 @@ def test_get_reachable_stations_no_results(
     monkeypatch.setattr(
         "railgati.api.v1.network.find_reachable_stations", lambda *args, **kwargs: []
     )
-    response = client.get(f"/api/v1/network/reachable?origin={network_api_data['org_code']}")
+    response = client.get(f"/api/v1/network/stations/{network_api_data['org_code']}/reachable-destinations")
     assert response.status_code == 200
     data = response.json()
     assert data["stations"] == []
@@ -156,7 +156,7 @@ def test_get_reachable_stations_max_hops(
     monkeypatch.setattr("railgati.api.v1.network.find_reachable_stations", mock_find)
 
     response = client.get(
-        f"/api/v1/network/reachable?origin={network_api_data['org_code']}&max_hops=10"
+        f"/api/v1/network/stations/{network_api_data['org_code']}/reachable-destinations?max_hops=10"
     )
     assert response.status_code == 200
     assert captured_kwargs["max_hops"] == 10
@@ -169,22 +169,22 @@ def test_get_reachable_stations_invalid_max_hops(
 ) -> None:
     """Test 422 for max_hops out of bounds or invalid."""
     response = client.get(
-        f"/api/v1/network/reachable?origin={network_api_data['org_code']}&max_hops=0"
+        f"/api/v1/network/stations/{network_api_data['org_code']}/reachable-destinations?max_hops=0"
     )
     assert response.status_code == 422
 
     response = client.get(
-        f"/api/v1/network/reachable?origin={network_api_data['org_code']}&max_hops=11"
+        f"/api/v1/network/stations/{network_api_data['org_code']}/reachable-destinations?max_hops=11"
     )
     assert response.status_code == 422
 
     response = client.get(
-        f"/api/v1/network/reachable?origin={network_api_data['org_code']}&max_hops=-1"
+        f"/api/v1/network/stations/{network_api_data['org_code']}/reachable-destinations?max_hops=-1"
     )
     assert response.status_code == 422
 
     response = client.get(
-        f"/api/v1/network/reachable?origin={network_api_data['org_code']}&max_hops=abc"
+        f"/api/v1/network/stations/{network_api_data['org_code']}/reachable-destinations?max_hops=abc"
     )
     assert response.status_code == 422
 
@@ -196,7 +196,7 @@ def test_get_reachable_stations_no_active_snapshot(client: TestClient, db_sessio
     db_session.add(org)
     db_session.commit()
 
-    response = client.get("/api/v1/network/reachable?origin=LONE")
+    response = client.get("/api/v1/network/stations/LONE/reachable-destinations")
     assert response.status_code == 503
     assert "unavailable" in response.json()["detail"].lower()
 
@@ -211,7 +211,7 @@ def test_get_reachable_stations_missing_graph_build(
 
     monkeypatch.setattr("railgati.api.v1.network.find_reachable_stations", mock_find_raises)
 
-    response = client.get(f"/api/v1/network/reachable?origin={network_api_data['org_code']}")
+    response = client.get(f"/api/v1/network/stations/{network_api_data['org_code']}/reachable-destinations")
     assert response.status_code == 503
     assert "unavailable" in response.json()["detail"].lower()
 
@@ -224,7 +224,7 @@ def test_case_insensitive_origin(
         "railgati.api.v1.network.find_reachable_stations", lambda *args, **kwargs: []
     )
     lower_code = network_api_data["org_code"].lower()
-    response = client.get(f"/api/v1/network/reachable?origin={lower_code}")
+    response = client.get(f"/api/v1/network/stations/{lower_code}/reachable-destinations")
     assert response.status_code == 200
     assert response.json()["origin"] == network_api_data["org_code"]  # Should return canonical
 
@@ -299,7 +299,7 @@ def test_station_metadata_snapshot_isolation(
 
     monkeypatch.setattr("railgati.api.v1.network.find_reachable_stations", mock_find)
 
-    response = client.get(f"/api/v1/network/reachable?origin={network_api_data['org_code']}")
+    response = client.get(f"/api/v1/network/stations/{network_api_data['org_code']}/reachable-destinations")
     assert response.status_code == 200
     data = response.json()
 

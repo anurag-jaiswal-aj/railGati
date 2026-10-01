@@ -56,6 +56,7 @@ def find_reachable_stations(
     origin_station_id: int,
     max_hops: int,
     timetable_snapshot_id: int,
+    limit: int = 500,
 ) -> list[StationReachability]:
     """Find canonical stations reachable from the origin within max_hops using NetworkEdges."""
 
@@ -108,6 +109,7 @@ def find_reachable_stations(
         JOIN stations s ON r.to_station_id = s.id
         GROUP BY r.to_station_id, s.code
         ORDER BY min_hops ASC, s.code ASC
+        LIMIT :limit
     """)
 
     results = db.execute(
@@ -116,6 +118,7 @@ def find_reachable_stations(
             "snapshot_id": timetable_snapshot_id,
             "origin_id": origin_station_id,
             "max_hops": max_hops,
+            "limit": limit,
         },
     ).all()
 

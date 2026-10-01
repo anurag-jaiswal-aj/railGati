@@ -61,7 +61,7 @@ router = APIRouter(prefix="/network", tags=["Network"])
 
 
 @router.get(
-    "/reachable",
+    "/stations/{station_code}/reachable-destinations",
     response_model=NetworkReachabilityResponse,
     summary="Discover bounded network reachability",
     description=(
@@ -71,9 +71,9 @@ router = APIRouter(prefix="/network", tags=["Network"])
     ),
 )
 def get_reachable_stations(
-    origin: Annotated[
+    station_code: Annotated[
         str,
-        Query(
+        Path(
             description="Canonical origin station code.",
             min_length=1,
             max_length=50,
@@ -87,15 +87,23 @@ def get_reachable_stations(
             le=10,
         ),
     ] = 3,
+    max_results: Annotated[
+        int,
+        Query(
+            description="Maximum number of destinations to return.",
+            ge=1,
+            le=5000,
+        ),
+    ] = 500,
     db: Session = Depends(get_db),  # noqa: B008
 ) -> NetworkReachabilityResponse:
     """Discover reachable stations from an origin."""
     # 1. Resolve Origin Station
-    origin_station = db.scalar(select(Station).filter(func.lower(Station.code) == origin.lower()))
+    origin_station = db.scalar(select(Station).filter(func.lower(Station.code) == station_code.lower()))
     if not origin_station:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Origin station '{origin.upper()}' not found.",
+            detail=f"Origin station '{station_code.upper()}' not found.",
         )
 
     # 2. Get Active Timetable Snapshot
@@ -108,6 +116,7 @@ def get_reachable_stations(
             origin_station_id=origin_station.id,
             max_hops=max_hops,
             timetable_snapshot_id=timetable_snapshot_id,
+            limit=max_results,
         )
     except ValueError as e:
         # Phase 2A raises ValueError if build is missing, PENDING, or FAILED.
