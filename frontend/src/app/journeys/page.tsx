@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 
 interface JourneyLeg {
   train_number: string;
@@ -111,9 +112,9 @@ function JourneysContent() {
   const renderLeg = (leg: JourneyLeg) => (
     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center py-3">
       <div className="flex-1">
-        <div className="font-bold text-lg text-foreground">
-          {leg.train_name} <span className="text-foreground/50 text-sm font-normal">({leg.train_number})</span>
-        </div>
+        <Link href={`/trains/${leg.train_number}`} className="font-bold text-lg text-blue-600 hover:underline">
+          {leg.train_name} <span className="text-blue-600/70 text-sm font-normal">({leg.train_number})</span>
+        </Link>
         <div className="text-sm text-foreground/70">
           Type: {leg.train_type || "N/A"}
         </div>
@@ -121,7 +122,7 @@ function JourneysContent() {
       <div className="flex flex-1 items-center justify-between sm:justify-end gap-6 w-full sm:w-auto mt-3 sm:mt-0">
         <div className="text-center">
           <div className="font-bold text-lg text-foreground">{formatTime(leg.departure_time)}</div>
-          <div className="text-xs text-foreground/50">{leg.origin_station}</div>
+          <Link href={`/stations/${leg.origin_station.toLowerCase()}`} className="text-xs text-blue-600 hover:underline">{leg.origin_station}</Link>
         </div>
         <div className="flex flex-col items-center px-4">
           <div className="text-xs text-foreground/50 mb-1">{formatDuration(leg.duration_minutes)}</div>
@@ -134,7 +135,7 @@ function JourneysContent() {
             {formatTime(leg.arrival_time)}
             {leg.source_day_offset ? <span className="text-xs text-blue-600 ml-1">+{leg.source_day_offset} day</span> : null}
           </div>
-          <div className="text-xs text-foreground/50">{leg.destination_station}</div>
+          <Link href={`/stations/${leg.destination_station.toLowerCase()}`} className="text-xs text-blue-600 hover:underline">{leg.destination_station}</Link>
         </div>
       </div>
     </div>
@@ -226,7 +227,7 @@ function JourneysContent() {
                     <div className="h-px flex-1 bg-dashed bg-foreground/20"></div>
                     <div className="text-xs font-semibold text-foreground/60 px-3 py-1 rounded-full bg-foreground/5 flex items-center gap-2">
                       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/></svg>
-                      Transfer at {journey.transfer_station} (Wait: {formatDuration(journey.layover_minutes)})
+                      Transfer at <Link href={`/stations/${journey.transfer_station?.toLowerCase()}`} className="text-blue-600 hover:underline">{journey.transfer_station}</Link> (Wait: {formatDuration(journey.layover_minutes)})
                     </div>
                     <div className="h-px flex-1 bg-dashed bg-foreground/20"></div>
                   </div>
