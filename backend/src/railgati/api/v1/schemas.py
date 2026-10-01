@@ -1280,3 +1280,10 @@ class TrainTopologicalGlobalBridgeExposureResponse(BaseModel):
     total_route_distinct_edges: int
     global_bridge_edges_count: int
     global_bridge_exposure_fraction: float | None
+
+
+class StationPairTopologicalEdgeConnectivityResponse(BaseModel):
+    origin_station_code: str
+    destination_station_code: str
+    timetable_snapshot_id: int
+    topological_edge_connectivity: int | None

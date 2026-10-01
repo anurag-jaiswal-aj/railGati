@@ -3132,3 +3132,36 @@ def get_train_topological_global_bridge_exposure(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         ) from e
+
+
+@router.get(
+    "/station-pairs/{origin_code}/{destination_code}/topological-edge-connectivity",
+    response_model=schemas.StationPairTopologicalEdgeConnectivityResponse,
+)
+def get_station_pair_topological_edge_connectivity(
+    origin_code: str,
+    destination_code: str,
+    db: Session = Depends(get_db),
+) -> typing.Any:
+    """Calculate Network Station Pair Topological Edge Connectivity (Phase 80)."""
+    from railgati.services.network import calculate_station_pair_topological_edge_connectivity
+
+    timetable_snapshot_id = get_active_timetable_snapshot_id(db)
+
+    try:
+        return calculate_station_pair_topological_edge_connectivity(
+            db=db,
+            snapshot_id=timetable_snapshot_id,
+            origin_code=origin_code,
+            destination_code=destination_code,
+        )
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e),
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e

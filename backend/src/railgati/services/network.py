@@ -8113,3 +8113,94 @@ def calculate_train_topological_global_bridge_exposure(
         "global_bridge_edges_count": bridge_edges_count,
         "global_bridge_exposure_fraction": bridge_edges_count / total_distinct,
     }
+
+
+def calculate_station_pair_topological_edge_connectivity(
+    db: Session, snapshot_id: int, origin_code: str, destination_code: str
+) -> dict[str, typing.Any]:
+    """
+    Calculate Network Station Pair Topological Edge Connectivity (Phase 80).
+
+    Computes the exact undirected unit-edge connectivity \\lambda(s, t)
+    using Edmonds-Karp max-flow on the active canonical timetable graph.
+    """
+    from collections import defaultdict, deque
+    from railgati.models.station import Station
+    from railgati.models.graph import RailwayNetworkEdge
+
+    # 1. Resolve Stations
+    origin_station = db.query(Station).filter(Station.code == origin_code).first()
+    if not origin_station:
+        raise ValueError(f"Origin station '{origin_code}' not found.")
+
+    destination_station = db.query(Station).filter(Station.code == destination_code).first()
+    if not destination_station:
+        raise ValueError(f"Destination station '{destination_code}' not found.")
+
+    s = origin_station.id
+    t = destination_station.id
+
+    if s == t:
+        return {
+            "origin_station_code": origin_code,
+            "destination_station_code": destination_code,
+            "timetable_snapshot_id": snapshot_id,
+            "topological_edge_connectivity": None,
+        }
+
+    # 2. Extract Active Graph
+    # Load canonical undirected graph exactly once.
+    edges = db.query(RailwayNetworkEdge).filter_by(timetable_snapshot_id=snapshot_id).all()
+
+    canonical_edges = set()
+    for e in edges:
+        u, v = e.from_station_id, e.to_station_id
+        if u != v:
+            canonical_edges.add(tuple(sorted([u, v])))
+
+    # 3. Construct Residual Capacity Graph
+    # IMPORTANT: Each *undirected* canonical edge has exactly unit capacity 1.
+    capacity = defaultdict(lambda: defaultdict(int))
+    adj = defaultdict(list)
+
+    for u, v in canonical_edges:
+        capacity[u][v] = 1
+        capacity[v][u] = 1
+        adj[u].append(v)
+        adj[v].append(u)
+
+    # 4. Edmonds-Karp Max-Flow
+    def bfs():
+        parent = {}
+        q = deque([s])
+        while q:
+            u = q.popleft()
+            if u == t:
+                break
+            for v in adj[u]:
+                if v not in parent and capacity[u][v] > 0:
+                    parent[v] = u
+                    q.append(v)
+        return parent
+
+    flow = 0
+    while True:
+        parent = bfs()
+        if t not in parent:
+            break
+
+        # Augment flow along the shortest path by exactly 1 unit
+        curr = t
+        while curr != s:
+            p = parent[curr]
+            capacity[p][curr] -= 1
+            capacity[curr][p] += 1
+            curr = p
+        flow += 1
+
+    return {
+        "origin_station_code": origin_code,
+        "destination_station_code": destination_code,
+        "timetable_snapshot_id": snapshot_id,
+        "topological_edge_connectivity": flow,
+    }
