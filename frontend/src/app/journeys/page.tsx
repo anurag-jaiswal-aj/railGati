@@ -39,7 +39,7 @@ interface JourneyCompareResponse {
 function JourneysContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  
+
   const source = searchParams.get("source");
   const destination = searchParams.get("destination");
 
@@ -56,11 +56,11 @@ function JourneysContent() {
     const fetchJourneys = async () => {
       setLoading(true);
       setError(null);
-      
+
       try {
         const baseUrl = getClientApiUrl();
         const res = await fetch(`${baseUrl}/api/v1/journeys/compare?source=${source}&destination=${destination}&max_transfers=${maxTransfers}`);
-        
+
         if (!res.ok) {
           if (res.status === 400 || res.status === 404 || res.status === 422) {
             const errData = await res.json();
@@ -68,7 +68,7 @@ function JourneysContent() {
           }
           throw new Error("Unable to load journey results. Please try again.");
         }
-        
+
         const jsonData = await res.json();
         setData(jsonData);
       } catch (err: unknown) {
@@ -111,7 +111,26 @@ function JourneysContent() {
     return `${h}h ${m}m`;
   };
 
-  const renderLeg = (leg: JourneyLeg) => (
+  const getLegArrivalOffset = (journey: JourneyOption, legIndex: number) => {
+    if (!journey.legs[0].departure_time) return 0;
+    const depParts = journey.legs[0].departure_time.split(":");
+    if (depParts.length < 2) return 0;
+
+    const startMins = parseInt(depParts[0], 10) * 60 + parseInt(depParts[1], 10);
+    const leg = journey.legs[legIndex];
+
+    if (legIndex === 0 && leg.duration_minutes !== null) {
+      return Math.floor((startMins + leg.duration_minutes) / 1440);
+    } else if (legIndex === 1 && journey.total_duration_minutes !== null) {
+      return Math.floor((startMins + journey.total_duration_minutes) / 1440);
+    }
+    return 0;
+  };
+
+  const renderLeg = (journey: JourneyOption, legIndex: number) => {
+    const leg = journey.legs[legIndex];
+    const arrivalOffset = getLegArrivalOffset(journey, legIndex);
+    return (
     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center py-3">
       <div className="flex-1">
         <Link href={`/trains/${leg.train_number}`} className="font-bold text-lg text-blue-600 hover:underline">
@@ -135,13 +154,14 @@ function JourneysContent() {
         <div className="text-center">
           <div className="font-bold text-lg text-foreground">
             {formatTime(leg.arrival_time)}
-            {leg.source_day_offset ? <span className="text-xs text-blue-600 ml-1">+{leg.source_day_offset} day</span> : null}
+            {arrivalOffset > 0 ? <span className="text-xs text-blue-600 ml-1">+{arrivalOffset} day</span> : null}
           </div>
           <Link href={`/stations/${leg.destination_station.toLowerCase()}`} className="text-xs text-blue-600 hover:underline">{leg.destination_station}</Link>
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   const directJourneys = data?.journeys.filter(j => j.type === "DIRECT") || [];
   const transferJourneys = data?.journeys.filter(j => j.type === "ONE_TRANSFER") || [];
@@ -202,10 +222,10 @@ function JourneysContent() {
                 <p className="text-foreground/70">No direct historical timetable journeys found. Try enabling 1 Transfer.</p>
               </div>
             )}
-            
+
             {maxTransfers === 0 && directJourneys.map(journey => (
               <div key={journey.journey_id} className="rounded-2xl border border-foreground/10 bg-card p-6 shadow-sm">
-                {renderLeg(journey.legs[0])}
+                {renderLeg(journey, 0)}
                 <div className="mt-4 pt-4 border-t border-foreground/10 flex justify-between text-xs text-foreground/50">
                   <span>Total Duration: {formatDuration(journey.total_duration_minutes)}</span>
                   <span>{journey.number_of_stops} stops</span>
@@ -223,8 +243,8 @@ function JourneysContent() {
             {maxTransfers === 1 && transferJourneys.map(journey => (
               <div key={journey.journey_id} className="rounded-2xl border border-foreground/10 bg-card p-6 shadow-sm">
                 <div className="flex flex-col gap-2">
-                  {renderLeg(journey.legs[0])}
-                  
+                  {renderLeg(journey, 0)}
+
                   <div className="flex items-center gap-4 my-2 opacity-80">
                     <div className="h-px flex-1 bg-dashed bg-foreground/20"></div>
                     <div className="text-xs font-semibold text-foreground/60 px-3 py-1 rounded-full bg-foreground/5 flex items-center gap-2">
@@ -234,9 +254,9 @@ function JourneysContent() {
                     <div className="h-px flex-1 bg-dashed bg-foreground/20"></div>
                   </div>
 
-                  {renderLeg(journey.legs[1])}
+                  {renderLeg(journey, 1)}
                 </div>
-                
+
                 <div className="mt-4 pt-4 border-t border-foreground/10 flex justify-between text-xs text-foreground/50">
                   <span>Total Duration: {formatDuration(journey.total_duration_minutes)}</span>
                   <span>{journey.number_of_stops} total stops</span>

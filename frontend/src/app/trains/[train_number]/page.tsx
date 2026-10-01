@@ -182,9 +182,9 @@ export default async function TrainPage({ params }: { params: { train_number: st
                     </td>
                     <td className="px-6 py-4 text-right relative">
                       <div className="font-mono text-foreground">{formatTime(stop.departure_time)}</div>
-                      {stop.source_day && stop.source_day > 0 ? (
+                      {stop.source_day && stop.source_day > 1 ? (
                         <div className="absolute right-6 -bottom-1 text-[10px] font-bold text-blue-600 bg-blue-100 dark:bg-blue-900/40 px-1.5 rounded">
-                          +{stop.source_day} day
+                          +{stop.source_day - 1} day
                         </div>
                       ) : null}
                     </td>
