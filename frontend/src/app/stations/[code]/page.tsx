@@ -168,9 +168,16 @@ export default async function StationPage({ params }: { params: { code: string }
           <div className="text-4xl font-extrabold text-foreground mb-2">
             {reach ? reach.transfer_free_outbound_reach : "—"}
           </div>
-          <p className="text-sm text-foreground/60">
+          <p className="text-sm text-foreground/60 mb-6 flex-1">
             Distinct stations reachable without a transfer in the historical timetable.
           </p>
+          <Link
+            href={`/stations/${station.code.toLowerCase()}/reachability`}
+            className="inline-flex w-fit items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-500/20 dark:text-blue-400"
+          >
+            Explore Network Reachability
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </Link>
         </div>
 
         <div className="rounded-2xl border border-foreground/10 bg-card overflow-hidden shadow-sm flex flex-col justify-center px-8 py-8">
