@@ -50,9 +50,16 @@ interface RelativeEdgeSlownessItem {
   slowness_ratio: number;
 }
 
+interface TrainMaxSharedSubRouteItem {
+  other_train_number: string;
+  shared_station_count: number;
+  start_station_code: string;
+  end_station_code: string;
+}
+
 async function getTrainData(train_number: string) {
   const fetchOptions = { next: { revalidate: 60 } };
-  
+
   const baseUrl = getServerApiUrl();
   const [detailRes, routeRes, profileRes] = await Promise.all([
     fetch(`${baseUrl}/api/v1/trains/${train_number}`, fetchOptions),
@@ -79,7 +86,7 @@ async function getTrainData(train_number: string) {
 export default async function TrainPage({ params }: { params: { train_number: string } }) {
   const resolvedParams = await params;
   const trainData = await getTrainData(resolvedParams.train_number);
-  
+
   if (!trainData) {
     notFound();
   }
@@ -152,8 +159,8 @@ export default async function TrainPage({ params }: { params: { train_number: st
              <div>
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground/50 mb-1">Route</h3>
                 <p className="text-xl font-bold text-foreground">
-                  <Link href={`/stations/${profile.origin_station_code.toLowerCase()}`} className="text-blue-600 hover:underline">{profile.origin_station_code}</Link> 
-                  <span className="mx-2 text-foreground/40">→</span> 
+                  <Link href={`/stations/${profile.origin_station_code.toLowerCase()}`} className="text-blue-600 hover:underline">{profile.origin_station_code}</Link>
+                  <span className="mx-2 text-foreground/40">→</span>
                   <Link href={`/stations/${profile.destination_station_code.toLowerCase()}`} className="text-blue-600 hover:underline">{profile.destination_station_code}</Link>
                 </p>
              </div>
@@ -239,6 +246,16 @@ export default async function TrainPage({ params }: { params: { train_number: st
             </p>
             <Suspense fallback={<div className="text-sm text-foreground/50 py-4">Loading segment comparison...</div>}>
               <SlowerThanAverageSegments trainNumber={resolvedParams.train_number} stationMap={stationMap} />
+            </Suspense>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-bold text-foreground mb-1">Longest Shared Route Segments</h3>
+            <p className="text-sm text-foreground/70 mb-4">
+              Historical scheduled timetable analysis. Identifies other trains that shared the longest identical contiguous sequence of stations with this train. This relies on historical data and does not indicate current availability, operational substitution, or identical departure times.
+            </p>
+            <Suspense fallback={<div className="text-sm text-foreground/50 py-4">Loading shared routes...</div>}>
+              <LongestSharedRouteSegments trainNumber={resolvedParams.train_number} stationMap={stationMap} />
             </Suspense>
           </section>
         </div>
@@ -354,7 +371,7 @@ async function SlowerThanAverageSegments({ trainNumber, stationMap }: { trainNum
               const src = stationMap.get(edge.source_station_code);
               const dst = stationMap.get(edge.destination_station_code);
               const diffPercent = Math.round((edge.slowness_ratio - 1) * 100);
-              
+
               return (
                 <tr key={i} className="hover:bg-foreground/[0.02] transition-colors">
                   <td className="px-6 py-4">
@@ -378,6 +395,76 @@ async function SlowerThanAverageSegments({ trainNumber, stationMap }: { trainNum
                   <td className="px-6 py-4 text-right font-mono text-foreground">{formatDuration(edge.network_average_minutes)}</td>
                   <td className="px-6 py-4 text-right font-mono font-medium text-foreground">
                     +{diffPercent}%
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+async function LongestSharedRouteSegments({ trainNumber, stationMap }: { trainNumber: string, stationMap: Map<string, TrainStopResponse> }) {
+  let routes: TrainMaxSharedSubRouteItem[] = [];
+  try {
+    const res = await fetch(`${getServerApiUrl()}/api/v1/network/trains/${trainNumber}/maximum-shared-sub-route?limit=10`, { next: { revalidate: 60 } });
+    if (!res.ok) {
+      throw new Error("Failed to fetch");
+    }
+    const data = await res.json();
+    routes = data.top_shared_sub_routes || [];
+  } catch {
+    return <div className="text-sm font-medium text-red-600 dark:text-red-400 py-4">Unable to load shared route analysis.</div>;
+  }
+
+  if (routes.length === 0) {
+    return <div className="text-sm text-foreground/60 py-4">No shared route segments found for this train.</div>;
+  }
+
+  return (
+    <div className="bg-card rounded-2xl border border-foreground/10 overflow-hidden shadow-sm">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm whitespace-nowrap">
+          <thead className="bg-foreground/[0.03] border-b border-foreground/10">
+            <tr>
+              <th scope="col" className="px-6 py-4 font-semibold text-foreground/60">Other Train</th>
+              <th scope="col" className="px-6 py-4 font-semibold text-foreground/60 text-right">Shared Stations</th>
+              <th scope="col" className="px-6 py-4 font-semibold text-foreground/60">Shared Segment</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-foreground/5">
+            {routes.map((route, i) => {
+              const src = stationMap.get(route.start_station_code);
+              const dst = stationMap.get(route.end_station_code);
+
+              return (
+                <tr key={i} className="hover:bg-foreground/[0.02] transition-colors">
+                  <td className="px-6 py-4">
+                    <Link href={`/trains/${route.other_train_number.toLowerCase()}`} className="font-bold tracking-wider text-blue-600 hover:underline">
+                      {route.other_train_number}
+                    </Link>
+                  </td>
+                  <td className="px-6 py-4 text-right font-mono font-medium text-foreground">
+                    {route.shared_station_count}
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2">
+                      <div>
+                        <div className="font-medium text-foreground">{src ? src.station_name : route.start_station_code}</div>
+                        <Link href={`/stations/${route.start_station_code.toLowerCase()}`} className="text-xs text-blue-600 hover:underline">
+                          {route.start_station_code}
+                        </Link>
+                      </div>
+                      <span className="text-foreground/40 px-2">→</span>
+                      <div>
+                        <div className="font-medium text-foreground">{dst ? dst.station_name : route.end_station_code}</div>
+                        <Link href={`/stations/${route.end_station_code.toLowerCase()}`} className="text-xs text-blue-600 hover:underline">
+                          {route.end_station_code}
+                        </Link>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               );

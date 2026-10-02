@@ -89,30 +89,48 @@ def test_calculate_train_max_shared_sub_route_success(db_session: Session, max_s
     assert res["target_train_number"] == "TARGET"
 
     routes = res["top_shared_sub_routes"]
-    # Max length should be 3
-    # Matches: MATCH_3_1 (B, C, D) and MATCH_3_2 (A, B, C)
-    assert len(routes) == 2
+    # New logic: returns max segment PER train, ordered by length DESC, train_number ASC
+
+    assert len(routes) == 8 # 8 trains share at least 1 station
 
     assert routes[0]["other_train_number"] == "MATCH_3_1"
     assert routes[0]["shared_station_count"] == 3
-    assert routes[0]["start_station_code"] == "B"
-    assert routes[0]["end_station_code"] == "D"
 
     assert routes[1]["other_train_number"] == "MATCH_3_2"
     assert routes[1]["shared_station_count"] == 3
-    assert routes[1]["start_station_code"] == "A"
-    assert routes[1]["end_station_code"] == "C"
+
+    assert routes[2]["other_train_number"] == "MATCH_2"
+    assert routes[2]["shared_station_count"] == 2
+
+    assert routes[3]["other_train_number"] == "M_2"
+    assert routes[3]["shared_station_count"] == 2
+
+    assert routes[4]["other_train_number"] == "M_4"
+    assert routes[4]["shared_station_count"] == 2
+
+    assert routes[5]["other_train_number"] == "NON_CONTIGUOUS"
+    assert routes[5]["shared_station_count"] == 2
+
+    assert routes[6]["other_train_number"] == "T2"
+    assert routes[6]["shared_station_count"] == 2
+
+    assert routes[7]["other_train_number"] == "REVERSE"
+    assert routes[7]["shared_station_count"] == 1
 
 
 def test_calculate_train_max_shared_sub_route_repeated_stations(db_session: Session, max_shared_sub_route_fixtures: typing.Any) -> None:
     res = calculate_train_max_shared_sub_route(db_session, max_shared_sub_route_fixtures["snapshot_id"], "T2")
     routes = res["top_shared_sub_routes"]
 
-    assert len(routes) == 1
+    assert len(routes) == 7
     assert routes[0]["other_train_number"] == "M_4"
     assert routes[0]["shared_station_count"] == 4
-    assert routes[0]["start_station_code"] == "A"
-    assert routes[0]["end_station_code"] == "B"
+
+    assert routes[1]["other_train_number"] == "MATCH_3_2"
+    assert routes[1]["shared_station_count"] == 2
+
+    assert routes[2]["other_train_number"] == "M_2"
+    assert routes[2]["shared_station_count"] == 2
 
 
 def test_calculate_train_max_shared_sub_route_not_found(db_session: Session, max_shared_sub_route_fixtures: typing.Any) -> None:

@@ -1854,6 +1854,7 @@ def get_edge_route_co_traversal_affinity(
 )
 def get_train_max_shared_sub_route(
     train_number: str,
+    limit: int = Query(10, ge=1, le=50, description="Max comparison trains to return"),
     db: Session = Depends(get_db),
 ) -> dict[str, typing.Any]:
     from railgati.api.v1.snapshots import get_active_timetable_snapshot_id
@@ -1862,7 +1863,7 @@ def get_train_max_shared_sub_route(
     timetable_snapshot_id = get_active_timetable_snapshot_id(db)
 
     try:
-        return calculate_train_max_shared_sub_route(db, timetable_snapshot_id, train_number)
+        return calculate_train_max_shared_sub_route(db, timetable_snapshot_id, train_number, limit)
     except ValueError as e:
         msg = str(e)
         if "not found" in msg.lower():

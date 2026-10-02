@@ -4612,6 +4612,7 @@ def calculate_train_max_shared_sub_route(
     db: Session,
     timetable_snapshot_id: int,
     train_number: str,
+    limit: int = 10,
 ) -> dict[str, typing.Any]:
     """Calculate maximum shared contiguous sub-route analytics."""
 
@@ -4666,17 +4667,21 @@ def calculate_train_max_shared_sub_route(
                 ss.shared_len,
                 (SELECT station_code FROM target_stops WHERE stop_sequence = ss.start_seq) as start_code,
                 (SELECT station_code FROM target_stops WHERE stop_sequence = ss.end_seq) as end_code,
-                RANK() OVER (ORDER BY ss.shared_len DESC) as rnk
+                ROW_NUMBER() OVER (
+                    PARTITION BY ss.other_train
+                    ORDER BY ss.shared_len DESC, ss.start_seq ASC
+                ) as rnk
             FROM shared_segments ss
         )
-        SELECT DISTINCT
+        SELECT
             other_train,
             shared_len,
             start_code,
             end_code
         FROM ranked_segments
         WHERE rnk = 1
-        ORDER BY other_train ASC, start_code ASC;
+        ORDER BY shared_len DESC, other_train ASC, start_code ASC
+        LIMIT :limit;
     """)
 
     rows = db.execute(
@@ -4684,6 +4689,7 @@ def calculate_train_max_shared_sub_route(
         {
             "snapshot_id": timetable_snapshot_id,
             "target_id": train.id,
+            "limit": limit,
         },
     ).fetchall()
 
