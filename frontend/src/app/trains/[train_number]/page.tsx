@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getServerApiUrl } from "@/lib/api";
+import { Suspense } from "react";
 
 interface TrainDetail {
   train_number: string;
@@ -32,6 +33,21 @@ interface TrainRouteProfileResponse {
   total_duration_minutes: number | null;
   total_dwell_minutes: number | null;
   dwell_percentage: number | null;
+}
+
+interface StructuralHaltItem {
+  station_code: string;
+  dwell_minutes: number;
+}
+
+interface RelativeEdgeSlownessItem {
+  target_stop_sequence: number;
+  source_station_code: string;
+  destination_station_code: string;
+  target_duration_minutes: number;
+  network_average_minutes: number;
+  network_occurrence_count: number;
+  slowness_ratio: number;
 }
 
 async function getTrainData(train_number: string) {
@@ -69,6 +85,13 @@ export default async function TrainPage({ params }: { params: { train_number: st
   }
 
   const { detail, route, profile } = trainData;
+
+  const stationMap = new Map<string, TrainStopResponse>();
+  route.forEach(stop => {
+    if (!stationMap.has(stop.station_code)) {
+      stationMap.set(stop.station_code, stop);
+    }
+  });
 
   const formatTime = (timeStr: string | null) => {
     if (!timeStr) return "—";
@@ -195,6 +218,173 @@ export default async function TrainPage({ params }: { params: { train_number: st
           </div>
         </div>
       </div>
+
+      <div className="w-full max-w-4xl mt-12 mb-6">
+        <h2 className="text-2xl font-bold text-foreground mb-2">Historical Network Performance</h2>
+        <div className="flex flex-col gap-8 mt-6">
+          <section>
+            <h3 className="text-lg font-bold text-foreground mb-1">Longest Scheduled Halts</h3>
+            <p className="text-sm text-foreground/70 mb-4">
+              Historical scheduled timetable analysis. Represents scheduled timetable dwell periods at strictly intermediate stations. Does not necessarily imply passenger boarding/alighting or operational disruption.
+            </p>
+            <Suspense fallback={<div className="text-sm text-foreground/50 py-4">Loading scheduled halt analysis...</div>}>
+              <LongestScheduledHalts trainNumber={resolvedParams.train_number} stationMap={stationMap} />
+            </Suspense>
+          </section>
+
+          <section>
+            <h3 className="text-lg font-bold text-foreground mb-1">Slower-than-Average Segments</h3>
+            <p className="text-sm text-foreground/70 mb-4">
+              Historical scheduled timetable analysis. Compares this train&apos;s scheduled segment duration with the historical average scheduled duration of other trains using the exact same directed segment. This represents timetable design, not live delay or operational punctuality.
+            </p>
+            <Suspense fallback={<div className="text-sm text-foreground/50 py-4">Loading segment comparison...</div>}>
+              <SlowerThanAverageSegments trainNumber={resolvedParams.train_number} stationMap={stationMap} />
+            </Suspense>
+          </section>
+        </div>
+      </div>
     </main>
+  );
+}
+
+// -- V2.3 Server Components --
+
+async function LongestScheduledHalts({ trainNumber, stationMap }: { trainNumber: string, stationMap: Map<string, TrainStopResponse> }) {
+  let halts: StructuralHaltItem[] = [];
+  try {
+    const res = await fetch(`${getServerApiUrl()}/api/v1/network/trains/${trainNumber}/structural-halts?limit=10`, { next: { revalidate: 60 } });
+    if (!res.ok) {
+      throw new Error("Failed to fetch");
+    }
+    const data = await res.json();
+    halts = data.halts || [];
+  } catch {
+    return <div className="text-sm font-medium text-red-600 dark:text-red-400 py-4">Unable to load scheduled halt analysis.</div>;
+  }
+
+  if (halts.length === 0) {
+    return <div className="text-sm text-foreground/60 py-4">No major scheduled halts found for this train.</div>;
+  }
+
+  const formatDuration = (mins: number) => {
+    const h = Math.floor(mins / 60);
+    const m = Math.round(mins % 60);
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m} min`;
+  };
+
+  const formatTime = (timeStr: string | null) => timeStr ? timeStr.slice(0, 5) : "—";
+
+  return (
+    <div className="bg-card rounded-2xl border border-foreground/10 overflow-hidden shadow-sm">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm whitespace-nowrap">
+          <thead className="bg-foreground/[0.03] border-b border-foreground/10">
+            <tr>
+              <th scope="col" className="px-6 py-4 font-semibold text-foreground/60 w-16">Stop</th>
+              <th scope="col" className="px-6 py-4 font-semibold text-foreground/60">Station</th>
+              <th scope="col" className="px-6 py-4 font-semibold text-foreground/60 text-right">Arrival</th>
+              <th scope="col" className="px-6 py-4 font-semibold text-foreground/60 text-right">Departure</th>
+              <th scope="col" className="px-6 py-4 font-semibold text-foreground/60 text-right">Scheduled Dwell</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-foreground/5">
+            {halts.map((halt, i) => {
+              const stop = stationMap.get(halt.station_code);
+              return (
+                <tr key={i} className="hover:bg-foreground/[0.02] transition-colors">
+                  <td className="px-6 py-4 text-foreground/50 font-mono">{stop ? stop.stop_sequence : "—"}</td>
+                  <td className="px-6 py-4">
+                    <div className="font-medium text-foreground">{stop ? stop.station_name : halt.station_code}</div>
+                    <Link href={`/stations/${halt.station_code.toLowerCase()}`} className="text-xs text-blue-600 hover:underline">
+                      {halt.station_code}
+                    </Link>
+                  </td>
+                  <td className="px-6 py-4 text-right font-mono text-foreground">{stop ? formatTime(stop.arrival_time) : "—"}</td>
+                  <td className="px-6 py-4 text-right font-mono text-foreground">{stop ? formatTime(stop.departure_time) : "—"}</td>
+                  <td className="px-6 py-4 text-right font-mono font-medium text-foreground">{formatDuration(halt.dwell_minutes)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+async function SlowerThanAverageSegments({ trainNumber, stationMap }: { trainNumber: string, stationMap: Map<string, TrainStopResponse> }) {
+  let edges: RelativeEdgeSlownessItem[] = [];
+  try {
+    const res = await fetch(`${getServerApiUrl()}/api/v1/network/trains/${trainNumber}/relative-edge-slowness?limit=10`, { next: { revalidate: 60 } });
+    if (!res.ok) {
+      throw new Error("Failed to fetch");
+    }
+    const data = await res.json();
+    edges = data.slow_edges || [];
+  } catch {
+    return <div className="text-sm font-medium text-red-600 dark:text-red-400 py-4">Unable to load segment comparison.</div>;
+  }
+
+  if (edges.length === 0) {
+    return <div className="text-sm text-foreground/60 py-4">No slower-than-average segments found for this train.</div>;
+  }
+
+  const formatDuration = (mins: number) => {
+    const h = Math.floor(mins / 60);
+    const m = Math.round(mins % 60);
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m} min`;
+  };
+
+  return (
+    <div className="bg-card rounded-2xl border border-foreground/10 overflow-hidden shadow-sm">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm whitespace-nowrap">
+          <thead className="bg-foreground/[0.03] border-b border-foreground/10">
+            <tr>
+              <th scope="col" className="px-6 py-4 font-semibold text-foreground/60">Segment</th>
+              <th scope="col" className="px-6 py-4 font-semibold text-foreground/60 text-right">Train Schedule</th>
+              <th scope="col" className="px-6 py-4 font-semibold text-foreground/60 text-right">Network Average</th>
+              <th scope="col" className="px-6 py-4 font-semibold text-foreground/60 text-right">Difference</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-foreground/5">
+            {edges.map((edge, i) => {
+              const src = stationMap.get(edge.source_station_code);
+              const dst = stationMap.get(edge.destination_station_code);
+              const diffPercent = Math.round((edge.slowness_ratio - 1) * 100);
+              
+              return (
+                <tr key={i} className="hover:bg-foreground/[0.02] transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2">
+                      <div>
+                        <div className="font-medium text-foreground">{src ? src.station_name : edge.source_station_code}</div>
+                        <Link href={`/stations/${edge.source_station_code.toLowerCase()}`} className="text-xs text-blue-600 hover:underline">
+                          {edge.source_station_code}
+                        </Link>
+                      </div>
+                      <span className="text-foreground/40 px-2">→</span>
+                      <div>
+                        <div className="font-medium text-foreground">{dst ? dst.station_name : edge.destination_station_code}</div>
+                        <Link href={`/stations/${edge.destination_station_code.toLowerCase()}`} className="text-xs text-blue-600 hover:underline">
+                          {edge.destination_station_code}
+                        </Link>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-right font-mono text-foreground">{formatDuration(edge.target_duration_minutes)}</td>
+                  <td className="px-6 py-4 text-right font-mono text-foreground">{formatDuration(edge.network_average_minutes)}</td>
+                  <td className="px-6 py-4 text-right font-mono font-medium text-foreground">
+                    +{diffPercent}%
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
